@@ -1640,6 +1640,42 @@ class ClaudeCodeWebInterface {
         }
         this.loadPlanDirsUI();
         this.loadScrollbackUI();
+        this.loadVersionUI();
+    }
+
+    // Which Claude Code the sessions run, and what npm publishes. Display only.
+    // The registry side is slow (~6s cold, cached server-side afterwards), so
+    // this fills in asynchronously like the panel's other server-backed rows
+    // rather than holding the panel shut.
+    async loadVersionUI() {
+        const el = document.getElementById('versionText');
+        if (!el) return;
+        el.textContent = 'Checking\u2026';
+        el.className = 'version-line';
+        try {
+            const res = await this.authFetch('/api/version');
+            if (!res.ok) throw new Error('http ' + res.status);
+            const d = await res.json();
+            const current = d.current ? `Installed ${d.current}` : 'Installed version unavailable';
+            if (!d.latest) {
+                // Offline, or npm unreachable. Say which half we have rather than
+                // implying the version itself is unknown.
+                el.textContent = `${current} \u00b7 latest unknown (no network?)`;
+                return;
+            }
+            let tail = ` \u00b7 latest ${d.latest}`;
+            if (d.stable && d.stable !== d.latest) tail += ` \u00b7 stable ${d.stable}`;
+            el.textContent = current + tail;
+            if (d.updateAvailable === true) {
+                el.className = 'version-line version-outdated';
+                el.textContent += ' \u2014 update available';
+            } else if (d.updateAvailable === false) {
+                el.className = 'version-line version-current';
+                el.textContent += ' \u2014 up to date';
+            }
+        } catch (_) {
+            el.textContent = 'Could not read the version';
+        }
     }
 
     // Scrollback depth is a SERVER setting, unlike the visual ones above: it

@@ -2827,3 +2827,27 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     color: var(--text-secondary);
     font-size: 12px;
 }
+
+/* ---------------------------------------------------------------------------
+   Claude Code version row (#versionRow)
+
+   Self-contained, like the blocks above and for the same reason: splicing
+   selectors into an existing list is how #explorerBtn svg ended up inside a
+   display:none rule and the folder icon vanished (dbaf5ab).
+   --------------------------------------------------------------------------- */
+
+.version-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.version-line {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Semantic colours, so both themes follow without a second rule. */
+.version-outdated { color: var(--warning); }
+.version-current  { color: var(--success); }

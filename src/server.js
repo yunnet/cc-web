@@ -753,6 +753,9 @@ class ClaudeCodeWebServer {
     this.app.get('/api/settings/scrollback', (req, res) => this.getScrollback(req, res));
     this.app.post('/api/settings/scrollback', (req, res) => this.setScrollback(req, res));
 
+    // Which Claude Code is installed vs what npm publishes. Display only.
+    this.app.get('/api/version', ClaudeCodeWebServer.asyncRoute((req, res) => this.getVersionInfo(req, res)));
+
     this.app.post('/api/set-working-dir', (req, res) => {
       const { path: selectedPath } = req.body;
 
@@ -1945,6 +1948,109 @@ class ClaudeCodeWebServer {
       if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string').map((p) => path.resolve(p));
     } catch (_) { /* no file / invalid → fall back to the flag seed */ }
     return null;
+  }
+
+  // --- Claude Code version ---------------------------------------------------
+  // Which Claude the sessions actually run, and what npm is publishing. Display
+  // only: nothing here upgrades anything.
+  //
+  // The registry lookup measured ~5.8s from this machine against 0.036s for
+  // `claude --version`, so the two are treated very differently — the local one
+  // is cheap enough to run per request, the remote one is cached. Neither is
+  // allowed to fail the response: "which Claude am I running" must survive an
+  // offline box, and the version string must survive a CLI that will not run.
+  static VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
+  static NPM_DIST_TAGS_URL = 'https://registry.npmjs.org/-/package/@anthropic-ai/claude-code/dist-tags';
+
+  // "2.1.247 (Claude Code)" -> "2.1.247". Anything else is null rather than a
+  // guess: a half-parsed version compared against the registry is worse than
+  // admitting we do not know.
+  static parseClaudeVersion(stdout) {
+    const m = /(\d+\.\d+\.\d+)/.exec(String(stdout || ''));
+    return m ? m[1] : null;
+  }
+
+  // Numeric, segment by segment. String comparison would put 2.1.9 above
+  // 2.1.10 and quietly tell someone ten patches behind that they are current.
+  // Returns null when either side is unknown — "not comparable" is a distinct
+  // answer from "equal".
+  static compareVersions(a, b) {
+    const pa = ClaudeCodeWebServer.parseClaudeVersion(a);
+    const pb = ClaudeCodeWebServer.parseClaudeVersion(b);
+    if (!pa || !pb) return null;
+    const xs = pa.split('.').map(Number);
+    const ys = pb.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      if (xs[i] !== ys[i]) return xs[i] > ys[i] ? 1 : -1;
+    }
+    return 0;
+  }
+
+  // The version of the binary the sessions are spawned from — claudeBridge's
+  // discovered path, not a bare `claude` off PATH, which could be a different
+  // install than the one the terminal is running.
+  claudeVersion() {
+    return new Promise((resolve) => {
+      const { execFile } = require('child_process');
+      execFile(this.claudeBridge.claudeCommand, ['--version'],
+        { timeout: 5000, windowsHide: true },
+        (err, stdout) => resolve(err ? null : ClaudeCodeWebServer.parseClaudeVersion(stdout)));
+    });
+  }
+
+  // One small GET, split out so the cache above it can be tested without a
+  // network. Resolves null on any failure rather than rejecting.
+  _fetchDistTags() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      try {
+        const req = https.get(ClaudeCodeWebServer.NPM_DIST_TAGS_URL, { timeout: 8000 }, (res) => {
+          if (res.statusCode !== 200) { res.resume(); return finish(null); }
+          let body = '';
+          res.setEncoding('utf8');
+          // Bounded: this endpoint answers in tens of bytes, so anything large
+          // is not the response we asked for.
+          res.on('data', (c) => { body += c; if (body.length > 64 * 1024) { req.destroy(); finish(null); } });
+          res.on('end', () => {
+            try {
+              const tags = JSON.parse(body);
+              finish(tags && tags.latest ? { latest: tags.latest, stable: tags.stable || null } : null);
+            } catch (_) { finish(null); }
+          });
+        });
+        req.on('timeout', () => { req.destroy(); finish(null); });
+        req.on('error', () => finish(null));
+      } catch (_) { finish(null); }
+    });
+  }
+
+  // Cached for VERSION_CACHE_MS. A FAILURE IS NOT CACHED — caching it would make
+  // one flaky moment look like a six-hour outage of the feature.
+  async latestVersions() {
+    const now = Date.now();
+    if (this._versionCache && (now - this._versionCache.at) < ClaudeCodeWebServer.VERSION_CACHE_MS) {
+      return this._versionCache.tags;
+    }
+    const tags = await this._fetchDistTags();
+    if (tags) this._versionCache = { at: now, tags };
+    return tags;
+  }
+
+  // GET /api/version — { current, latest, stable, updateAvailable, checkedAt }.
+  // `updateAvailable` is null, not false, when either side is unknown: "we could
+  // not check" and "you are current" are different things to show a user.
+  async getVersionInfo(req, res) {
+    const [current, tags] = await Promise.all([this.claudeVersion(), this.latestVersions()]);
+    const latest = tags ? tags.latest : null;
+    const cmp = ClaudeCodeWebServer.compareVersions(latest, current);
+    res.json({
+      current,
+      latest,
+      stable: tags ? tags.stable : null,
+      updateAvailable: cmp === null ? null : cmp > 0,
+      checkedAt: this._versionCache ? new Date(this._versionCache.at).toISOString() : null
+    });
   }
 
   // --- Scrollback depth -----------------------------------------------------
