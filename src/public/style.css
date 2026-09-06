@@ -2296,13 +2296,18 @@ pre, code {
 .mode-switcher {
     position: fixed;
     /* Fallback only — positionModeSwitcher() measures Claude's input box and
-       overrides this so the stack sits above the box, never across it. */
+       overrides this so the stack sits above the box, never across it. A
+       dragged position overrides both (see app.js:applyFabPosition). */
     bottom: 80px;
     right: 20px;
     z-index: 1000;
     display: none;
     flex-direction: column;
     gap: 10px;
+    /* Required for dragging, not cosmetic: body is `touch-action: pan-x pan-y`,
+       so without this a drag on the buttons scrolls the page instead of moving
+       them, and the feature silently does nothing on a phone. */
+    touch-action: none;
 }
 
 /* Show mode switcher on mobile devices */
@@ -2851,3 +2856,37 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 /* Semantic colours, so both themes follow without a second rule. */
 .version-outdated { color: var(--warning); }
 .version-current  { color: var(--success); }
+
+/* ---------------------------------------------------------------------------
+   Draggable mobile buttons (.fab-dragging, .mobile-only-setting)
+
+   Self-contained, like the blocks above and for the same reason: splicing
+   selectors into an existing list is how #explorerBtn svg ended up inside a
+   display:none rule and the folder icon vanished (dbaf5ab).
+   --------------------------------------------------------------------------- */
+
+/* Published so JS can read the home-indicator inset it must stay clear of;
+   env() is not otherwise reachable from script. */
+:root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* While dragging, kill the 0.3s transition the buttons normally carry — with it
+   the stack lags the finger and the drag feels like it is stuck in syrup. */
+.mode-switcher.fab-dragging .mode-switcher-btn,
+.mode-switcher.fab-dragging .escape-btn {
+    transition: none;
+}
+
+.mode-switcher.fab-dragging {
+    opacity: 0.85;
+    transform: scale(1.04);
+}
+
+/* The reset control belongs to a mobile-only feature, so it is hidden wherever
+   the buttons themselves are hidden. Same query as .mode-switcher above, on
+   purpose: one appears exactly when the other does. */
+.mobile-only-setting { display: none; }
+
+@media (max-width: 1024px) and (hover: none) and (pointer: coarse),
+       (max-width: 768px) {
+    .mobile-only-setting { display: block; }
+}
