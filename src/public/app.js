@@ -214,6 +214,9 @@ class ClaudeCodeWebInterface {
                 </button>
             `;
             document.body.appendChild(modeSwitcher);
+            this._fabPos = this.loadFabPosition();
+            this._fabManual = !!this._fabPos;
+            this.enableFabDrag(modeSwitcher);
             this.positionModeSwitcher();
             
             // Add event listener for mode switcher
@@ -236,8 +239,14 @@ class ClaudeCodeWebInterface {
     // the terminal reflows.
     positionModeSwitcher() {
         const sw = document.getElementById('modeSwitcher');
+        if (!sw) return;
+        // A dragged position wins. This runs on every viewport change and after
+        // output, so without bailing out first it would pull the buttons back
+        // from wherever the user just put them. Re-apply rather than plain
+        // return, so a rotation still lands them somewhere on screen.
+        if (this._fabManual) { this.applyFabPosition(); return; }
         const term = this.terminal;
-        if (!sw || !term || !term.element || !term.rows) return;
+        if (!term || !term.element || !term.rows) return;
         const rect = term.element.getBoundingClientRect();
         if (!rect.height) return;
         const rowH = rect.height / term.rows;
@@ -258,6 +267,117 @@ class ClaudeCodeWebInterface {
         const gap = parseFloat(cs.rowGap) || parseFloat(cs.gap) || 10;
         const belowTerminal = Math.max(0, window.innerHeight - rect.bottom);
         sw.style.bottom = Math.round(belowTerminal + rowsToClear * rowH + gap) + 'px';
+    }
+
+    // Where the buttons are allowed to sit. Measured, not assumed: the tab bar
+    // can grow with many sessions, and the bottom inset is the home-indicator
+    // strip, published as --safe-bottom by the stylesheet.
+    fabViewport(sw) {
+        const bar = document.querySelector('.session-tabs-bar');
+        const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+        const safe = parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--safe-bottom')) || 0;
+        return {
+            viewportHeight: window.innerHeight,
+            fabHeight: sw.offsetHeight || 122,
+            topInset: Math.max(0, barBottom) + 8,
+            bottomInset: safe + 8
+        };
+    }
+
+    // Global, not per session: this is which hand you hold the phone in, not a
+    // property of the project you happen to be looking at.
+    loadFabPosition() {
+        try { return FAB.normalize(JSON.parse(localStorage.getItem('cc-web-fab-position'))); }
+        catch (_) { return null; }
+    }
+
+    saveFabPosition() {
+        try { localStorage.setItem('cc-web-fab-position', JSON.stringify(this._fabPos)); }
+        catch (_) { /* private mode / quota; the position just will not persist */ }
+    }
+
+    // Back to following Claude's input box. Dragging costs you that silently,
+    // so there has to be a way to ask for it back.
+    resetFabPosition() {
+        this._fabPos = null;
+        this._fabManual = false;
+        try { localStorage.removeItem('cc-web-fab-position'); } catch (_) {}
+        const sw = document.getElementById('modeSwitcher');
+        if (sw) { sw.style.top = ''; sw.style.left = ''; sw.style.right = ''; sw.style.bottom = ''; }
+        this.positionModeSwitcher();
+    }
+
+    applyFabPosition() {
+        const sw = document.getElementById('modeSwitcher');
+        if (!sw || !this._fabPos) return;
+        const v = this.fabViewport(sw);
+        sw.style.top = FAB.topFromRatio(this._fabPos.yRatio, v) + 'px';
+        sw.style.bottom = 'auto';
+        // One side is always `auto`; leaving both set would pin the width.
+        if (this._fabPos.side === 'left') { sw.style.left = '20px'; sw.style.right = 'auto'; }
+        else { sw.style.right = '20px'; sw.style.left = 'auto'; }
+    }
+
+    // Drag the pair as a unit. Pointer Events cover touch and mouse with one
+    // set of handlers, and pointer capture means a fast finger that leaves the
+    // button still delivers its moves here instead of dropping the drag.
+    enableFabDrag(sw) {
+        let startX = 0, startY = 0, startTop = 0, id = null, dragging = false;
+
+        sw.addEventListener('pointerdown', (e) => {
+            if (e.button != null && e.button > 0) return;
+            const r = sw.getBoundingClientRect();
+            id = e.pointerId; startX = e.clientX; startY = e.clientY; startTop = r.top;
+            dragging = false;
+            try { sw.setPointerCapture(id); } catch (_) {}
+        });
+
+        sw.addEventListener('pointermove', (e) => {
+            if (id === null || e.pointerId !== id) return;
+            const dx = e.clientX - startX, dy = e.clientY - startY;
+            // Fingers wobble on a plain tap; below the threshold this is still a
+            // press of ESC or MODE, not a move.
+            if (!dragging && Math.hypot(dx, dy) < FAB.DRAG_THRESHOLD_PX) return;
+            if (!dragging) { dragging = true; sw.classList.add('fab-dragging'); }
+            e.preventDefault();
+            const v = this.fabViewport(sw);
+            const r = sw.getBoundingClientRect();
+            sw.style.top = FAB.clampTop(startTop + dy, v) + 'px';
+            sw.style.bottom = 'auto';
+            // Horizontal follows the finger while dragging and snaps on release,
+            // so the stack never comes to rest floating mid-screen.
+            const left = Math.min(window.innerWidth - r.width - 4,
+                                  Math.max(4, e.clientX - r.width / 2));
+            sw.style.left = Math.round(left) + 'px';
+            sw.style.right = 'auto';
+        });
+
+        const end = (e) => {
+            if (id === null || (e && e.pointerId !== id)) return;
+            try { sw.releasePointerCapture(id); } catch (_) {}
+            id = null;
+            if (!dragging) return;
+            dragging = false;
+            sw.classList.remove('fab-dragging');
+            const r = sw.getBoundingClientRect();
+            const v = this.fabViewport(sw);
+            this._fabPos = {
+                side: FAB.snapSide(r.left + r.width / 2, window.innerWidth,
+                                   this._fabPos ? this._fabPos.side : 'right'),
+                yRatio: FAB.ratioFromTop(FAB.clampTop(r.top, v), v)
+            };
+            this._fabManual = true;
+            this.saveFabPosition();
+            this.applyFabPosition();
+            // The pointerup that ends a drag is followed by a click. Swallow
+            // exactly one, or letting go over ESC would also send Esc.
+            const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+            sw.addEventListener('click', swallow, { capture: true, once: true });
+            setTimeout(() => sw.removeEventListener('click', swallow, { capture: true }), 300);
+        };
+        sw.addEventListener('pointerup', end);
+        sw.addEventListener('pointercancel', end);
     }
 
     sendEscape() {
@@ -912,6 +1032,12 @@ class ClaudeCodeWebInterface {
     setupSettingsModal() {
         const modal = document.getElementById('settingsModal');
         const closeBtn = document.getElementById('closeSettingsBtn');
+        const fabReset = document.getElementById('fabResetBtn');
+        if (fabReset) fabReset.addEventListener('click', () => {
+            this.resetFabPosition();
+            this.showToast('Button position reset');
+        });
+
         const saveBtn = document.getElementById('saveSettingsBtn');
         const fontSizeSlider = document.getElementById('fontSize');
         const fontSizeValue = document.getElementById('fontSizeValue');

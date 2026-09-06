@@ -240,6 +240,11 @@
                         <input type="range" id="smoothScroll" min="0" max="200" step="10" value="100" title="0 = instant (snappiest); higher = smoother/heavier wheel scroll">
                         <span id="smoothScrollValue">100ms</span>
                     </div>
+                    <div class="setting-group setting-group-block mobile-only-setting">
+                        <label>Floating buttons:</label>
+                        <p class="setting-hint">Drag the ESC / MODE buttons to move them out of the way. Reset to have them follow Claude's input box again.</p>
+                        <button class="btn btn-secondary btn-small" id="fabResetBtn">Reset button position</button>
+                    </div>
                     <div class="setting-group setting-group-block">
                         <label>Claude Code version:</label>
                         <div class="version-row" id="versionRow">
@@ -460,6 +465,9 @@
     <script src="file-explorer.js"></script>
     <script src="git-branches.js"></script>
     <script src="icons.js"></script>
+    <!-- Pure geometry for the draggable mobile buttons; app.js calls into it,
+         so it has to be defined first. -->
+    <script src="fab-position.js"></script>
     <script src="app.js"></script>
     
     <!-- Theme is applied live (no reload) and PER SESSION by app.js
