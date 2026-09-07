@@ -53,6 +53,12 @@ class ClaudeBridge {
       uiTheme = '',
       dangerouslySkipPermissions = false,
       resume = false,
+      // Whether a failed --resume may relaunch fresh under the same id. True for
+      // cc-web's own recovery (the id was ours and the conversation may simply
+      // not exist yet); false for a conversation the user picked from the
+      // history list, where a fresh launch would silently discard what they
+      // asked to continue.
+      allowFreshFallback = true,
       model = '',
       permissionMode = '',
       onOutput = () => {},
@@ -166,6 +172,13 @@ class ClaudeBridge {
           // once, bound to the same id, so the session recovers instead of
           // sitting on an error. (Belt-and-suspenders with the exit check below.)
           if (mode === 'resume' && !fellBack && dataBuffer.includes('No conversation found')) {
+            if (!allowFreshFallback) {
+              // Not swallowed: there is no replacement process to take over, so
+              // the CLI's own message belongs on screen under our explanation.
+              reportResumeFailure('no conversation found');
+              onOutput(data);
+              return;
+            }
             triggerFallback('no conversation found');
             return; // swallow the failed-resume output; fresh process takes over
           }
@@ -176,7 +189,7 @@ class ClaudeBridge {
             inUseNoted = true;
             onOutput('\r\n\x1b[33mThis session id is already in use (a stuck/phantom session). If it keeps failing, create a new session.\x1b[0m\r\n');
           }
-          if (!trustPromptHandled && dataBuffer.includes('Do you trust the files in this folder?')) {
+          if (!trustPromptHandled && ClaudeBridge.looksLikeTrustPrompt(dataBuffer)) {
             trustPromptHandled = true;
             console.log(`Auto-accepting trust prompt for session ${sessionId}`);
             setTimeout(() => {
@@ -200,8 +213,13 @@ class ClaudeBridge {
           // Resume fallback: re-attach failed fast (e.g. bad session state) —
           // relaunch fresh once.
           if (mode === 'resume' && !fellBack && code !== 0 && (Date.now() - launchedAt) < 8000) {
-            triggerFallback(`quick exit code ${code}`);
-            return; // swallow the failed-resume exit; fresh process takes over
+            if (!allowFreshFallback) {
+              reportResumeFailure(`exit code ${code}`);
+              // fall through: the session ends, the tab shows why
+            } else {
+              triggerFallback(`quick exit code ${code}`);
+              return; // swallow the failed-resume exit; fresh process takes over
+            }
           }
 
           // Phantom self-heal: a fresh launch that dies fast on "already in use"
@@ -253,6 +271,18 @@ class ClaudeBridge {
           this.sessions.delete(sessionId);
           onError(error);
         });
+      };
+
+      // A resume the user asked for that we are NOT allowed to paper over. Say
+      // so in the terminal instead of starting an empty conversation under the
+      // same id, which would look identical to a successful resume.
+      let resumeFailureNoted = false;
+      const reportResumeFailure = (reason) => {
+        if (resumeFailureNoted) return;
+        resumeFailureNoted = true;
+        console.log(`Resume failed for ${sessionId} (${reason}); no fresh fallback for a picked conversation`);
+        onOutput(`\r\n\x1b[31mCould not continue this conversation (${reason}).\x1b[0m\r\n` +
+          `\x1b[33mIt may have been deleted, or it is open elsewhere. Create a new session to start fresh.\x1b[0m\r\n`);
       };
 
       // Swap the current (failed-resume) process for a fresh one bound to the
@@ -325,6 +355,31 @@ class ClaudeBridge {
       }
     } catch (_) { /* best-effort */ }
     return false;
+  }
+
+  // Is Claude asking whether this folder is trusted?
+  //
+  // Matching the sentence as written does not work, for two reasons found by
+  // capturing the real PTY stream (2026-09-07, v2.1.247):
+  //
+  //   1. The TUI positions EVERY WORD with a cursor-column escape, so the bytes
+  //      read `Quick\x1b[8Gsafety\x1b[15Gcheck:` — strip the escapes and the
+  //      words run together with no spaces at all. This is why the original
+  //      check ("Do you trust the files in this folder?") silently stopped
+  //      firing: not a rewording, a rendering change.
+  //   2. The wording did also change — v2.1.247 asks "Quick safety check: Is
+  //      this a project you created or one you trust?".
+  //
+  // So: drop the escapes, drop ALL whitespace, lowercase, and look for the
+  // fragments that survive that — including the accept option itself. Missing
+  // this leaves a new session parked on the prompt until someone presses Enter
+  // by hand.
+  static looksLikeTrustPrompt(text) {
+    const dense = String(text || '')
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+    return /doyoutrustthefilesinthisfolder|quicksafetycheck|yes,?itrustthisfolder/.test(dense);
   }
 
   // Claude's theme has to match the background WE paint, because the browser

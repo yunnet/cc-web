@@ -2,7 +2,34 @@
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-09-07
+
 ### Added
+- **A new tab can continue an existing Claude conversation.** The New Session
+  modal gained a "Continue previous" mode listing the conversations Claude has
+  recorded for the chosen folder, and the toolbar gained a history button
+  (`#historyBtn`) showing the same list for the active session's folder. Picking
+  one opens a tab resumed where it left off; everything said from then on is
+  appended to that same transcript, across server restarts too.
+
+  It needed no new plumbing: the cc-web session id already *is* the Claude
+  conversation id, so `POST /api/sessions/create {resumeId}` simply creates the
+  session under that uuid with `claudeStarted` already set. `GET
+  /api/claude-sessions?dir=` lists the transcripts.
+
+  The menu's Sessions modal and the toolbar's list are now one panel: sessions
+  first, then the folder's unopened conversations. They were two renderers over
+  two different sources, so a session that had never started Claude showed up in
+  one and a closed conversation only in the other.
+
+  One conversation, one tab — two Claude processes resuming one transcript would
+  corrupt it, so a conversation a session already holds is listed under Sessions
+  (switch to it) rather than offered again, and the server answers 409 with the
+  id of the tab holding it. A conversation the user explicitly
+  picked also loses the bridge's silent fall-back to a fresh launch: a failed
+  `--resume` now says so in the terminal rather than leaving a tab that looks
+  resumed while holding an empty conversation.
+
 - **A pull button on each repository in the branch panel.** `git pull --ff-only`:
   it either fast-forwards cleanly or does nothing and says why. A plain pull
   would build a merge commit when the local branch has its own work, and can
@@ -18,6 +45,18 @@
   amount to "run git wherever you can name".
 
 ### Fixed
+- **The trust prompt is auto-accepted again.** Starting a session in a folder
+  Claude had not seen before sat on "Is this a project you created or one you
+  trust?" until someone pressed Enter by hand.
+
+  Two things had changed, and the second is the interesting one. The wording
+  moved on from "Do you trust the files in this folder?" — but the match would
+  have failed anyway: captured from the real PTY, v2.1.247 positions *every
+  word* with its own cursor-column escape, so once the escapes are stripped the
+  words run together with no spaces at all. The check now drops the escapes and
+  all whitespace before looking for its fragments, and is tested against the
+  captured bytes rather than a hand-typed sentence.
+
 - **A pull that times out no longer leaves git processes behind.** `git pull`
   forks `git fetch`, which forks `git remote-http`; signalling the wrapper left
   both children running, measured against an unreachable remote.

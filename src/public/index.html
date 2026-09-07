@@ -140,6 +140,14 @@
                         </div>
                     </div>
                 </div>
+                <!-- Sessions + the folder's Claude conversations. Drawn to the
+                     same 3..21 box as the branch and folder icons beside it, so
+                     the three read as one row. -->
+                <button class="tab-settings" id="historyBtn" title="Sessions and conversations" aria-label="Show sessions and conversations">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>
+                    </svg>
+                </button>
                 <button class="tab-settings" id="explorerBtn" title="Files" aria-label="Open file explorer">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
@@ -327,6 +335,13 @@
                     <button class="close-btn" id="closeNewSessionBtn">&times;</button>
                 </div>
                 <div class="modal-body">
+                    <!-- Start empty, or continue one of Claude's existing
+                         conversations in this folder. Continuing binds the new
+                         session to that conversation's id — see conversations.js. -->
+                    <div class="session-mode-toggle" id="sessionModeToggle" role="tablist">
+                        <button class="session-mode-btn active" data-mode="new" role="tab">New conversation</button>
+                        <button class="session-mode-btn" data-mode="resume" role="tab">Continue previous</button>
+                    </div>
                     <div class="form-group">
                         <label for="sessionName">Session Name:</label>
                         <input type="text" id="sessionName" placeholder="Enter session name (optional)">
@@ -335,10 +350,37 @@
                         <label for="sessionWorkingDir">Working Directory:</label>
                         <input type="text" id="sessionWorkingDir" placeholder="Leave empty to use current directory">
                     </div>
+                    <div class="form-group" id="resumePicker" style="display: none;">
+                        <label>Conversations in this folder:</label>
+                        <div class="conv-list" id="newSessionConversations"></div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" id="cancelNewSessionBtn">Cancel</button>
                     <button class="btn btn-primary" id="createSessionBtn">Create Session</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toolbar history button (#historyBtn): every Claude conversation
+             recorded for the active session's folder. Clicking one opens it in a
+             new tab, resumed. -->
+        <div class="session-modal" id="conversationsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Sessions</h2>
+                    <button class="close-btn" id="closeConversationsBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="conv-head">
+                        <span class="conv-dir" id="conversationsDir"></span>
+                        <button class="btn btn-secondary btn-small" id="conversationsRefreshBtn">Refresh</button>
+                    </div>
+                    <div class="conv-list" id="conversationsList"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="conversationsDoneBtn">Close</button>
+                    <button class="btn btn-primary" id="conversationsNewBtn">New Session</button>
                 </div>
             </div>
         </div>
@@ -463,6 +505,7 @@
     <script src="session-manager.js"></script>
     <script src="splits.js"></script>
     <script src="file-explorer.js"></script>
+    <script src="conversations.js"></script>
     <script src="git-branches.js"></script>
     <script src="icons.js"></script>
     <!-- Pure geometry for the draggable mobile buttons; app.js calls into it,

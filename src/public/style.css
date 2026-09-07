@@ -2451,6 +2451,18 @@ pre, code {
     height: 24px;
 }
 
+/* The sessions button sits between those two and must match them. Its markup
+   asks for 16px like theirs does; the toolbar's real icon size is 24, set here
+   rather than in the HTML — same reasoning, same size, its own rule. */
+#historyBtn {
+    width: 44px;
+    height: 44px;
+}
+#historyBtn svg {
+    width: 24px;
+    height: 24px;
+}
+
 /* Shown on every width, like the file explorer. "Did every repo move to the
    task branch?" is a question you ask more often away from the desk, not less.
    The panel is right-anchored and capped at 90vw (see .branch-panel below), so
@@ -2889,4 +2901,211 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (max-width: 1024px) and (hover: none) and (pointer: coarse),
        (max-width: 768px) {
     .mobile-only-setting { display: block; }
+}
+
+/* ── Claude conversation history ──────────────────────────────────────────
+   Two places show the same list: the New Session modal's "Continue previous"
+   picker and the toolbar history modal (#conversationsModal). Rows are built by
+   conversations.js. Colours come from the theme tokens, so light mode follows
+   without a second rule set. */
+
+.session-mode-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 16px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.session-mode-btn {
+    flex: 1;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.08s ease, color 0.08s ease;
+}
+
+.session-mode-btn:hover { color: var(--text-primary); }
+
+.session-mode-btn.active {
+    background-color: var(--accent);
+    color: #fff;
+}
+
+/* The picker inside the New Session modal is capped so the modal keeps its
+   shape with a long history; the toolbar modal gets the taller cap. */
+.conv-list {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px;
+    background-color: var(--bg-primary);
+}
+
+#conversationsList { max-height: min(52vh, 460px); }
+
+.conv-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.conv-dir {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    /* Long project paths truncate at the FRONT: the tail is the part that
+       identifies the folder. The path text itself is ltr (conversations.js
+       wraps it), or the bidi algorithm moves its leading slash to the end. */
+    direction: rtl;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conv-dir > span { unicode-bidi: embed; }
+
+.conv-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    margin-bottom: 4px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    /* No transition: these rows are scanned with the pointer moving down the
+       list, and even a short fade makes the highlight trail the cursor. The
+       hover itself is a light tint rather than a full accent fill — a solid
+       block of blue under the pointer is heavy to read past. */
+    background-image: none;
+}
+
+.conv-row:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--accent);
+}
+
+.conv-row.selected {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The tab you are looking at. */
+.conv-row.current { border-left: 3px solid var(--accent); }
+
+/* Already open in a tab. Not selectable: two Claude processes resuming one
+   transcript would corrupt it, and the server refuses it too. */
+.conv-row.open {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.conv-row.open:hover {
+    background-color: var(--bg-secondary);
+    border-color: var(--border);
+}
+
+/* Group headings inside the panel: Sessions, then the folder's conversations. */
+.conv-group {
+    margin: 10px 2px 6px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.conv-group:first-child { margin-top: 2px; }
+
+/* Running / stopped, in the same language as the tab status dots. */
+.conv-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.conv-dot.on {
+    background-color: #3fb950;
+    opacity: 1;
+}
+
+.conv-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.conv-act {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.conv-act:hover { color: var(--danger, #f85149); background-color: var(--bg-primary); }
+
+.conv-act-icon { width: 15px; height: 15px; }
+
+.conv-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+}
+
+.conv-main { flex: 1; min-width: 0; }
+
+.conv-title {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conv-meta {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    /* One line: wrapping the meta makes rows tall enough that only three fit,
+       and every fact on it is optional detail. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conv-empty {
+    padding: 18px 10px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    /* Thumb-sized rows, and more of the modal given to the list. */
+    .conv-row { padding: 12px 10px; }
+    .conv-act { width: 40px; height: 40px; }
+    .conv-list { max-height: 46vh; }
+    .session-mode-btn { padding: 11px 8px; }
 }
