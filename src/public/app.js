@@ -994,6 +994,11 @@ class ClaudeCodeWebInterface {
         // file-explorer.js and exposes window.fileExplorer.
         if (explorerBtn) explorerBtn.addEventListener('click', () => window.fileExplorer && window.fileExplorer.open());
 
+        // Claude conversations recorded for this folder (conversations.js).
+        // Picking one opens it in a new tab, resumed where it left off.
+        const historyBtn = document.getElementById('historyBtn');
+        if (historyBtn) historyBtn.addEventListener('click', () => window.conversationList && window.conversationList.open());
+
         const layoutBtn = document.getElementById('layoutBtn');
         if (layoutBtn) layoutBtn.addEventListener('click', () => {
             if (this.splitContainer) this.splitContainer.openLayoutMenu(layoutBtn);
@@ -2482,70 +2487,20 @@ class ClaudeCodeWebInterface {
             console.error('Failed to load sessions:', error);
         }
     }
-    
-    renderMobileSessionList() {
-        const sessionList = document.getElementById('mobileSessionList');
-        sessionList.innerHTML = '';
-        
-        if (this.claudeSessions.length === 0) {
-            sessionList.innerHTML = '<div class="no-sessions">No active sessions</div>';
-            return;
-        }
-        
-        this.claudeSessions.forEach(session => {
-            const sessionItem = document.createElement('div');
-            sessionItem.className = 'session-item';
-            if (session.id === this.currentClaudeSessionId) {
-                sessionItem.classList.add('active');
-            }
-            
-            const statusIcon = `<span class="dot ${session.active ? 'dot-on' : 'dot-idle'}"></span>`;
-            const clientsText = session.connectedClients === 1 ? '1 client' : `${session.connectedClients} clients`;
-            
-            sessionItem.innerHTML = `
-                <div class="session-info">
-                    <span class="session-status">${statusIcon}</span>
-                    <div class="session-details">
-                        <div class="session-name">${session.name}</div>
-                        <div class="session-meta">${clientsText} • ${new Date(session.created).toLocaleTimeString()}</div>
-                        ${session.workingDir ? `<div class=\"session-folder\" title=\"${session.workingDir}\"><span class=\"icon\" aria-hidden=\"true\">${window.icons?.folder?.(14) || ''}</span> ${session.workingDir.split('/').pop() || '/'}</div>` : ''}
-                    </div>
-                </div>
-                <div class="session-actions">
-                    ${session.id === this.currentClaudeSessionId ? 
-                        '<button class="btn-icon" title="Leave session" data-action="leave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>' :
-                        '<button class="btn-icon" title="Join session" data-action="join"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></button>'
-                    }
-                    <button class="btn-icon" title="Delete session" data-action="delete">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"/>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                        </svg>
-                    </button>
-                </div>
-            `;
-            
-            sessionItem.querySelectorAll('button').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const action = btn.dataset.action;
-                    if (action === 'join') {
-                        this.joinSession(session.id);
-                        this.hideMobileSessionsModal();
-                    } else if (action === 'leave') {
-                        this.leaveSession(session.id);
-                        this.hideMobileSessionsModal();
-                    } else if (action === 'delete') {
-                        if (confirm(`Delete session "${session.name}"?`)) {
-                            this.deleteSession(session.id);
-                        }
-                    }
-                });
-            });
-            
-            sessionList.appendChild(sessionItem);
-        });
-    }
 
+    // The menu's Sessions list and the toolbar's are one panel (conversations.js),
+    // so they cannot disagree: sessions AND the folder's unopened conversations,
+    // in both places. This used to be a second, hand-rolled list that showed only
+    // sessions — a conversation with no session was invisible here, and a session
+    // that had never started Claude was invisible there.
+    renderMobileSessionList() {
+        const list = document.getElementById('mobileSessionList');
+        if (!list || !window.conversationList) return;
+        const dir = this.currentWorkingDir || this.selectedWorkingDir || null;
+        window.conversationList.modalDir = dir;
+        window.conversationList.renderPanel(list, { dir });
+    }
+    
     // Reconcile picker: shown on refresh only when the persisted tab set doesn't
     // match the server. Lists every server session; the user checks which to open
     // as tabs, picks the active one, can delete strays, or create a new session.
@@ -2754,6 +2709,16 @@ class ClaudeCodeWebInterface {
         closeBtn.addEventListener('click', () => this.hideNewSessionModal());
         cancelBtn.addEventListener('click', () => this.hideNewSessionModal());
         createBtn.addEventListener('click', () => this.createNewSession());
+
+        // New conversation vs continue an existing one. The toggle only changes
+        // what the create button does; the folder is already chosen by then, and
+        // it is what the conversation list is read from.
+        const toggle = document.getElementById('sessionModeToggle');
+        if (toggle) {
+            toggle.querySelectorAll('.session-mode-btn').forEach(btn => {
+                btn.addEventListener('click', () => this.setNewSessionMode(btn.dataset.mode));
+            });
+        }
         
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
@@ -2761,6 +2726,10 @@ class ClaudeCodeWebInterface {
             }
         });
         
+        // Remember whether the name was typed rather than prefilled, so picking
+        // a conversation can fill it in without overwriting the user's own words.
+        if (nameInput) nameInput.addEventListener('input', () => { nameInput.dataset.userEdited = 'true'; });
+
         // Allow Enter key to create session
         [nameInput, dirInput].forEach(input => {
             input.addEventListener('keypress', (e) => {
@@ -2792,6 +2761,11 @@ class ClaudeCodeWebInterface {
     
     showNewSessionModal() {
         document.getElementById('newSessionModal').classList.add('active');
+        // Always opens on "new" — continuing a conversation is a deliberate act,
+        // not a state left over from the last time the modal was used.
+        const nameInput = document.getElementById('sessionName');
+        if (nameInput) nameInput.dataset.userEdited = 'false';
+        this.setNewSessionMode('new');
         // Session dropdown removed - using tabs
         
         // Prevent body scroll on mobile when modal is open
@@ -2814,6 +2788,46 @@ class ClaudeCodeWebInterface {
         document.getElementById('sessionWorkingDir').value = '';
     }
     
+    // Switch the New Session modal between starting empty and continuing one of
+    // Claude's existing conversations in the chosen folder.
+    setNewSessionMode(mode) {
+        const resuming = mode === 'resume';
+        this.newSessionMode = resuming ? 'resume' : 'new';
+        this.selectedConversation = null;
+
+        document.querySelectorAll('#sessionModeToggle .session-mode-btn').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.mode === 'resume') === resuming);
+        });
+        const picker = document.getElementById('resumePicker');
+        if (picker) picker.style.display = resuming ? '' : 'none';
+        const createBtn = document.getElementById('createSessionBtn');
+        if (createBtn) createBtn.textContent = resuming ? 'Resume Conversation' : 'Create Session';
+
+        if (!resuming || !window.conversationList) return;
+        const dir = document.getElementById('sessionWorkingDir').value.trim() || this.selectedWorkingDir;
+        window.conversationList.renderPicker(document.getElementById('newSessionConversations'), {
+            dir,
+            onPick: (conv) => {
+                this.selectedConversation = conv;
+                // The conversation's own title is a better tab name than the
+                // folder name — unless the user has typed one themselves.
+                const nameInput = document.getElementById('sessionName');
+                if (nameInput && (!nameInput.dataset.userEdited || nameInput.dataset.userEdited === 'false')) {
+                    nameInput.value = this.conversationName(conv);
+                }
+            }
+        });
+    }
+
+    // A tab name from a conversation. Its title is a whole first prompt, which
+    // is far more than a tab can show, so it is cut to tab length here rather
+    // than left to be clipped in the middle of the tab strip.
+    conversationName(conv) {
+        const title = (conv.title || '').trim();
+        if (!title) return `Conversation ${conv.id.slice(0, 8)}`;
+        return title.length > 40 ? `${title.slice(0, 39)}…` : title;
+    }
+
     async createNewSession() {
         const name = document.getElementById('sessionName').value.trim() || `Session ${new Date().toLocaleString()}`;
         const workingDir = document.getElementById('sessionWorkingDir').value.trim() || this.selectedWorkingDir;
@@ -2822,37 +2836,88 @@ class ClaudeCodeWebInterface {
             this.showError('Please select a working directory first');
             return;
         }
-        
+
+        const resuming = this.newSessionMode === 'resume';
+        if (resuming && !this.selectedConversation) {
+            this.showToast('Pick a conversation to continue', true);
+            return;
+        }
+        const resumeId = resuming ? this.selectedConversation.id : undefined;
+
+        const created = await this.requestSession({ name, workingDir, resumeId });
+        if (!created) {
+            // Refused (already open elsewhere, or gone). The list is stale, so
+            // redraw it rather than leaving the dead row selected.
+            if (resuming) this.setNewSessionMode('resume');
+            return;
+        }
+
+        this.hideNewSessionModal();
+        await this.attachSessionTab(created.sessionId, name, workingDir);
+    }
+
+    // POST /api/sessions/create, with the resume-specific failures spelled out.
+    // Returns the created session, or null if the server refused.
+    async requestSession({ name, workingDir, resumeId }) {
         try {
             const response = await this.authFetch('/api/sessions/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, workingDir })
+                body: JSON.stringify({ name, workingDir, resumeId })
             });
-            
-            if (!response.ok) throw new Error('Failed to create session');
-            
-            const data = await response.json();
-            
-            // Hide the modal
-            this.hideNewSessionModal();
-            
-            // Add tab for the new session
-            if (this.sessionTabManager) {
-                this.sessionTabManager.addTab(data.sessionId, name, 'idle', workingDir);
-                // switchToTab will handle joining the session
-                await this.sessionTabManager.switchToTab(data.sessionId);
-            } else {
-                // No tab manager, join directly
-                await this.joinSession(data.sessionId);
+
+            if (response.status === 409) {
+                // One conversation, one tab: a second Claude on the same
+                // transcript would corrupt it. Go to the tab that has it.
+                const data = await response.json().catch(() => ({}));
+                this.showToast('That conversation is already open — switching to it', true);
+                if (data.sessionId && this.sessionTabManager) {
+                    this.hideNewSessionModal();
+                    await this.sessionTabManager.switchToTab(data.sessionId);
+                }
+                return null;
             }
-            
-            // Update sessions list
-            this.loadSessions();
+            if (response.status === 404) {
+                this.showToast('That conversation no longer exists in this folder', true);
+                return null;
+            }
+            if (!response.ok) throw new Error(`create failed: ${response.status}`);
+
+            return await response.json();
         } catch (error) {
             console.error('Failed to create session:', error);
             this.showError('Failed to create session');
+            return null;
         }
+    }
+
+    // Give a freshly created session a tab and switch to it.
+    async attachSessionTab(sessionId, name, workingDir) {
+        if (this.sessionTabManager) {
+            this.sessionTabManager.addTab(sessionId, name, 'idle', workingDir);
+            // switchToTab will handle joining the session
+            await this.sessionTabManager.switchToTab(sessionId);
+        } else {
+            // No tab manager, join directly
+            await this.joinSession(sessionId);
+        }
+        this.loadSessions();
+    }
+
+    // Toolbar history entry (conversations.js): open a recorded conversation in
+    // a new tab, resumed. Returns false when the server refused, so the caller
+    // can put its list back up.
+    async openConversationInTab(conv, dir) {
+        const workingDir = dir || this.currentWorkingDir || this.selectedWorkingDir;
+        if (!workingDir) {
+            this.showToast('No folder selected', true);
+            return false;
+        }
+        const name = this.conversationName(conv);
+        const created = await this.requestSession({ name, workingDir, resumeId: conv.id });
+        if (!created) return false;
+        await this.attachSessionTab(created.sessionId, name, workingDir);
+        return true;
     }
     
     setupPlanDetector() {

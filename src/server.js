@@ -9,6 +9,7 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
+const claudeHistory = require('./utils/claude-history');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
 
@@ -438,62 +439,15 @@ class ClaudeCodeWebServer {
       res.json({ sessions: sessionList });
     });
 
-    // Create a new session
-    this.app.post('/api/sessions/create', (req, res) => {
-      const { name, workingDir } = req.body;
-      const sessionId = uuidv4();
-      
-      // Validate working directory if provided
-      let validWorkingDir = this.baseFolder;
-      if (workingDir) {
-        const validation = this.validatePath(workingDir);
-        if (!validation.valid) {
-          return res.status(403).json({ 
-            error: validation.error,
-            message: 'Cannot create session with working directory outside the allowed area' 
-          });
-        }
-        validWorkingDir = validation.path;
-      } else if (this.selectedWorkingDir) {
-        validWorkingDir = this.selectedWorkingDir;
-      }
-      
-      const session = {
-        id: sessionId,
-        name: name || `Session ${new Date().toLocaleString()}`,
-        created: new Date(),
-        lastActivity: new Date(),
-        active: false,
-        workingDir: validWorkingDir,
-        planDirs: [], // per-session extra plan directories (additive to global + auto-discovery)
-        connections: new Set(),
-        // Flow control: connections that have asked us to pause the PTY (slow
-        // renderer). The PTY stays paused while any connection is in this set.
-        pausedConnections: new Set(),
-        flowResumeTimer: null,
-        outputBuffer: [],
-        maxBufferSize: this.maxBufferSize()
-      };
-      
-      this.claudeSessions.set(sessionId, session);
-      
-      // Save sessions after creating new one
-      this.saveSessionsToDisk();
-      
-      if (this.dev) {
-        console.log(`Created new session: ${sessionId} (${session.name})`);
-      }
-      
-      res.json({ 
-        success: true,
-        sessionId,
-        session: {
-          id: sessionId,
-          name: session.name,
-          workingDir: session.workingDir
-        }
-      });
-    });
+    // Create a new session. Optionally bound to an existing Claude conversation
+    // (`resumeId`) picked from the history list — see createSession.
+    this.app.post('/api/sessions/create',
+      ClaudeCodeWebServer.asyncRoute((req, res) => this.createSession(req, res)));
+
+    // Conversations Claude has already recorded for a directory, so a new tab
+    // can continue one instead of always starting empty. Read-only, header auth.
+    this.app.get('/api/claude-sessions',
+      ClaudeCodeWebServer.asyncRoute((req, res) => this.listClaudeConversations(req, res)));
 
     // Get session details
     this.app.get('/api/sessions/:sessionId', (req, res) => {
@@ -1067,6 +1021,124 @@ class ClaudeCodeWebServer {
     }
   }
 
+  // POST /api/sessions/create — the REST twin of createAndJoinSession.
+  //
+  // With `resumeId` the new session takes that id as its OWN id, because the
+  // cc-web session id IS the Claude conversation id (`--session-id` on the first
+  // start, `--resume` on every one after — see claude-bridge). Marking it
+  // already-started is therefore the whole of "continue this conversation": the
+  // first start resumes it, every later start (a restart included) resumes it
+  // again, and everything said from now on is appended to that transcript.
+  async createSession(req, res) {
+    const { name, workingDir, resumeId } = req.body || {};
+
+    let validWorkingDir = this.baseFolder;
+    if (workingDir) {
+      const validation = this.validatePath(workingDir);
+      if (!validation.valid) {
+        return res.status(403).json({
+          error: validation.error,
+          message: 'Cannot create session with working directory outside the allowed area'
+        });
+      }
+      validWorkingDir = validation.path;
+    } else if (this.selectedWorkingDir) {
+      validWorkingDir = this.selectedWorkingDir;
+    }
+
+    let sessionId = uuidv4();
+    let resumed = false;
+    if (resumeId !== undefined && resumeId !== null && resumeId !== '') {
+      if (!claudeHistory.UUID.test(String(resumeId))) {
+        return res.status(400).json({ error: 'Invalid conversation id' });
+      }
+      // One conversation, one tab: two Claude processes resuming the same
+      // transcript would interleave writes into it. The list greys these out;
+      // this is the check that holds when another device got there first.
+      if (this.claudeSessions.has(resumeId)) {
+        return res.status(409).json({
+          error: 'Conversation already open',
+          message: 'That conversation is already open in another tab.',
+          sessionId: resumeId
+        });
+      }
+      // `--resume` only finds a conversation recorded in the same directory, so
+      // a mismatch here would surface later as a failed start.
+      if (!(await claudeHistory.hasConversation(validWorkingDir, resumeId))) {
+        return res.status(404).json({
+          error: 'Conversation not found',
+          message: 'No Claude conversation with that id in this directory.'
+        });
+      }
+      sessionId = resumeId;
+      resumed = true;
+    }
+
+    const session = {
+      id: sessionId,
+      name: name || `Session ${new Date().toLocaleString()}`,
+      created: new Date(),
+      lastActivity: new Date(),
+      active: false,
+      workingDir: validWorkingDir,
+      planDirs: [], // per-session extra plan directories (additive to global + auto-discovery)
+      // Claude has been started under this id before — by us, or (when resuming
+      // a conversation from the history list) by whoever recorded it.
+      claudeStarted: resumed,
+      // A conversation the user explicitly picked. It must never silently fall
+      // back to a fresh launch: that would leave the tab looking resumed while
+      // holding an empty conversation. See startClaude / claude-bridge.
+      resumedConversation: resumed,
+      connections: new Set(),
+      // Flow control: connections that have asked us to pause the PTY (slow
+      // renderer). The PTY stays paused while any connection is in this set.
+      pausedConnections: new Set(),
+      flowResumeTimer: null,
+      outputBuffer: [],
+      maxBufferSize: this.maxBufferSize()
+    };
+
+    this.claudeSessions.set(sessionId, session);
+    this.saveSessionsToDisk();
+
+    if (this.dev) {
+      console.log(`Created new session: ${sessionId} (${session.name})${resumed ? ' [resuming]' : ''}`);
+    }
+
+    res.json({
+      success: true,
+      sessionId,
+      resumed,
+      session: {
+        id: sessionId,
+        name: session.name,
+        workingDir: session.workingDir,
+        resumedConversation: resumed
+      }
+    });
+  }
+
+  // GET /api/claude-sessions?dir= — conversations Claude has recorded for a
+  // directory, newest first, each flagged with whether a tab already holds it.
+  async listClaudeConversations(req, res) {
+    const dirParam = ClaudeCodeWebServer.singleQueryValue(req.query.dir);
+    if (!dirParam.ok) return res.status(400).json({ error: 'Invalid dir parameter' });
+
+    let dir = dirParam.value || this.selectedWorkingDir || this.baseFolder;
+    const validation = this.validatePath(dir);
+    if (!validation.valid) return res.status(403).json({ error: validation.error });
+    dir = validation.path;
+
+    const conversations = await claudeHistory.listConversations(dir, { limit: 50 });
+    res.json({
+      dir,
+      conversations: conversations.map(c => ({
+        ...c,
+        openInTab: this.claudeSessions.has(c.id)
+      }))
+    });
+  }
+
   async createAndJoinSession(wsId, name, workingDir) {
     const wsInfo = this.webSocketConnections.get(wsId);
     if (!wsInfo) return;
@@ -1268,6 +1340,10 @@ class ClaudeCodeWebServer {
         // before (bound to this session id via --session-id). Survives server
         // restarts / dead PTYs instead of starting a brand-new conversation.
         resume: !!session.claudeStarted,
+        // A conversation the user picked from the history list must not quietly
+        // become a new empty one when --resume fails: the tab would claim to be
+        // continuing a conversation it is not. Fail loudly instead.
+        allowFreshFallback: !session.resumedConversation,
         // Spawn the PTY at the client's real terminal size so the program uses
         // the full width. Without this it defaults to 80 cols and wide screens
         // show a blank strip on the right. (Falls back to the bridge default.)

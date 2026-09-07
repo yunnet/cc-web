@@ -106,6 +106,10 @@ class SessionStore {
             // --session-id). Lets a restart resume the conversation instead of
             // starting fresh.
             claudeStarted: !!session.claudeStarted,
+            // Bound to a conversation the user picked from the history list.
+            // Persisted so a restart still refuses to fall back to a fresh
+            // launch under that id — see server.startClaude.
+            resumedConversation: !!session.resumedConversation,
             outputBuffer: Array.isArray(session.outputBuffer)
                 ? session.outputBuffer.slice(-this.maxOutputChunks)
                 : [],

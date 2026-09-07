@@ -131,6 +131,41 @@ describe('ClaudeBridge', function() {
     });
   });
 
+  describe('looksLikeTrustPrompt', function() {
+    it('matches the old wording', function() {
+      assert.strictEqual(
+        ClaudeBridge.looksLikeTrustPrompt('Do you trust the files in this folder?'),
+        true
+      );
+    });
+
+    // Verbatim from a captured PTY stream (v2.1.247). Every word carries its own
+    // cursor-column escape, so with the escapes gone the words run together —
+    // which is why a substring match on the sentence found nothing and new
+    // sessions sat on the prompt.
+    it('matches the real stream, where each word is cursor-positioned', function() {
+      const real =
+        '\u001b[2GQuick\u001b[8Gsafety\u001b[15Gcheck:\u001b[22GIs\u001b[25Gthis\u001b[30Ga' +
+        '\u001b[32Gproject\u001b[40Gyou\u001b[44Gcreated\u001b[52Gor\u001b[55Gone\u001b[59Gyou' +
+        '\u001b[63Gtrust?\r\r\n';
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt(real), true);
+    });
+
+    it('matches the accept option in the same shape', function() {
+      const option =
+        '\u001b[2G\u001b[38;2;87;105;247m\u276f\u001b[4G\u001b[38;2;102;102;102m1.' +
+        '\u001b[7G\u001b[38;2;87;105;247mYes,\u001b[12GI\u001b[14Gtrust\u001b[20Gthis' +
+        '\u001b[25Gfolder\u001b[39m';
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt(option), true);
+    });
+
+    it('does not fire on ordinary output', function() {
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt('Reply with one word: PINEAPPLE7'), false);
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt(''), false);
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt(undefined), false);
+    });
+  });
+
   describe('clearEmptyTranscript', function() {
     // The id is interpolated into paths this deletes — one of them recursively,
     // inside the user's home. Anything that isn't a uuid must be refused before
