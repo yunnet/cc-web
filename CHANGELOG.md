@@ -32,6 +32,61 @@
   The timeout now walks `/proc/<pid>/task/*/children` and kills exactly that
   tree, deepest first. Measured: four processes killed, none left, caller alive.
 
+## [4.5.0] - 2026-09-07
+
+### Added
+- **Upload files into the folder the explorer is showing.** A button in the path
+  bar and a drop onto the listing. The button is not redundant: a phone has no
+  drag source, so dropping alone would have shipped a desktop-only feature.
+
+  The directory is as unrestricted as browsing is, which puts the whole burden
+  on the filename — it must be a bare basename, so `name=../../.bashrc` cannot
+  reach past the directory on screen. Existing files are refused by the kernel
+  (`O_EXCL`), not by a stat-then-write check that could lose the race.
+
+- **The scrollback depth is configurable, default 500.** It used to be three
+  hard-coded numbers in two files — persist 100 chunks, replay 200, hold 1000 in
+  memory — and the smallest won. Measured against real sessions the median chunk
+  is 77-174 bytes, so 100 chunks came to 8-24 KB, much of it Claude's redraw
+  escapes rather than text. That is why a restart came back nearly empty.
+
+  One setting now drives all three. Replay is separately bounded at 512 KB
+  because it is sent on every reconnect, for every device: at the 5000 maximum
+  the payload measured ~1.75 MB, against 89 KB for the 200 it replaced.
+
+- **Settings shows the installed Claude Code version and what npm publishes.**
+  Display only. `claude --version` is 0.036s and the registry is 5.8s, so the
+  local one runs per request and the remote is cached for six hours — a failure
+  is deliberately not cached. Versions compare numerically: as strings, 2.1.9
+  sorts above 2.1.10.
+
+- **The mobile ESC/MODE buttons can be dragged out of the way.** Vertical is a
+  free drag, horizontal snaps to the nearer edge, and the position is stored per
+  browser as a side plus a ratio of viewport height, so a rotation lands it in
+  the same visual place. Settings has a reset that returns them to following
+  Claude's input box.
+
+### Fixed
+- **The light theme's input box rules and status line are visible again.** Third
+  attempt, and the first two failed for the same reason: no such value exists.
+  Claude's `light-ansi` theme double-books ANSI 7 — a foreground for the rules,
+  a background for the band behind your echoed message — and the two ratios are
+  locked together, `contrast(7,bg) x contrast(0,7) == contrast(0,bg)`. Both
+  compromises shipped were reported invisible.
+
+  `minimumContrastRatio` works on the rendered pair rather than the palette, so
+  ANSI 7 can be dark enough for the rules while the band it also paints is fixed
+  at draw time. Measured from rendered pixels: rules 3.73:1 -> 6.39:1.
+
+- **A session open on several devices no longer blinds all but the last to
+  join.** Every client forced the shared pty to its own size on join. Claude
+  draws its input box and status line at absolute row numbers, so a device with
+  fewer rows than the pty never rendered them — measured live at pty 49x250,
+  browser 45 rows, input box addressed at row 46 and the status line at row 49.
+
+  The smallest attached client now defines the canvas, the way tmux does it,
+  recomputed on join, resize and leave.
+
 ## [4.4.0] - 2026-09-04
 
 ### Changed
