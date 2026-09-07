@@ -26,6 +26,10 @@
   const ICONS = {
     chat: '<svg class="conv-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>',
     terminal: '<svg class="conv-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M13 15h4"/></svg>',
+    // Two explicit actions per session row. The switch action was originally
+    // only the row's own click; it is a button as well because "click the row"
+    // is invisible — nothing on screen says the row is a control.
+    enter: '<svg class="conv-act-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 5l7 7-7 7"/></svg>',
     trash: '<svg class="conv-act-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
   };
 
@@ -220,6 +224,22 @@
 
       const actions = document.createElement('div');
       actions.className = 'conv-actions';
+
+      // Not on the current tab: switching to where you already are is a button
+      // that does nothing, and one that looks enabled is worse than none.
+      if (!isActive) {
+        const go = document.createElement('button');
+        go.className = 'conv-act';
+        go.title = isTab ? 'Switch to this session' : 'Open this session in a tab';
+        go.setAttribute('aria-label', `${go.title}: ${session.name || session.id.slice(0, 8)}`);
+        go.appendChild(icon('enter'));
+        go.addEventListener('click', (e) => {
+          e.stopPropagation(); // the row click means the same thing; don't run it twice
+          this.openSession(session, isTab, dir);
+        });
+        actions.appendChild(go);
+      }
+
       const del = document.createElement('button');
       del.className = 'conv-act';
       del.title = 'Delete session';

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [4.6.1] - 2026-09-07
+
+### Changed
+- **Session rows carry an explicit switch button again.** The rewrite left
+  switching as the row's own click and only the trash as a visible control, so
+  the action was there but nothing on screen said so. The arrow is back beside
+  the trash — and only on rows that are not the current tab, since a button
+  that switches you to where you already are is one that looks enabled and
+  does nothing.
+
 ## [4.6.0] - 2026-09-07
 
 ### Added
