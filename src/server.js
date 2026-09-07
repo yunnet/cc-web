@@ -1028,16 +1028,12 @@ class ClaudeCodeWebServer {
           // Verify the session exists and the WebSocket is part of it
           const session = this.claudeSessions.get(wsInfo.claudeSessionId);
           if (session && session.connections.has(wsId)) {
-            // Only resize if Claude is actually running
-            if (session.active) {
-              try {
-                await this.claudeBridge.resize(wsInfo.claudeSessionId, data.cols, data.rows);
-              } catch (error) {
-                if (this.dev) {
-                  console.log(`Resize ignored - Claude not active in session ${wsInfo.claudeSessionId}`);
-                }
-              }
-            }
+            // Record what THIS client can display, then give the pty the
+            // largest canvas that fits inside every attached client. Applying
+            // this client's size directly is what let the last joiner win and
+            // pushed Claude's bottom rows off every other device.
+            this.recordClientSize(wsId, data.cols, data.rows);
+            await this.negotiatePtySize(session);
           }
         }
         break;
@@ -1174,6 +1170,10 @@ class ClaudeCodeWebServer {
       session.connections.delete(wsId);
       this.clearConnectionFlowControl(session, wsId);
       session.lastActivity = new Date();
+      // This client no longer constrains the canvas; the ones still attached
+      // may now fit something larger.
+      delete wsInfo.cols; delete wsInfo.rows;
+      await this.negotiatePtySize(session);
     }
 
     wsInfo.claudeSessionId = null;
@@ -1217,6 +1217,11 @@ class ClaudeCodeWebServer {
   }
 
   async startClaude(wsId, options, cols, rows, uiTheme) {
+    // start_claude carries this client's terminal size and is often the ONLY
+    // size it ever sends — a client that creates a session and never resizes
+    // would otherwise be invisible to the negotiation, and a bigger client
+    // joining later would grow the pty past what this one can display.
+    this.recordClientSize(wsId, cols, rows);
     const wsInfo = this.webSocketConnections.get(wsId);
     if (!wsInfo) return; // connection already gone — nobody to answer
     if (!wsInfo.claudeSessionId) {
@@ -1950,6 +1955,75 @@ class ClaudeCodeWebServer {
     return null;
   }
 
+  // --- Shared PTY size -------------------------------------------------------
+  // A session can be open on several devices at once, all attached to ONE pty.
+  // Each client used to force the pty to its own size on join, so the last one
+  // to arrive won and everyone else was left mismatched. That is not cosmetic:
+  // Claude draws its input box and status line at absolute row numbers, so a
+  // device whose terminal has fewer rows than the pty simply never renders
+  // them. Measured on a live install — pty 49x250, browser 45 rows, input box
+  // addressed at row 46 and the status line at row 49, both invisible.
+  //
+  // The smallest attached client now defines the canvas, the way tmux does it.
+  // Everyone can see everything; the cost is that a desktop sharing a session
+  // with a phone gets phone-sized, which beats one of the two going blind.
+
+  // A client's terminal size, remembered per connection. Rejects anything that
+  // is not a usable pair, because a zero or a string would silently collapse
+  // the canvas for every other device on the session.
+  recordClientSize(wsId, cols, rows) {
+    const wsInfo = this.webSocketConnections.get(wsId);
+    if (!wsInfo) return false;
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) return false;
+    wsInfo.cols = cols;
+    wsInfo.rows = rows;
+    return true;
+  }
+
+  // The largest canvas that fits inside every attached client. Connections that
+  // have not reported a size yet are skipped rather than counted as zero — a
+  // client exists from the moment it joins, but its size arrives a beat later.
+  effectivePtySize(session) {
+    if (!session || !session.connections) return null;
+    let cols = Infinity, rows = Infinity;
+    for (const wsId of session.connections) {
+      const info = this.webSocketConnections.get(wsId);
+      if (!info || !Number.isInteger(info.cols) || !Number.isInteger(info.rows)) continue;
+      cols = Math.min(cols, info.cols);
+      rows = Math.min(rows, info.rows);
+    }
+    if (!isFinite(cols) || !isFinite(rows)) return null;
+    return { cols, rows };
+  }
+
+  // Apply the negotiated size. A no-op when nothing changed: Claude repaints its
+  // entire UI on resize, so re-sending the same size on every join would make
+  // one device's reconnect flicker every other device.
+  async negotiatePtySize(session) {
+    if (!session || !session.active) return null;
+    const size = this.effectivePtySize(session);
+    if (!size) return null;
+    if (session.ptyCols === size.cols && session.ptyRows === size.rows) return size;
+    session.ptyCols = size.cols;
+    session.ptyRows = size.rows;
+    try {
+      await this.claudeBridge.resize(session.id, size.cols, size.rows);
+    } catch (error) {
+      if (this.dev) console.log(`Resize failed for ${session.id}: ${error.message}`);
+    }
+    return size;
+  }
+
+  // Forget a client's size and re-negotiate, so closing the phone gives the
+  // desktop its full canvas back instead of leaving it stuck small.
+  async detachClientSize(wsId) {
+    const wsInfo = this.webSocketConnections.get(wsId);
+    const sessionId = wsInfo && wsInfo.claudeSessionId;
+    if (wsInfo) { delete wsInfo.cols; delete wsInfo.rows; }
+    const session = sessionId ? this.claudeSessions.get(sessionId) : null;
+    if (session) await this.negotiatePtySize(session);
+  }
+
   // --- Claude Code version ---------------------------------------------------
   // Which Claude the sessions actually run, and what npm is publishing. Display
   // only: nothing here upgrades anything.
@@ -2255,6 +2329,10 @@ class ClaudeCodeWebServer {
         session.connections.delete(wsId);
         this.clearConnectionFlowControl(session, wsId);
         session.lastActivity = new Date();
+        // Same as leaving by hand: a device that dropped off should not keep
+        // holding the canvas small for the ones still watching.
+        delete wsInfo.cols; delete wsInfo.rows;
+        this.negotiatePtySize(session);
 
         // Don't stop Claude if other connections exist
         if (session.connections.size === 0 && this.dev) {
