@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [4.6.2] - 2026-09-08
+
+### Fixed
+- **The sessions list scrolls as one region instead of two.** Reported as the
+  wheel feeling heavy in the panel. It was: the list carried its own height cap
+  while the dialog also scrolled, so on a short window the wheel ran the list to
+  its end, chained to the dialog, then to the page — nothing on screen says
+  which layer is about to move. On a tall window the opposite: the list stopped
+  growing at 460px while the dialog still had room, so 8 of 14 rows showed
+  through a porthole in a half-empty box.
+
+  The dialog is the fixed frame now and the list is the only thing that
+  scrolls, taking whatever height is left. Measured at both 900px and 493px
+  window heights: one scroll region, dialog inside the viewport, page still.
+
 ## [4.6.1] - 2026-09-07
 
 ### Changed

@@ -3109,3 +3109,46 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     .conv-list { max-height: 46vh; }
     .session-mode-btn { padding: 11px 8px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Sessions panel scrolling (#conversationsModal)
+
+   Self-contained and scoped to this one dialog, like the blocks above: the
+   generic .modal-content rules are shared by every modal in the app.
+
+   Two problems, one cause — the list carried its own height cap while the
+   dialog also scrolled:
+
+   1. On a short window both were scrollable at once. The wheel scrolled the
+      list to its end, then chained to the dialog, then to the page. Nested
+      scroll regions are what "heavy" feels like: nothing tells you which
+      layer is about to move.
+   2. On a tall window the list stopped growing at 460px while the dialog
+      still had room, so you scanned 8 rows through a porthole in a
+      half-empty box.
+
+   The dialog is now the fixed frame and the list is the only thing that
+   scrolls, taking whatever height is left after the header, the folder line
+   and the footer. `min-height: 0` is load-bearing: without it a flex child
+   refuses to shrink below its content and the list would push the dialog
+   past the viewport instead of scrolling.
+   --------------------------------------------------------------------------- */
+
+#conversationsModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;          /* the dialog itself never scrolls */
+}
+
+#conversationsModal .modal-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+}
+
+#conversationsModal #conversationsList {
+    flex: 1;
+    min-height: 120px;         /* still usable when the window is very short */
+    max-height: none;          /* the dialog's own height is the cap now */
+}
