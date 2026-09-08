@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [4.6.4] - 2026-09-08
+
+### Fixed
+- **Creating a session no longer creates one per click.** Reported from the dev
+  instance as "it keeps creating tabs". The dialog stayed open and its button
+  stayed live until the POST came back, so a second click landed inside that
+  window and was a second session and a second tab. Reproduced in a browser:
+  three clicks, three sessions on disk, three tabs — and the same signature was
+  on the dev instance, five `cc-web` sessions created three seconds apart.
+
+  The button now disables and reads "Creating…" for the duration, and an
+  in-flight flag closes the gap before the button can even repaint. Released in
+  a `finally` so a refused create — a conversation already open in another tab —
+  does not leave a dead button behind.
+
 ## [4.6.3] - 2026-09-08
 
 ### Fixed

@@ -2844,16 +2844,39 @@ class ClaudeCodeWebInterface {
         }
         const resumeId = resuming ? this.selectedConversation.id : undefined;
 
-        const created = await this.requestSession({ name, workingDir, resumeId });
-        if (!created) {
-            // Refused (already open elsewhere, or gone). The list is stale, so
-            // redraw it rather than leaving the dead row selected.
-            if (resuming) this.setNewSessionMode('resume');
-            return;
+        // Every click while the request is in flight used to create another
+        // session: the dialog stays open and the button stays live until the
+        // POST comes back, so an impatient second click is a second session and
+        // a second tab. Measured: three clicks, three sessions.
+        if (this._creatingSession) return;
+        this._creatingSession = true;
+        const createBtn = document.getElementById('createSessionBtn');
+        const createLabel = createBtn ? createBtn.textContent : '';
+        if (createBtn) {
+            createBtn.disabled = true;
+            createBtn.textContent = resuming ? 'Resuming…' : 'Creating…';
         }
 
-        this.hideNewSessionModal();
-        await this.attachSessionTab(created.sessionId, name, workingDir);
+        try {
+            const created = await this.requestSession({ name, workingDir, resumeId });
+            if (!created) {
+                // Refused (already open elsewhere, or gone). The list is stale, so
+                // redraw it rather than leaving the dead row selected.
+                if (resuming) this.setNewSessionMode('resume');
+                return;
+            }
+
+            this.hideNewSessionModal();
+            await this.attachSessionTab(created.sessionId, name, workingDir);
+        } finally {
+            // Always restored, including on the refusal path above: a dialog
+            // left with a dead button is worse than the duplicate it prevents.
+            this._creatingSession = false;
+            if (createBtn) {
+                createBtn.disabled = false;
+                createBtn.textContent = createLabel;
+            }
+        }
     }
 
     // POST /api/sessions/create, with the resume-specific failures spelled out.
