@@ -1519,6 +1519,51 @@ class ClaudeCodeWebInterface {
     // agents" hint line) ends up hidden behind the keyboard. Driving the height
     // from visualViewport.height makes the terminal shrink exactly like a native
     // terminal window does, keeping that last line visible above the keyboard.
+    // Turn the terminal's frame into a short scrolling window while a soft
+    // keyboard is up, instead of resizing the terminal. Returns true when the
+    // caller should skip its normal re-fit.
+    //
+    // Desktop never enters this: there is no keyboard to hide behind, and the
+    // frame must stay a plain flex child so FitAddon measures the real height.
+    applyKeyboardMode() {
+        const container = document.querySelector('.terminal-container');
+        const term = this.terminal;
+        if (!container || !term || !term.element) return false;
+
+        const vv = window.visualViewport;
+        const open = this.isMobile && vv && typeof VIEWPORT !== 'undefined' &&
+            VIEWPORT.isKeyboardOpen(
+                { width: window.innerWidth, height: window.innerHeight },
+                { width: vv.width, height: vv.height });
+
+        if (!open) {
+            if (this._keyboardMode) {
+                this._keyboardMode = false;
+                container.classList.remove('kb-open');
+                container.style.removeProperty('height');
+                term.element.style.removeProperty('height');
+            }
+            return false;
+        }
+
+        // The grid keeps whatever height its current rows need; the frame is cut
+        // down to what the keyboard leaves, and scrolled to the end.
+        const screen = term.element.querySelector('.xterm-screen');
+        const gridHeight = screen ? screen.getBoundingClientRect().height : 0;
+        if (gridHeight > 0) term.element.style.height = `${Math.round(gridHeight)}px`;
+
+        const top = container.getBoundingClientRect().top;
+        const visibleBottom = (vv.offsetTop || 0) + vv.height;
+        container.style.height = `${Math.max(80, Math.round(visibleBottom - top))}px`;
+        container.classList.add('kb-open');
+        this._keyboardMode = true;
+
+        // Park at the end so the input box and status line are the part on
+        // screen — that is the whole point of keeping the grid tall.
+        container.scrollTop = container.scrollHeight;
+        return true;
+    }
+
     setupViewportSizing() {
         const vv = window.visualViewport;
 
@@ -1535,6 +1580,23 @@ class ClaudeCodeWebInterface {
             if (refitTimer) return;
             refitTimer = requestAnimationFrame(() => {
                 refitTimer = null;
+
+                // A soft keyboard must not re-fit. Re-fitting sends the shrunken
+                // row count to the pty and Claude re-lays-out its whole UI for
+                // it: measured on a phone, 38 rows became 21, leaving a 14-row
+                // content area, so replies scrolled away after a dozen lines and
+                // every keyboard open/close broke the history in half.
+                //
+                // Instead the terminal keeps its size and the frame around it
+                // becomes a short scrolling window onto it, parked at the bottom
+                // so the input box and status line sit just above the keyboard.
+                // (xterm itself clips rather than scrolls when its container is
+                // too short — verified — so the scroll has to be on the frame.)
+                if (this.applyKeyboardMode()) {
+                    this.positionModeSwitcher();
+                    return;
+                }
+
                 this.fitTerminal();
                 // Keep pinned to the bottom so Claude's freshly-reflowed bottom UI
                 // stays in view after the viewport changes.
