@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [4.6.3] - 2026-09-08
+
+### Fixed
+- **Claude re-lays-out its UI whenever a client joins a session.** It draws the
+  input box and the status line at the LAST rows of the pty, so a device that
+  joins with a different row count than Claude last laid out for sees nothing
+  there — the recurring "the input box border and the status bar are gone".
+
+  Asking Claude to redraw would not help: it would repaint from the same stale
+  idea of the size. The join now nudges the pty one row down and back, which is
+  two SIGWINCHes and forces the recompute. Deferred 300ms past the join so the
+  client's own size has landed first, and coalesced, because reconnects arrive
+  in bursts and each one would otherwise repaint the whole UI.
+
+  Verified against a live Claude process by watching the kernel's idea of the
+  pty size during a join: 40 rows to 39 and back.
+
 ## [4.6.2] - 2026-09-08
 
 ### Fixed
