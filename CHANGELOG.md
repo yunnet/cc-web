@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-09-09
+
+### Changed
+- **A soft keyboard no longer resizes the terminal.** Opening the keyboard on a
+  phone shrank the viewport, which re-fitted the terminal, which sent the new
+  row count to the pty — and Claude re-laid-out its whole UI for it. Measured on
+  a phone: 38 rows became 21, and since Claude reserves about 7 rows for its own
+  chrome that left a 14-row content area. Replies scrolled away after a dozen
+  lines and every keyboard open/close broke the history in half.
+
+  The terminal now keeps its size and the frame around it becomes a short
+  scrolling window onto it, parked at the bottom so the input box and the status
+  line sit just above the keyboard. Reading keeps the full content area; typing
+  keeps the input box in view; the pty is never resized, so Claude never
+  re-lays-out and the history stays continuous.
+
+  Two things had to be established first, both by measurement rather than
+  reasoning. xterm clips rather than scrolls when its own container is too short
+  — its viewport never becomes scrollable and the last rows, where the input box
+  lives, are simply unreachable — so the scroll has to be on the frame outside
+  it. And a rotation must still re-fit, which is why the detector keys on the
+  width being unchanged: a keyboard never changes it, a rotation always does.
+
 ## [4.6.4] - 2026-09-08
 
 ### Fixed

@@ -3152,3 +3152,39 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     min-height: 120px;         /* still usable when the window is very short */
     max-height: none;          /* the dialog's own height is the cap now */
 }
+
+/* ---------------------------------------------------------------------------
+   Soft keyboard: scroll the frame, don't resize the terminal (.kb-open)
+
+   Self-contained, like the blocks above and for the same reason.
+
+   Re-fitting the terminal for a keyboard sends the shrunken row count to the
+   pty, and Claude re-lays-out its whole UI for it — measured on a phone, 38
+   rows became 21, which left a 14-row content area, so replies scrolled away
+   after a dozen lines and every keyboard open/close split the history.
+
+   So the grid keeps its size and this frame becomes a short window onto it,
+   parked at the bottom. The scroll has to live here rather than inside xterm:
+   xterm clips instead of scrolling when its own container is too short —
+   verified, its viewport never becomes scrollable and the last rows are simply
+   unreachable, which is where the input box lives.
+
+   Only ever applied on a phone, and removed the moment the keyboard closes;
+   with it off the frame is a plain flex child again, so FitAddon keeps
+   measuring the true available height.
+   --------------------------------------------------------------------------- */
+
+.terminal-container.kb-open {
+    overflow-y: auto;
+    /* Do not let the frame hand its scroll on to the page when it hits an end:
+       chaining out to the document is what makes a nested scroll feel sticky,
+       and on iOS it drags the whole page out from under the keyboard. */
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* The inner wrapper's `flex: 1` would fight the frame's fixed height and
+   squeeze the grid back down; while scrolling it must take its natural size. */
+.terminal-container.kb-open .terminal-wrapper {
+    flex: none;
+}
