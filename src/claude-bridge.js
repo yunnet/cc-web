@@ -119,8 +119,26 @@ class ClaudeBridge {
         COLORTERM: 'truecolor',
         // Force synchronized output (DEC mode 2026): xterm 6.0 supports it, so
         // Claude wraps each frame in BSU/ESU and repaints atomically — no
-        // stream flicker/tearing over the WebSocket.
+        // stream flicker/tearing over the WebSocket. Orthogonal to the renderer
+        // choice below: this is about how a frame is delivered, not where it is
+        // drawn.
         CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+        // Force the CLASSIC renderer. Claude's default is the fullscreen one,
+        // which draws on the terminal's ALTERNATE screen buffer the way vim
+        // does — and the alternate buffer has no scrollback by design. In a
+        // browser terminal that is fatal: there is nothing above the screen to
+        // scroll to, so history simply does not exist. Measured on a real
+        // claude process: the default emits zero newlines and enters the
+        // alternate buffer; with this set it stays in the main buffer and emits
+        // lines that land in scrollback. Anthropic's own docs put it plainly —
+        // "the classic renderer keeps the conversation in your terminal's
+        // native scrollback".
+        //
+        // The trade is more flicker and memory that grows with the
+        // conversation. Both are worth it here: scrolling back is the whole
+        // point of a terminal you read on a phone, and the client already
+        // coalesces writes per frame.
+        CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: '1',
         // Persist transcripts so --resume can restore the conversation.
         CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1'
       };

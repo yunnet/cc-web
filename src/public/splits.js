@@ -176,7 +176,7 @@ class Split {
             // Match the main terminal: Option/Alt as Meta for Claude Code shortcuts.
             macOptionIsMeta: true,
             // Match the main terminal's scrollback (default is only 1000).
-            scrollback: 10000,
+            scrollback: 50000,
             // Match the main terminal's scroll feel (user-configurable via
             // Settings; instant on mobile). Falls back to 100 if unavailable.
             smoothScrollDuration: (this.app && this.app.isMobile)

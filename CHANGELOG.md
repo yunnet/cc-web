@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-09-09
+
+### Changed
+- **The terminal has scrollback again: Claude now runs under its classic
+  renderer.** History was not being lost on the way to the browser — it was
+  never produced. Claude's default fullscreen renderer draws on the terminal's
+  *alternate* screen buffer, the way vim does, and that buffer has no scrollback
+  by design: there is nothing above the screen to scroll to. Measured on a real
+  claude process, the default emits **zero** newlines and enters the alternate
+  buffer (20 cursor-homes — pure in-place repaint); with
+  `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` it never enters it and emits 117
+  newlines that land in scrollback. In the browser the acceptance number went
+  from **0 scrollback rows in every previous version** to 0 → 25 → 50, growing
+  one prompt at a time, with the session's opening banner still reachable by
+  scrolling to the top. This is why the earlier attempts at this symptom could
+  not have worked — stripping the screen-clear produced 0 rows either way, and
+  the size negotiation and repaint nudge were treating symptoms.
+- Both terminals now keep **50000** lines of scrollback, up from 10000. Content
+  actually accumulates now, so the old ceiling was tight for a long session; the
+  cost is memory, which is the trade asked for by "don't limit how much I can
+  read".
+
+### Notes
+- The renderer is chosen from the spawn environment, so **an already-running
+  Claude keeps the old one** — each session's Claude has to be restarted (stop,
+  then start/resume) after upgrading. Restarting cc-web alone is not enough.
+- The classic renderer flickers more and grows in memory with the conversation,
+  and gives up in-app mouse support and PgUp/PgDn. On a phone, native scrolling
+  is what is used anyway, and being able to read history matters more than not
+  flickering.
+
 ## [4.7.0] - 2026-09-09
 
 ### Changed

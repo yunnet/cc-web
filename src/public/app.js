@@ -438,7 +438,7 @@ class ClaudeCodeWebInterface {
             // hairline colour and a band background.
             minimumContrastRatio: getTerminalContrast(),
             allowProposedApi: true,
-            scrollback: 10000,
+            scrollback: 50000,
             rightClickSelectsWord: false,
             allowTransparency: true,
             // Treat Option/Alt as Meta so Claude Code's Option shortcuts (e.g.
