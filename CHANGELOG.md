@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-09-09
+
+### Added
+- **cc-web ships its own Claude Code themes, so the input box border is finally
+  a colour we choose by name.** The light border and the status-line rule were
+  fixed a dozen times without sticking, because the only lever available was an
+  ANSI *slot* and Claude double-books ANSI 7 as both that border's foreground
+  and the background of your own message band — an identity that has no solution
+  in a single value. Claude supports naming the colour instead: a theme file in
+  `~/.claude/themes/` with a `base` preset plus `overrides` keyed by token,
+  selected with `theme: "custom:<slug>"` through the `--settings` channel cc-web
+  already used. Measured in the browser afterwards, the two rules around the
+  input box render at exactly `#57606a` and the auto-mode line at `#9a6700` —
+  the values cc-web asked for, not whatever a shared slot resolved to.
+  - Named: `promptBorder`, `warning`, `planMode`, `autoAccept`, `bashBorder`
+    (the input box border differs **by mode** — the auto mode most sessions run
+    in draws it as `warning`, so naming `promptBorder` alone would have looked
+    like the change did nothing), plus `subtle`, `inactive`, and
+    `userMessageBackground`.
+  - Every colour is asserted at ≥4.5:1 against its own background by a test, so
+    "invisible" now fails a test run instead of waiting to be noticed.
+  - Falls back to the previous built-in `light-ansi` / `dark` if the files cannot
+    be written. Not optional: naming a `custom:` theme that is not on disk does
+    not degrade gracefully — measured, Claude drops silently to the **dark**
+    preset, i.e. a dark theme on a white terminal.
+- **A newline key on mobile.** Enter submits, and a phone's soft keyboard has no
+  Shift+Enter or Alt+Enter to reach the existing newline binding, so writing a
+  two-line prompt on a phone was impossible. The floating stack gains a third
+  key, `↵`, sending LF (Ctrl+J) — Claude Code's own documented newline, which
+  works in every terminal with no setup. Verified on a phone-sized viewport:
+  tapping it leaves both lines in the input box, unsent.
+
+### Notes
+- The theme files are written at server start, before anything can spawn Claude:
+  Claude hot-reloads edits to `~/.claude/themes/`, but only notices the directory
+  at all if it existed when it started. Deliberately not done in the constructor,
+  so `npm test` cannot write into the real `~/.claude/themes/`.
+- The theme name is chosen when Claude is spawned, so a running session keeps the
+  old one until its Claude restarts.
+
 ## [4.8.1] - 2026-09-09
 
 ### Changed

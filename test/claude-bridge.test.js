@@ -102,7 +102,15 @@ describe('ClaudeBridge', function() {
   describe('theme injection', function() {
     // The browser terminal is the background Claude draws on, so Claude's theme
     // has to follow the UI's, not the user's global settings.json.
-    it('maps the UI theme to a Claude theme', function() {
+    //
+    // These now assert the FALLBACK, which is what this process sees: the custom
+    // themes are written by server.start(), which the tests never call, so
+    // themeForUi answers with the built-in presets. That is the safe half of the
+    // contract and worth pinning here — naming a `custom:` theme that is not on
+    // disk drops Claude to the dark preset, i.e. a dark theme on a white
+    // terminal. The custom path is covered in claude-theme.test.js against a
+    // temp HOME, so neither test writes into the real ~/.claude/themes/.
+    it('falls back to the built-in Claude themes when ours are not on disk', function() {
       assert.strictEqual(ClaudeBridge.themeForUi('light'), 'light-ansi');
       assert.strictEqual(ClaudeBridge.themeForUi('dark'), 'dark');
     });

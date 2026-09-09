@@ -212,6 +212,11 @@ class ClaudeCodeWebInterface {
                         title="Cycle permission mode (Shift+Tab)" aria-label="Cycle permission mode (Shift+Tab)">
                     <span class="fab-key">MODE</span>
                 </button>
+                <button id="newlineBtn" class="newline-btn" type="button"
+                        title="Insert a line break without sending"
+                        aria-label="Insert a line break without sending">
+                    <span class="fab-key fab-key-glyph">\u21b5</span>
+                </button>
             `;
             document.body.appendChild(modeSwitcher);
             this._fabPos = this.loadFabPosition();
@@ -227,6 +232,11 @@ class ClaudeCodeWebInterface {
             // Add event listener for escape button
             document.getElementById('escapeBtn').addEventListener('click', () => {
                 this.sendEscape();
+            });
+
+            // Add event listener for the newline button
+            document.getElementById('newlineBtn').addEventListener('click', () => {
+                this.sendNewline();
             });
         }
     }
@@ -378,6 +388,30 @@ class ClaudeCodeWebInterface {
         };
         sw.addEventListener('pointerup', end);
         sw.addEventListener('pointercancel', end);
+    }
+
+    // Insert a line break WITHOUT submitting. Enter submits, and a phone's soft
+    // keyboard has no Shift+Enter or Alt+Enter to reach the newline binding
+    // above (see the keydown handler) — so on a phone there was simply no way to
+    // write a two-line prompt. LF (0x0a, i.e. Ctrl+J) is Claude Code's own
+    // documented answer: it inserts a newline in EVERY terminal with no setup.
+    // Verified against a real claude: "AAAA" + LF + "BBBB" leaves both in the
+    // input box on separate lines, unsent.
+    //
+    // It must be '\n' and not '\r'. CR is Enter — the same button would then
+    // send the message, which is the opposite of what it says on it.
+    sendNewline() {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.send({ type: 'input', data: '\n' });
+        }
+
+        const btn = document.getElementById('newlineBtn');
+        if (btn) {
+            btn.classList.add('pressed');
+            setTimeout(() => {
+                btn.classList.remove('pressed');
+            }, 200);
+        }
     }
 
     sendEscape() {

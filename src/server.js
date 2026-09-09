@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const claudeHistory = require('./utils/claude-history');
+const claudeTheme = require('./utils/claude-theme');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
 
@@ -807,6 +808,17 @@ class ClaudeCodeWebServer {
   }
 
   async start() {
+    // Write cc-web's Claude themes before anything can spawn Claude — a spawn
+    // needs a WebSocket, which needs us listening, so start() is early enough.
+    // Deliberately NOT in the constructor: the tests build a server to call its
+    // handlers directly, and doing this there would write into the real
+    // ~/.claude/themes/ on every `npm test`.
+    //
+    // Claude hot-reloads edits to that directory, but only notices it at all if
+    // it existed when Claude started — created later, it takes one restart.
+    // Best-effort: themeForUi falls back to the built-in presets on failure.
+    claudeTheme.ensureThemes();
+
     let server;
     
     if (this.useHttps) {

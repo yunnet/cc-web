@@ -1,6 +1,7 @@
 const { spawn } = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const claudeTheme = require('./utils/claude-theme');
 
 class ClaudeBridge {
   constructor() {
@@ -409,8 +410,13 @@ class ClaudeBridge {
   // come from OUR palette, so contrast is ours to guarantee — see the light
   // palette in src/public/splits.js, where ANSI 7 (the input box rules) is held
   // at 6.39:1. Dark needs no such help, so it keeps the richer truecolor theme.
+  // Now delegated: cc-web ships its own theme files so the lines above can be
+  // named directly (`promptBorder`, `subtle`) instead of being reached at
+  // through an ANSI slot that Claude also uses for something else. Falls back to
+  // exactly the two built-ins described above when the files could not be
+  // written — see src/utils/claude-theme.js.
   static themeForUi(uiTheme) {
-    return uiTheme === 'light' ? 'light-ansi' : 'dark';
+    return claudeTheme.themeForUi(uiTheme);
   }
 
   buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '' } = {}) {

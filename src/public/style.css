@@ -2421,6 +2421,67 @@ pre, code {
     }
 }
 
+/* Third key in the stack: insert a line break without sending. Same 56px cap and
+   shadow as ESC and MODE — they are all keystroke buttons, and the ring colour
+   is what tells them apart. Blue here, so it reads as neither "stop" (red ESC)
+   nor "state change" (green MODE).
+
+   This one is drawn, not worded, and that is not a break with the pair above it:
+   the objection to icons was that Esc and mode-cycling have no honest glyph. A
+   line break does — U+21B5 is the arrow printed on the Return key of every
+   keyboard, so it is a key cap, the same as the words are. */
+.newline-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    background-color: var(--accent);
+    color: var(--fab-ink);
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    width: 56px;
+    height: 56px;
+}
+
+.newline-btn:hover {
+    filter: brightness(1.08);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(88, 166, 255, 0.2);
+}
+
+.newline-btn:active {
+    transform: translateY(0);
+}
+
+.newline-btn.pressed {
+    animation: newlineBtnPress 0.2s ease;
+}
+
+@keyframes newlineBtnPress {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(0.9);
+        background-color: var(--accent);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* A single glyph at the word size looks like a typo next to ESC and MODE, which
+   fill their caps with four characters. Size it to occupy the cap the way they
+   do. */
+.fab-key-glyph {
+    font-size: 24px;
+    font-weight: 600;
+}
+
 
 /* Commands UI removed */
 
