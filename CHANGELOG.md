@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [4.8.1] - 2026-09-09
+
+### Changed
+- **The renderer is now requested through Claude's own `tui` setting**, not only
+  the environment variable. `tui` is what the `/tui` command writes, so a cc-web
+  session now behaves exactly like a user who ran `/tui default` — same code
+  path, and with a choice on record Claude stops offering to switch to
+  fullscreen. It goes through the `--settings` channel cc-web already uses for
+  the theme and the plan-mode hook. Valid values are exactly
+  `["default","fullscreen"]`: `"default"` **is** the classic renderer, and it is
+  the only way to name it — there is no `"classic"` value.
+- Worth knowing where this problem came from: `~/.claude/settings.json` here
+  carries `"tui": "fullscreen"`, so the fullscreen renderer was a saved
+  preference, not a default. The injected setting overrides it for cc-web
+  sessions only and leaves the user's own terminal alone (`/tui default` fixes
+  that one).
+
+### Notes
+- `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` stays, and is not redundant: the
+  setting loses to a `/tui fullscreen` typed inside a cc-web tab, while the env
+  var beats even an explicit `"tui": "fullscreen"` (measured). Without it,
+  history would be one slash-command away from gone. The cost is that `/tui
+  fullscreen` is a no-op inside cc-web — deliberate, since the alternate screen
+  buffer has no scrollback to read.
+
 ## [4.8.0] - 2026-09-09
 
 ### Changed

@@ -21,6 +21,29 @@ describe('terminal renderer mode', function () {
       'the spawn env must force the classic renderer');
   });
 
+  it('asks for the classic renderer through Claude\'s own tui setting', function () {
+    // The supported route: `tui` is what `/tui` writes, and injecting it means a
+    // cc-web session behaves exactly like a user who ran `/tui default`. Values
+    // are exactly ["default","fullscreen"] — "default" IS classic, there is no
+    // "classic" value to pick. Measured: this overrides a global
+    // `"tui": "fullscreen"` in ~/.claude/settings.json.
+    const m = require('../src/claude-bridge.js');
+    const Bridge = m.ClaudeBridge || m;
+    const settings = Object.create(Bridge.prototype).buildInjectedSettings('sid', { uiTheme: 'light' });
+    assert.strictEqual(settings.tui, 'default');
+    // Injecting settings must not have cost us the ones already there.
+    assert.strictEqual(settings.preferredNotifChannel, 'terminal_bell');
+    assert.strictEqual(settings.theme, 'light-ansi');
+  });
+
+  it('keeps the env var as the backstop the setting cannot be', function () {
+    // The setting loses to a `/tui fullscreen` typed inside a cc-web tab; the
+    // env var beats even an explicit `"tui": "fullscreen"` (measured). Dropping
+    // it as "redundant" would put history one slash-command away from gone.
+    assert.ok(/CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN:\s*'1'/.test(BRIDGE));
+    assert.ok(/tui:\s*'default'/.test(BRIDGE), 'both layers must be present');
+  });
+
   it('keeps synchronized output', function () {
     // Orthogonal to the renderer: sync output is about how a frame is
     // delivered, not where it is drawn. Removing it while changing renderers

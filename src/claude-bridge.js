@@ -414,7 +414,19 @@ class ClaudeBridge {
   }
 
   buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '' } = {}) {
-    const settings = { preferredNotifChannel: 'terminal_bell' };
+    // `tui` is Claude's own renderer setting — the one `/tui` writes. Values are
+    // exactly ["default","fullscreen"]; "default" IS the classic renderer, and
+    // it is the only way to name it (there is no "classic" value). Injecting it
+    // here is the supported route: it goes through the same code path as a user
+    // who ran `/tui default`, it overrides a global `"tui": "fullscreen"` in
+    // ~/.claude/settings.json (measured), and because a choice is on record
+    // Claude stops offering to switch to fullscreen. The fullscreen renderer
+    // draws on the alternate screen buffer, which has no scrollback — fatal for
+    // a terminal you read in a browser. See CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN
+    // in the spawn env, which stays as the backstop: the setting alone loses to
+    // a `/tui fullscreen` typed inside a cc-web tab, the env var does not
+    // (measured: env var beats an explicit `"tui": "fullscreen"`).
+    const settings = { preferredNotifChannel: 'terminal_bell', tui: 'default' };
     if (uiTheme === 'light' || uiTheme === 'dark') {
       settings.theme = ClaudeBridge.themeForUi(uiTheme);
     }
