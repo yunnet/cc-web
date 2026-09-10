@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [4.11.1] - 2026-09-11
+
+### Fixed
+- **Typing on a phone hid the input box.** A regression from v4.11.0, reported
+  within the hour of deploying it.
+  - The soft-keyboard mode (v4.7.0) works by letting the grid stay tall and
+    turning the frame into a short scrolling window onto it, parked at the
+    bottom so the input box sits just above the keyboard. v4.11.0 gave every tab
+    its own terminal, stacked as `position: absolute` views — and an absolutely
+    positioned child contributes **no height to its parent**. So `#terminal`
+    collapsed, the frame had nothing to scroll, and the bottom of the grid — the
+    input box — was clipped away.
+  - While the keyboard is open the visible view goes back into normal flow and
+    carries its height again. The hidden views are `display: none`, so there is
+    nothing left to overlap and no reason to keep them positioned.
+  - Measured on a phone-sized viewport with the keyboard simulated: frame
+    **746px of content in a 395px window, scrollTop 351** (parked at the end) —
+    against **395 / 395, nothing to scroll** with the fix reverted. Screenshots
+    of both: the input box sits above the keyboard, or is gone entirely.
+
 ## [4.11.0] - 2026-09-10
 
 ### Changed

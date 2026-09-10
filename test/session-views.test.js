@@ -69,6 +69,17 @@ describe('per-tab terminals', function () {
     assert.ok(/\.terminal-view\s*\{[\s\S]*?display:\s*none/.test(CSS));
     assert.ok(/\.terminal-view\.active\s*\{[\s\S]*?display:\s*block/.test(CSS));
   });
+
+  it('lets the visible view carry its height again while the keyboard is open', function () {
+    // The stack is absolutely positioned, and an absolutely positioned child
+    // contributes no height to its parent. The soft-keyboard mode works by
+    // letting the grid grow taller than the frame and scrolling the frame — so
+    // with the views stacked, #terminal collapsed, the frame had nothing to
+    // scroll, and the bottom of the grid (where Claude draws the input box) was
+    // clipped away. Reported as "typing on my phone hides the input box".
+    assert.ok(/\.terminal-container\.kb-open\s+\.terminal-view\.active\s*\{[\s\S]*?position:\s*static/.test(CSS),
+      'the active view must leave the absolute stack while the keyboard is open');
+  });
 });
 
 describe('detach_size on the server', function () {

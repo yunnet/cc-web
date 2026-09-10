@@ -3267,3 +3267,17 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 #terminal {
     position: relative;
 }
+
+/* ...but an absolutely positioned child contributes NO height to its parent,
+   and the soft-keyboard mode above works precisely by letting the grid grow
+   taller than the frame and scrolling the frame. With the views stacked
+   absolutely, #terminal collapsed, the frame had nothing to scroll, and the
+   bottom of the grid — which is where Claude draws the input box — was simply
+   clipped away. That is the "I type on my phone and the input box disappears"
+   report.
+   So while the keyboard is open the visible view goes back into normal flow and
+   carries its height up again. The hidden views are display:none, so there is
+   nothing left to overlap with and no reason to keep them positioned. */
+.terminal-container.kb-open .terminal-view.active {
+    position: static;
+}
