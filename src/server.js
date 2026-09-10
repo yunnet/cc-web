@@ -15,6 +15,10 @@ const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
 
+// What the chunk-counted setting defaulted to, so an untouched old setting can
+// be told apart from a deliberate one on upgrade.
+const LEGACY_DEFAULT_CHUNKS = 500;
+
 class ClaudeCodeWebServer {
   constructor(options = {}) {
     this.port = options.port || 32352;
@@ -956,6 +960,16 @@ class ClaudeCodeWebServer {
 
       case 'leave_session':
         await this.leaveClaudeSession(wsId);
+        break;
+
+      // A client that is still attached but no longer on screen — a background
+      // tab. It keeps its session (so its terminal keeps filling) but stops
+      // voting on the size, because the pty runs at the MINIMUM across attached
+      // clients and a hidden view's stale size would pin the pty smaller than the
+      // window it is no longer in. detachClientSize has been here since v4.5.0
+      // with nothing calling it; this is the caller it was written for.
+      case 'detach_size':
+        await this.detachClientSize(wsId);
         break;
 
       case 'start_claude':
@@ -2262,8 +2276,19 @@ class ClaudeCodeWebServer {
   // is 77-174 bytes, so 5000 chunks is roughly 0.3-0.9 MB of PTY bytes and a
   // session file near 1-2 MB, rewritten by the 30s autosave. Higher starts
   // costing the whole server, since that write is on the shared event loop.
-  static SCROLLBACK_MIN = 50;
-  static SCROLLBACK_MAX = 5000;
+  // Retention is counted in BYTES, not chunks. A chunk is whatever one read off
+  // the pty returned, and most of them are Claude's redraw escapes: measured on
+  // a live session, 500 chunks came to 50 KB, of which only 136 chunks were
+  // distinct, and replaying the lot reconstructed 39 lines. Counted that way the
+  // setting could not express "keep a few megabytes" at all — 2 MB would have
+  // been twenty thousand chunks, four times the old maximum.
+  static SCROLLBACK_MIN = 256 * 1024;          // 256 KB
+  static SCROLLBACK_MAX = 16 * 1024 * 1024;    // 16 MB
+  static SCROLLBACK_DEFAULT = 2 * 1024 * 1024; // 2 MB
+
+  // What a chunk turned out to weigh, used only to carry an old chunk-counted
+  // setting over to the new unit rather than silently resetting it.
+  static LEGACY_BYTES_PER_CHUNK = 100;
 
   // A second, independent ceiling on what a RECONNECT sends. The chunk cap alone
   // is the wrong unit here: measured against real sessions, 5000 chunks is a
@@ -2287,10 +2312,23 @@ class ClaudeCodeWebServer {
   loadScrollbackChunks() {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.scrollbackFile(), 'utf8'));
-      const n = parsed && parsed.chunks;
-      if (Number.isInteger(n)) return ClaudeCodeWebServer.clampScrollback(n);
+      if (parsed && Number.isInteger(parsed.bytes)) {
+        return ClaudeCodeWebServer.clampScrollback(parsed.bytes);
+      }
+      // An older file counted chunks. Carry the intent across rather than drop
+      // the user's setting.
+      if (parsed && Number.isInteger(parsed.chunks)) {
+        // Someone who never touched the setting had the old default (500). That
+        // means "whatever you think is right", so give them the new default
+        // rather than converting it to 50 KB and clamping that to the minimum —
+        // which would quietly hand every existing install the SMALLEST history
+        // on upgrade, the opposite of the point.
+        if (parsed.chunks === LEGACY_DEFAULT_CHUNKS) return ClaudeCodeWebServer.SCROLLBACK_DEFAULT;
+        return ClaudeCodeWebServer.clampScrollback(
+          parsed.chunks * ClaudeCodeWebServer.LEGACY_BYTES_PER_CHUNK);
+      }
     } catch (_) { /* missing / unreadable / not JSON → default */ }
-    return SessionStore.DEFAULT_OUTPUT_CHUNKS;
+    return ClaudeCodeWebServer.SCROLLBACK_DEFAULT;
   }
 
   static clampScrollback(n) {
@@ -2298,18 +2336,21 @@ class ClaudeCodeWebServer {
                     Math.max(ClaudeCodeWebServer.SCROLLBACK_MIN, n));
   }
 
-  // The tail of a session's buffer to replay on join: at most the configured
-  // chunk count, and at most SCROLLBACK_REPLAY_MAX_BYTES of it. Walks back from
-  // the newest, because the newest is what someone reconnecting wants to see.
-  // Always yields at least one chunk — a single burst larger than the whole
-  // ceiling should arrive truncated-by-count, not as a blank terminal.
+  // The tail of a session's buffer to replay on join: as many of the newest
+  // chunks as fit in the configured retention size. This is what a browser gets
+  // after F5, when it has no terminal of its own left to keep — a live tab keeps
+  // its scrollback instead and never comes through here (see showSession).
+  //
+  // Counted in bytes because chunks are not a size: measured on a live session,
+  // 500 of them were 50 KB and rebuilt 39 lines. At the 2 MB default xterm
+  // absorbs the replay in about 270ms (measured: 2 MB / 19066 lines / 271ms;
+  // 8 MB / 76261 lines / 998ms), so a single replay stays comfortable.
   replaySlice(buffer) {
     if (!Array.isArray(buffer) || buffer.length === 0) return [];
-    const maxChunks = this.sessionStore.maxOutputChunks;
-    const limit = ClaudeCodeWebServer.SCROLLBACK_REPLAY_MAX_BYTES;
+    const limit = this.sessionStore.maxOutputChunks;
     let bytes = 0;
     let start = buffer.length;
-    while (start > 0 && buffer.length - start < maxChunks) {
+    while (start > 0) {
       const size = Buffer.byteLength(String(buffer[start - 1]));
       // `start < buffer.length` is the "unless it is the first one" clause: the
       // newest chunk is taken even if it alone busts the ceiling.
@@ -2324,7 +2365,13 @@ class ClaudeCodeWebServer {
   // to persist — memory that drops a chunk before the autosave runs would make
   // the setting a lie in the least visible way possible.
   maxBufferSize() {
-    return Math.max(1000, this.sessionStore.maxOutputChunks);
+    // Still a chunk count — it is what the live buffer is trimmed by — but sized
+    // from the byte budget so memory can actually hold what we intend to persist.
+    // Dropping a chunk before the autosave runs would make the setting a lie in
+    // the least visible way possible.
+    const chunks = Math.ceil(this.sessionStore.maxOutputChunks /
+                             ClaudeCodeWebServer.LEGACY_BYTES_PER_CHUNK);
+    return Math.max(1000, chunks);
   }
 
   // Apply a new depth everywhere it is already in play: the store, and every
@@ -2341,10 +2388,10 @@ class ClaudeCodeWebServer {
   // label its own input instead of hard-coding numbers that could drift.
   getScrollback(req, res) {
     res.json({
-      chunks: this.sessionStore.maxOutputChunks,
+      bytes: this.sessionStore.maxOutputChunks,
       min: ClaudeCodeWebServer.SCROLLBACK_MIN,
       max: ClaudeCodeWebServer.SCROLLBACK_MAX,
-      default: SessionStore.DEFAULT_OUTPUT_CHUNKS
+      default: ClaudeCodeWebServer.SCROLLBACK_DEFAULT
     });
   }
 
@@ -2353,9 +2400,16 @@ class ClaudeCodeWebServer {
   // will actually honour, not an error), but a non-integer is a 400: it means the
   // caller sent something we cannot interpret, and guessing would be worse.
   setScrollback(req, res) {
-    const chunks = (req.body || {}).chunks;
+    // `bytes` is the unit now; `chunks` is still accepted so an older page that
+    // has not been reloaded does not start getting 400s mid-session.
+    const body = req.body || {};
+    const chunks = Number.isInteger(body.bytes)
+      ? body.bytes
+      : (Number.isInteger(body.chunks)
+          ? body.chunks * ClaudeCodeWebServer.LEGACY_BYTES_PER_CHUNK
+          : body.bytes);
     if (!Number.isInteger(chunks)) {
-      return res.status(400).json({ error: 'chunks must be a whole number' });
+      return res.status(400).json({ error: 'bytes must be a whole number' });
     }
     const value = ClaudeCodeWebServer.clampScrollback(chunks);
     // Persist BEFORE applying. The other order left the running server on the
@@ -2368,7 +2422,7 @@ class ClaudeCodeWebServer {
     const tmp = `${target}.${process.pid}.tmp`;
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(tmp, JSON.stringify({ chunks: value }, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify({ bytes: value }, null, 2));
       fs.renameSync(tmp, target);
     } catch (error) {
       try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
@@ -2376,7 +2430,7 @@ class ClaudeCodeWebServer {
       return res.status(500).json({ error: 'Could not save the setting', message: error.message });
     }
     this.setScrollbackChunks(value);
-    res.json({ chunks: value });
+    res.json({ bytes: value });
   }
 
   // GET /api/plan-dirs?sessionId= — that session's own plan dirs, plus the global

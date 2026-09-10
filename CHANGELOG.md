@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-09-10
+
+### Changed
+- **Each tab keeps its own terminal, so switching tabs no longer throws the
+  history away.** Reported: inside one tab history scrolls back a long way, but
+  switch to another tab and back and only one screen is left.
+  - Switching used to call `joinSession()`, which reset the terminal and replayed
+    the server's buffer. The thousands of lines the browser had built up went in
+    that reset, and the replay could not put them back: the server keeps a
+    rolling window of raw chunks, and most chunks are Claude's in-place repaint
+    frames (measured on a live session: 500 chunks, only 136 distinct, rebuilding
+    to 39 lines).
+  - Now every open tab owns a terminal **and its own socket** — the shape
+    splits.js has used per pane since it was written, so the server already
+    handled several clients on different sessions. A background tab stays
+    connected and keeps filling; switching is only a question of which view is
+    visible. `this.terminal` / `this.socket` still mean "the one on screen", so
+    the rest of the client is unchanged.
+  - Measured on two live sessions: A at 167 lines / 122 scrollback → switch to B
+    → **back to A at 167 / 122**, unchanged, five switches running. With output
+    produced by A *while it was in the background*, coming back showed 174 / 129
+    — the new lines at the bottom, the old ones still above.
+  - A background view withdraws its pty size vote (`detach_size`). The pty runs
+    at the minimum across attached clients, so a hidden view holding a stale size
+    would pin it smaller than the window: measured, 168 → 218 columns on
+    enlarging the window with a background tab open. `detachClientSize` has been
+    in the server since v4.5.0 with nothing calling it; this is its caller.
+- **History retention is counted in megabytes, not "chunks".** A chunk is
+  whatever one read off the pty returned, so the old unit could not express the
+  thing being configured — 500 of them measured 50 KB. Default **2 MB**, range
+  256 KB – 16 MB, and the Settings panel now says MB. This is what an **F5** has
+  to rebuild from; a tab you merely switch away from keeps its own scrollback and
+  never comes through here.
+  - Measured: a fresh page load rebuilt the full history, earlier lines and all,
+    in ~60ms. xterm absorbs 2 MB / 19066 lines in 271ms and 8 MB / 76261 lines in
+    998ms, which is why the replay is sent in one go.
+  - An existing `{chunks: N}` settings file is migrated rather than reset. A file
+    holding the old *default* (500) is given the new default: converting it
+    literally would clamp to the 256 KB floor and hand every existing install the
+    smallest history possible on upgrade.
+
+### Notes
+- Keeping N terminals alive costs memory — a full 50000-line scrollback is on the
+  order of ten megabytes each. That is the trade for not losing history.
+- Session files on disk grow with the retention setting (~300 KB → ~2 MB each),
+  and `SessionStore.writeOne` rewrites a session's file whole on each autosave.
+- xterm 6 has **no** API for prepending to scrollback (checked: no `prepend`, no
+  `loadHistory`), so "scroll up to fetch older output" cannot be done inside the
+  terminal — it would need re-rendering from an earlier point, which jumps. What
+  is here instead is a bigger single replay.
+
 ## [4.10.0] - 2026-09-10
 
 ### Added

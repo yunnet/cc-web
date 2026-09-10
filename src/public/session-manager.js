@@ -824,7 +824,12 @@ class SessionTabManager {
         if (app && app.splitContainer && app.splitContainer.enabled) {
             await app.splitContainer.onTabSwitch(sessionId);
         } else {
-            await app.joinSession(sessionId);
+            // showSession, not joinSession: each tab owns a terminal that stays
+            // alive in the background, so switching is a matter of which one is
+            // visible. joinSession reset the terminal and replayed the server's
+            // buffer, which is what threw the scrollback away every time you came
+            // back to a tab.
+            await app.showSession(sessionId);
         }
         this.updateHeaderInfo(sessionId);
     }

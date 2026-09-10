@@ -454,12 +454,79 @@ class ClaudeCodeWebInterface {
         }
     }
 
+    // One terminal per open tab, kept alive in the background.
+    //
+    // Switching tabs used to run joinSession(), which reset the terminal and
+    // replayed the server's buffer — throwing away the thousands of lines of
+    // scrollback the browser had already built. That is why history vanished the
+    // moment you came back to a tab, and why it could not be replayed back: the
+    // server keeps a rolling window of raw chunks, and most of those chunks are
+    // Claude's in-place repaint frames (measured: 500 chunks, only 136 of them
+    // distinct, reconstructing to 39 lines).
+    //
+    // So the browser keeps what it has. Each session owns a terminal and its own
+    // socket — the shape splits.js has used per pane since it was written, so the
+    // server already handles several clients on different sessions — and
+    // switching tabs is only a question of which one is visible. A background
+    // view stays connected, so its scrollback keeps growing while you are away.
+    //
+    // `this.terminal`, `this.fitAddon` and `this.socket` keep meaning "the one on
+    // screen"; every other use of them in this file is unchanged.
     setupTerminal() {
+        // Backpressure watermarks. Shared thresholds, per-view counters: when a
+        // view's unrendered backlog passes HIGH we ask ITS pty to pause, and
+        // resume below LOW. (These lived inside the old single-terminal setup.)
+        this._flowHigh = 128 * 1024;
+        this._flowLow = 16 * 1024;
+
+        this.views = new Map();          // sessionId -> view
+        this.idleView = this.buildView(null);   // before any session is open
+        this.adoptView(this.idleView);
+        // Paste / drop images into the terminal. Bound to the host element, which
+        // outlives individual views, so it is wired once.
+        this.setupImagePaste();
+    }
+
+    // Point the app at a view. Everything downstream reads these three.
+    adoptView(view) {
+        this.activeView = view;
+        this.terminal = view.terminal;
+        this.fitAddon = view.fitAddon;
+        this.socket = view.socket;
+    }
+
+    // The host that all view elements live inside. `#terminal` used to BE the
+    // terminal; it is now the container holding one div per view.
+    terminalHost() {
+        return document.getElementById('terminal');
+    }
+
+    buildView(sessionId) {
+        const host = this.terminalHost();
+        const el = document.createElement('div');
+        el.className = 'terminal-view';
+        el.dataset.sessionId = sessionId || '';
+        host.appendChild(el);
+
+        const view = {
+            sessionId,
+            el,
+            socket: null,
+            // Per-view write batching and backpressure. These used to be app-level
+            // singletons; a background view rendering its own stream needs its own,
+            // or two sessions would share one queue and interleave.
+            writeQueue: [],
+            writeScheduled: false,
+            pendingBytes: 0,
+            flowPaused: false,
+            joined: false
+        };
+
         // Adjust font size for mobile devices
         const isMobile = this.detectMobile();
         const fontSize = isMobile ? 12 : 14;
-        
-        this.terminal = new Terminal({
+
+        const term = new Terminal({
             fontSize: fontSize,
             fontFamily: 'JetBrains Mono, Fira Code, Monaco, Consolas, monospace',
             // Theme-aware palette (light/dark) from splits.js:getTerminalTheme(),
@@ -485,7 +552,7 @@ class ClaudeCodeWebInterface {
             // itself with its own inertia, and animating each step there makes the
             // viewport lag behind the finger. Desktop value is user-configurable
             // via Settings (0 = instant / no damping).
-            smoothScrollDuration: isMobile ? 0 : this.loadSettings(this.currentClaudeSessionId).smoothScrollDuration,
+            smoothScrollDuration: isMobile ? 0 : this.loadSettings(sessionId).smoothScrollDuration,
             fastScrollModifier: 'shift',
             fastScrollSensitivity: 5,
             // Disable focus tracking to prevent ^[[I and ^[[O sequences
@@ -493,29 +560,28 @@ class ClaudeCodeWebInterface {
                 reportFocus: false
             }
         });
+        view.terminal = term;
 
-        this.fitAddon = new FitAddon.FitAddon();
-        this.webLinksAddon = new WebLinksAddon.WebLinksAddon();
-        
-        this.terminal.loadAddon(this.fitAddon);
-        this.terminal.loadAddon(this.webLinksAddon);
+        view.fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(view.fitAddon);
+        term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
         // Activate Unicode v11 width tables so emoji and box-drawing characters
         // measure the same width the native terminal gives them — otherwise
         // Claude Code's framed UI drifts out of alignment.
         try {
             if (window.Unicode11Addon) {
-                this.terminal.loadAddon(new Unicode11Addon.Unicode11Addon());
-                this.terminal.unicode.activeVersion = '11';
+                term.loadAddon(new Unicode11Addon.Unicode11Addon());
+                term.unicode.activeVersion = '11';
             }
         } catch (e) {
             console.warn('Unicode11 addon unavailable:', e);
         }
 
-        this.terminal.open(document.getElementById('terminal'));
+        term.open(el);
 
         // Make plan-file paths in output clickable (open the .md in a new tab).
-        registerPlanLinks(this.terminal, () => this.currentClaudeSessionId);
+        registerPlanLinks(term, () => view.sessionId || this.currentClaudeSessionId);
 
         // Renderer (must load after open()). Prefer WebGL — it's markedly faster
         // than canvas/DOM under Claude Code's heavy full-screen repaints, which is
@@ -523,12 +589,12 @@ class ClaudeCodeWebInterface {
         // canvas, then the built-in DOM renderer. If the GPU drops the WebGL
         // context mid-session, dispose it and fall back so the terminal keeps
         // rendering instead of freezing.
-        this.activeRenderer = 'dom';
+        view.renderer = 'dom';
         const loadCanvasRenderer = () => {
             try {
                 if (window.CanvasAddon) {
-                    this.terminal.loadAddon(new CanvasAddon.CanvasAddon());
-                    this.activeRenderer = 'canvas';
+                    term.loadAddon(new CanvasAddon.CanvasAddon());
+                    view.renderer = 'canvas';
                 }
             } catch (e) {
                 console.warn('Canvas renderer unavailable, using DOM renderer:', e);
@@ -540,11 +606,11 @@ class ClaudeCodeWebInterface {
                 webgl.onContextLoss(() => {
                     console.warn('WebGL context lost — falling back to canvas renderer');
                     try { webgl.dispose(); } catch (_) {}
-                    this.activeRenderer = 'dom';
+                    view.renderer = 'dom';
                     loadCanvasRenderer();
                 });
-                this.terminal.loadAddon(webgl);
-                this.activeRenderer = 'webgl';
+                term.loadAddon(webgl);
+                view.renderer = 'webgl';
             } else {
                 loadCanvasRenderer();
             }
@@ -552,32 +618,14 @@ class ClaudeCodeWebInterface {
             console.warn('WebGL renderer unavailable, falling back to canvas:', e);
             loadCanvasRenderer();
         }
-        console.log('[terminal] renderer:', this.activeRenderer);
-
-        // RAF write batching. Claude Code's TUI can emit output faster than xterm
-        // can render (xterm caps itself at <16ms/frame, ~5-35 MB/s). Writing every
-        // WebSocket chunk immediately lets the internal buffer pile up until the
-        // terminal goes sluggish and stops echoing keystrokes. Instead we coalesce
-        // chunks and flush at most once per animation frame (~60/s).
-        this._termWriteQueue = [];
-        this._termWriteScheduled = false;
-
-        // Flow control (backpressure). Track bytes received but not yet rendered
-        // by xterm. When the backlog exceeds HIGH we ask the server to pause the
-        // PTY; once it drains below LOW we resume. This stops a fast producer
-        // (Claude repainting) from outrunning the renderer and freezing input.
-        this._pendingBytes = 0;
-        this._flowPaused = false;
-        this._flowHigh = 128 * 1024;
-        this._flowLow = 16 * 1024;
-
-        this.fitTerminal();
+        this.activeRenderer = view.renderer;
+        console.log('[terminal] renderer:', view.renderer, 'for', sessionId || '(idle)');
 
         // Enable copy-to-clipboard from the terminal. xterm swallows key events,
         // so without this Ctrl+C over a selection is sent as SIGINT and text can
         // never be copied. Convention: copy when there is a selection, otherwise
         // let Ctrl+C fall through as an interrupt.
-        this.terminal.attachCustomKeyEventHandler((e) => {
+        term.attachCustomKeyEventHandler((e) => {
             if (e.type !== 'keydown') return true;
 
             // Shift+Enter / Option(Alt)+Enter → insert a newline instead of
@@ -587,16 +635,16 @@ class ClaudeCodeWebInterface {
             // setup, so we send that directly — no protocol negotiation needed.
             if (e.key === 'Enter' && (e.shiftKey || e.altKey) && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
-                this.send({ type: 'input', data: '\n' });
+                this.sendOn(view, { type: 'input', data: '\n' });
                 return false; // handled — do not let xterm send \r (submit)
             }
 
             const key = (e.key || '').toLowerCase();
             if (key === 'c' && (e.ctrlKey || e.metaKey)) {
-                const selection = this.terminal.getSelection();
+                const selection = term.getSelection();
                 if (selection) {
                     this.copyToClipboard(selection);
-                    this.terminal.clearSelection();
+                    term.clearSelection();
                     return false; // handled — do not forward to the shell
                 }
             }
@@ -607,7 +655,7 @@ class ClaudeCodeWebInterface {
         // Claude Code) copy by emitting `ESC ] 52 ; c ; <base64> ST`. xterm does
         // not act on this by default, so the copy silently failed in the browser.
         // Decode it and write to the real clipboard (with our HTTP fallback).
-        this.terminal.parser.registerOscHandler(52, (payload) => this.handleOsc52(payload));
+        term.parser.registerOscHandler(52, (payload) => this.handleOsc52(payload));
 
         // Mobile touch scrolling. Programs like Claude Code enable mouse tracking
         // (the terminal gets the `enable-mouse-events` class), which routes touch
@@ -616,23 +664,23 @@ class ClaudeCodeWebInterface {
         // scrolls. Mobile-only: on desktop this handler is never attached, so wheel
         // scrolling and selection are completely unaffected.
         if (this.isMobile) {
-            this.setupMobileTouchScroll(document.getElementById('terminal'), this.terminal);
+            this.setupMobileTouchScroll(el, term);
         }
 
-        this.terminal.onData((data) => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                // Filter out focus tracking sequences before sending
-                const filteredData = data.replace(/\x1b\[\[?[IO]/g, '');
-                if (filteredData) {
-                    this.send({ type: 'input', data: filteredData });
-                }
-            }
+        // Keystrokes go to THIS view's session, not to whatever is on screen —
+        // they can only come from the focused terminal anyway, and routing them
+        // through the view keeps a split/background terminal honest.
+        term.onData((data) => {
+            const filteredData = data.replace(/\x1b\[\[?[IO]/g, '');
+            if (filteredData) this.sendOn(view, { type: 'input', data: filteredData });
         });
 
         // The input box moves as content reflows, so re-park the mobile buttons
-        // on render — coalesced to one measurement per frame.
+        // on render — coalesced to one measurement per frame. Only the visible
+        // view drives it; a background render must not move the buttons.
         if (this.isMobile) {
-            this.terminal.onRender(() => {
+            term.onRender(() => {
+                if (this.activeView !== view) return;
                 if (this._fabPlaceScheduled) return;
                 this._fabPlaceScheduled = requestAnimationFrame(() => {
                     this._fabPlaceScheduled = null;
@@ -641,17 +689,21 @@ class ClaudeCodeWebInterface {
             });
         }
 
-        this.terminal.onResize(({ cols, rows }) => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                this.send({ type: 'resize', cols, rows });
-            }
+        // Only the visible view reports its size. A hidden view's size would still
+        // count towards the pty's negotiated minimum (effectivePtySize), so a
+        // stale one would pin the pty smaller than the window — see showSession,
+        // which withdraws the vote on the way out.
+        term.onResize(({ cols, rows }) => {
+            if (this.activeView !== view) return;
+            this.sendOn(view, { type: 'resize', cols, rows });
         });
 
         // Terminal bell parity. A native terminal rings on BEL (0x07); Claude
         // Code emits it (e.g. on completion when the terminal bell channel is on).
         // Surface it as a short beep, and a desktop notification if the tab is
         // in the background — so a long task can finish while you work elsewhere.
-        this.terminal.onBell(() => this.handleBell());
+        // A background session's bell still rings: that is the point of it.
+        term.onBell(() => this.handleBell());
 
         // Terminal title parity. Claude Code sets the terminal title (OSC 0/2) to
         // reflect its state; a native terminal shows it in the window/tab. Mirror
@@ -659,16 +711,14 @@ class ClaudeCodeWebInterface {
         // Strip Claude's leading animated spinner glyph (✳ ✶ ✻ ✽ ● …) and any
         // other leading symbol decoration — next to the favicon it looks like a
         // second tab icon. Keep only the actual title text.
-        this.terminal.onTitleChange((title) => {
+        term.onTitleChange((title) => {
+            if (this.activeView !== view) return;   // a background session must not rename the tab
             if (!title) return;
             const cleaned = title.replace(/^[\s\p{S}]+/u, '').trim();
             if (cleaned) document.title = cleaned;
         });
 
-        // Paste / drop images into the terminal (single-view). We can't hand a
-        // real clipboard image to the shell, so upload it and inject the saved
-        // file path into the prompt for Claude Code to read.
-        this.setupImagePaste();
+        return view;
     }
 
     // Ring the terminal bell: a short WebAudio blip plus, when the tab is hidden,
@@ -984,7 +1034,7 @@ class ClaudeCodeWebInterface {
         modal.querySelectorAll('.session-item').forEach(item => {
             item.addEventListener('click', async () => {
                 const sessionId = item.dataset.sessionId;
-                await this.joinSession(sessionId);
+                await this.showSession(sessionId);
                 modal.remove();
             });
         });
@@ -1131,6 +1181,53 @@ class ClaudeCodeWebInterface {
 
     // closeCustomCommandModal removed
 
+    // Open a socket that belongs to one view, and join that view's session on it.
+    //
+    // A view keeps its socket for as long as the tab is open, background
+    // included — that is what lets its scrollback keep growing while you are
+    // looking at another tab, and why coming back needs no replay. splits.js has
+    // done the same per pane since it was written, so the server already handles
+    // several clients sitting on different sessions.
+    openViewSocket(view) {
+        return new Promise((resolve) => {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let wsUrl = window.authManager.getWebSocketUrl(`${protocol}//${location.host}`);
+            let settled = false;
+            const done = () => { if (!settled) { settled = true; resolve(); } };
+
+            let sock;
+            try {
+                sock = new WebSocket(wsUrl);
+            } catch (error) {
+                console.error('Failed to create view WebSocket:', error);
+                return done();
+            }
+            view.socket = sock;
+            if (this.activeView === view) this.socket = sock;
+
+            sock.onopen = () => {
+                sock.send(JSON.stringify({ type: 'join_session', sessionId: view.sessionId }));
+            };
+            sock.onmessage = (event) => {
+                let msg;
+                try { msg = JSON.parse(event.data); } catch (_) { return; }
+                if (msg.type === 'session_joined') { view.joined = true; done(); }
+                this.handleMessage(msg, view);
+            };
+            sock.onclose = () => {
+                view.joined = false;
+                done();
+            };
+            sock.onerror = (error) => {
+                console.error('View WebSocket error:', error);
+                done();
+            };
+
+            // Never leave a tab switch hanging on a server that does not answer.
+            setTimeout(done, 8000);
+        });
+    }
+
     connect(sessionId = null) {
         return new Promise((resolve, reject) => {
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1175,7 +1272,10 @@ class ClaudeCodeWebInterface {
                 };
             
             this.socket.onmessage = (event) => {
-                this.handleMessage(JSON.parse(event.data));
+                // The control socket belongs to the idle view — the terminal shown
+                // before any tab is open, and the one that still handles
+                // session_created for a brand-new session.
+                this.handleMessage(JSON.parse(event.data), this.idleView);
             };
             
             this.socket.onclose = (event) => {
@@ -1225,6 +1325,58 @@ class ClaudeCodeWebInterface {
         }
     }
 
+    // Send on a specific view's socket. Input from a terminal belongs to that
+    // terminal's session, which is not always the one on screen (a split pane,
+    // or a keystroke that lands mid-switch).
+    sendOn(view, data) {
+        const sock = view && view.socket;
+        if (sock && sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify(data));
+    }
+
+    // Show a session's terminal, creating it the first time. This is what tab
+    // switching calls instead of joinSession(): an existing view is simply made
+    // visible, with no reset and no replay, so everything it had scrolled back
+    // through is still there.
+    async showSession(sessionId) {
+        if (!sessionId) return;
+        const previous = this.activeView;
+        let view = this.views.get(sessionId);
+        const isNew = !view;
+
+        if (previous && previous !== view) {
+            // Withdraw the outgoing view's size vote. The pty runs at the minimum
+            // across connected clients, so a hidden view holding a stale size
+            // would pin the pty smaller than the window it is no longer in.
+            // detachClientSize has existed server-side since v4.5.0 and was never
+            // called by anything until now.
+            this.sendOn(previous, { type: 'detach_size' });
+            previous.el.classList.remove('active');
+        }
+
+        if (isNew) {
+            view = this.buildView(sessionId);
+            this.views.set(sessionId, view);
+        }
+
+        view.el.classList.add('active');
+        this.adoptView(view);
+        this.currentClaudeSessionId = sessionId;
+
+        if (isNew) {
+            // First time on this tab: connect its own socket and join. This is the
+            // only path that replays the server buffer.
+            await this.openViewSocket(view);
+        }
+
+        this.fitTerminal();
+        // Re-assert this view's size now that it is the visible one.
+        const { cols, rows } = this.termDims();
+        if (cols && rows) this.sendOn(view, { type: 'resize', cols, rows });
+        this.positionModeSwitcher();
+        this.hideOverlay();
+        try { this.terminal.focus(); } catch (_) {}
+    }
+
     // Current terminal grid size, sent with start_* so the PTY spawns at the
     // real width instead of the 80x24 default (which leaves a blank strip on
     // the right of wide screens).
@@ -1242,7 +1394,11 @@ class ClaudeCodeWebInterface {
         if (cols && rows) this.send({ type: 'resize', cols, rows });
     }
 
-    handleMessage(message) {
+    handleMessage(message, view = this.activeView) {
+        // Which terminal this message belongs to. Output must land in the view
+        // that owns the session, not in whatever happens to be on screen — that
+        // is the whole point of keeping a terminal per tab.
+        const forActive = !view || view === this.activeView;
         switch (message.type) {
             case 'connected':
                 this.connectionId = message.connectionId;
@@ -1267,11 +1423,17 @@ class ClaudeCodeWebInterface {
                 
             case 'session_joined':
                 console.log('[session_joined] Message received, active:', message.active, 'tabs:', this.sessionTabManager?.tabs.size);
-                this.currentClaudeSessionId = message.sessionId;
-                this.currentClaudeSessionName = message.sessionName;
-                this.applySessionVisuals(message.sessionId); // per-session visual settings
-                this.updateWorkingDir(message.workingDir);
-                this.updateSessionButton(message.sessionName);
+                if (view) view.sessionId = message.sessionId;
+                // Chrome that describes the session on screen — working dir, visual
+                // settings, split panes. A background view joining must not repaint
+                // the header with a session you are not looking at.
+                if (forActive) {
+                    this.currentClaudeSessionId = message.sessionId;
+                    this.currentClaudeSessionName = message.sessionName;
+                    this.applySessionVisuals(message.sessionId); // per-session visual settings
+                    this.updateWorkingDir(message.workingDir);
+                    this.updateSessionButton(message.sessionName);
+                }
 
                 // Update tab status
                 if (this.sessionTabManager) {
@@ -1313,19 +1475,23 @@ class ClaudeCodeWebInterface {
                 // — scroll regions, application cursor keys, mouse tracking,
                 // bracketed paste — so the replayed bytes land on the terminal
                 // state they were recorded against.
-                this.clearTerminalWriteQueue();
-                this.terminal.reset();
+                this.clearTerminalWriteQueue(view);
+                ((view && view.terminal) || this.terminal).reset();
 
                 // Replay output buffer if available
                 if (message.outputBuffer && message.outputBuffer.length > 0) {
                     message.outputBuffer.forEach(data => {
                         // Filter out focus tracking sequences (^[[I and ^[[O)
                         const filteredData = data.replace(/\x1b\[\[?[IO]/g, '');
-                        this.queueTerminalWrite(filteredData);
+                        this.queueTerminalWrite(filteredData, view);
                     });
                 }
                 
-                // Show appropriate UI based on session state
+                // Show appropriate UI based on session state. Everything below
+                // takes over the screen (overlay, pty size, start prompt), so a
+                // background view joining must stop here — it has its buffer, and
+                // that is all it needs until you switch to it.
+                if (!forActive) break;
                 console.log('[session_joined] Checking if should show overlay. Active:', message.active);
                 if (message.active) {
                     console.log('[session_joined] Session is active, hiding overlay');
@@ -1354,19 +1520,21 @@ class ClaudeCodeWebInterface {
                         console.log('[session_joined] Existing session with stopped Claude, showing restart prompt');
                         // For existing sessions where Claude has stopped, show start prompt
                         // This allows the user to restart Claude in the same session
-                        this.flushTerminalWrites();
-                        this.terminal.writeln(`\r\n\x1b[33m${this.getAlias()} has stopped in this session. Click "Start ${this.getAlias()}" to restart.\x1b[0m`);
+                        this.flushTerminalWrites(view);
+                        ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} has stopped in this session. Click "Start ${this.getAlias()}" to restart.\x1b[0m`);
                         this.showOverlay('startPrompt');
                     }
                 }
                 break;
                 
             case 'session_left':
-                this.currentClaudeSessionId = null;
-                this.currentClaudeSessionName = null;
-                this.updateSessionButton('Sessions');
-                this.clearTerminalWriteQueue();
-                this.terminal.clear();
+                if (forActive) {
+                    this.currentClaudeSessionId = null;
+                    this.currentClaudeSessionName = null;
+                    this.updateSessionButton('Sessions');
+                }
+                this.clearTerminalWriteQueue(view);
+                ((view && view.terminal) || this.terminal).clear();
 
                 // Update tab status
                 if (this.sessionTabManager && message.sessionId) {
@@ -1400,29 +1568,38 @@ class ClaudeCodeWebInterface {
                 this.loadSessions(); // Refresh session list
                 break;
                 
-            case 'output':
+            case 'output': {
                 // Filter out focus tracking sequences (^[[I and ^[[O)
                 const filteredData = message.data.replace(/\x1b\[\[?[IO]/g, '');
-                this.queueTerminalWrite(filteredData);
+                this.queueTerminalWrite(filteredData, view);
 
-                // Update session activity indicator with output data
-                if (this.sessionTabManager && this.currentClaudeSessionId) {
-                    this.sessionTabManager.markSessionActivity(this.currentClaudeSessionId, true, message.data);
+                // Update session activity indicator with output data. Keyed on the
+                // VIEW's session: a background tab producing output is exactly
+                // what the unread indicator is for.
+                const outId = (view && view.sessionId) || this.currentClaudeSessionId;
+                if (this.sessionTabManager && outId) {
+                    this.sessionTabManager.markSessionActivity(outId, true, message.data);
                 }
                 break;
+            }
                 
-            case 'exit':
-                this.flushTerminalWrites();
-                this.terminal.writeln(`\r\n\x1b[33m${this.getAlias()} exited with code ${message.code}\x1b[0m`);
-                
+            case 'exit': {
+                this.flushTerminalWrites(view);
+                const term = (view && view.terminal) || this.terminal;
+                term.writeln(`\r\n\x1b[33m${this.getAlias()} exited with code ${message.code}\x1b[0m`);
+
                 // Mark session as error if non-zero exit code
-                if (this.sessionTabManager && this.currentClaudeSessionId && message.code !== 0) {
-                    this.sessionTabManager.markSessionError(this.currentClaudeSessionId, true);
+                const exitId = (view && view.sessionId) || this.currentClaudeSessionId;
+                if (this.sessionTabManager && exitId && message.code !== 0) {
+                    this.sessionTabManager.markSessionError(exitId, true);
                 }
-                
-                this.showOverlay('startPrompt');
+
+                // Only the visible session may take over the screen with the start
+                // prompt; a background session exiting must not interrupt you.
+                if (forActive) this.showOverlay('startPrompt');
                 this.loadSessions(); // Refresh session list
                 break;
+            }
                 
             case 'error':
                 this.showError(message.message);
@@ -1700,14 +1877,14 @@ class ClaudeCodeWebInterface {
     // Queue terminal output for batched rendering on the next animation frame.
     // Coalescing many small chunks into one write per frame keeps the render
     // loop from falling behind under Claude Code's heavy repaints.
-    queueTerminalWrite(data) {
-        if (!data) return;
-        this._termWriteQueue.push(data);
-        this._pendingBytes += data.length;
-        this._maybeFlowPause();
-        if (!this._termWriteScheduled) {
-            this._termWriteScheduled = true;
-            requestAnimationFrame(() => this.flushTerminalWrites());
+    queueTerminalWrite(data, view = this.activeView) {
+        if (!data || !view) return;
+        view.writeQueue.push(data);
+        view.pendingBytes += data.length;
+        this._maybeFlowPause(view);
+        if (!view.writeScheduled) {
+            view.writeScheduled = true;
+            requestAnimationFrame(() => this.flushTerminalWrites(view));
         }
     }
 
@@ -1715,16 +1892,17 @@ class ClaudeCodeWebInterface {
     // (e.g. before writing a status line) to preserve ordering with the stream.
     // The write callback fires once xterm has parsed the chunk, so it's the
     // right place to decrement the backpressure watermark.
-    flushTerminalWrites() {
-        this._termWriteScheduled = false;
-        if (!this._termWriteQueue || this._termWriteQueue.length === 0) return;
-        const chunk = this._termWriteQueue.join('');
-        this._termWriteQueue.length = 0;
-        if (this.terminal) {
+    flushTerminalWrites(view = this.activeView) {
+        if (!view) return;
+        view.writeScheduled = false;
+        if (!view.writeQueue || view.writeQueue.length === 0) return;
+        const chunk = view.writeQueue.join('');
+        view.writeQueue.length = 0;
+        if (view.terminal) {
             const len = chunk.length;
-            this.terminal.write(chunk, () => {
-                this._pendingBytes = Math.max(0, this._pendingBytes - len);
-                this._maybeFlowResume();
+            view.terminal.write(chunk, () => {
+                view.pendingBytes = Math.max(0, view.pendingBytes - len);
+                this._maybeFlowResume(view);
             });
         }
     }
@@ -1732,29 +1910,34 @@ class ClaudeCodeWebInterface {
     // Drop any pending output (used when switching/clearing sessions so stale
     // bytes from the previous session can't land after the clear). Resets the
     // backpressure watermark and lifts any pause we were holding.
-    clearTerminalWriteQueue() {
-        if (this._termWriteQueue) this._termWriteQueue.length = 0;
-        this._termWriteScheduled = false;
-        this._pendingBytes = 0;
-        if (this._flowPaused) {
-            this._flowPaused = false;
-            this.send({ type: 'resume' });
+    clearTerminalWriteQueue(view = this.activeView) {
+        if (!view) return;
+        if (view.writeQueue) view.writeQueue.length = 0;
+        view.writeScheduled = false;
+        view.pendingBytes = 0;
+        if (view.flowPaused) {
+            view.flowPaused = false;
+            this.sendOn(view, { type: 'resume' });
         }
     }
 
     // Ask the server to pause the PTY once the unrendered backlog is too large.
-    _maybeFlowPause() {
-        if (!this._flowPaused && this._pendingBytes > this._flowHigh) {
-            this._flowPaused = true;
-            this.send({ type: 'pause' });
+    // Per view: each session has its own producer and its own socket, so a busy
+    // background tab throttles itself without stalling the one you are reading.
+    _maybeFlowPause(view = this.activeView) {
+        if (!view) return;
+        if (!view.flowPaused && view.pendingBytes > this._flowHigh) {
+            view.flowPaused = true;
+            this.sendOn(view, { type: 'pause' });
         }
     }
 
     // Resume once the backlog has drained back below the low watermark.
-    _maybeFlowResume() {
-        if (this._flowPaused && this._pendingBytes < this._flowLow) {
-            this._flowPaused = false;
-            this.send({ type: 'resume' });
+    _maybeFlowResume(view = this.activeView) {
+        if (!view) return;
+        if (view.flowPaused && view.pendingBytes < this._flowLow) {
+            view.flowPaused = false;
+            this.sendOn(view, { type: 'resume' });
         }
     }
 
@@ -1940,9 +2123,12 @@ class ClaudeCodeWebInterface {
             const res = await this.authFetch('/api/settings/scrollback');
             if (!res.ok) return;
             const data = await res.json();
-            input.value = data.chunks;
-            if (Number.isInteger(data.min)) input.min = data.min;
-            if (Number.isInteger(data.max)) input.max = data.max;
+            // The wire is bytes; the panel shows MB, which is the unit a person
+            // can reason about ("keep 2 MB of history", not "keep 2097152").
+            const toMb = (n) => Math.round((n / (1024 * 1024)) * 10) / 10;
+            input.value = toMb(data.bytes);
+            if (Number.isInteger(data.min)) input.min = toMb(data.min);
+            if (Number.isInteger(data.max)) input.max = toMb(data.max);
         } catch (_) { /* leave the markup default; saving still works */ }
     }
 
@@ -2122,13 +2308,14 @@ class ClaudeCodeWebInterface {
     async saveScrollbackSetting() {
         const input = document.getElementById('scrollbackChunks');
         if (!input) return;
-        const chunks = parseInt(input.value, 10);
-        if (!Number.isInteger(chunks)) return;
+        const mb = parseFloat(input.value);
+        if (!Number.isFinite(mb)) return;
+        const bytes = Math.round(mb * 1024 * 1024);
         try {
             const res = await this.authFetch('/api/settings/scrollback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chunks })
+                body: JSON.stringify({ bytes })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -2137,9 +2324,10 @@ class ClaudeCodeWebInterface {
             }
             // The server clamps to its own range, so report what it actually
             // took rather than letting the panel claim a number it did not.
-            input.value = data.chunks;
-            if (data.chunks !== chunks) {
-                this.showToast(`Scrollback set to ${data.chunks} chunks (the allowed limit)`);
+            const tookMb = Math.round((data.bytes / (1024 * 1024)) * 10) / 10;
+            input.value = tookMb;
+            if (data.bytes !== bytes) {
+                this.showToast(`History kept set to ${tookMb} MB (the allowed limit)`);
             }
         } catch (_) {
             this.showToast('Could not save the scrollback setting', true);
@@ -2720,7 +2908,7 @@ class ClaudeCodeWebInterface {
     handleSessionAction(action, sessionId) {
         switch (action) {
             case 'join':
-                this.joinSession(sessionId);
+                this.showSession(sessionId);
                 break;
             case 'leave':
                 this.leaveSession();
@@ -3041,8 +3229,9 @@ class ClaudeCodeWebInterface {
             // switchToTab will handle joining the session
             await this.sessionTabManager.switchToTab(sessionId);
         } else {
-            // No tab manager, join directly
-            await this.joinSession(sessionId);
+            // No tab manager, open it directly — still through showSession, so it
+            // gets its own terminal and keeps it.
+            await this.showSession(sessionId);
         }
         this.loadSessions();
     }

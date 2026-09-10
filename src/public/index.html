@@ -260,10 +260,10 @@
                         </div>
                     </div>
                     <div class="setting-group setting-group-block">
-                        <label for="scrollbackChunks">Scrollback kept:</label>
-                        <p class="setting-hint" id="scrollbackHint">How much terminal history survives a restart or a reconnect. Counted in <em>chunks</em> (one read off the terminal), not lines &mdash; a chunk has no fixed size, so this is a budget rather than an exact number of lines. Applies to <strong>all sessions</strong>, and higher values mean larger session files. Very large values are kept in full but replayed up to a size limit on reconnect, so the terminal stays quick to reattach.</p>
+                        <label for="scrollbackChunks">History kept (MB):</label>
+                        <p class="setting-hint" id="scrollbackHint">How much terminal history a page reload can rebuild, in <em>megabytes</em>. A tab you switch away from keeps its own scrollback and does not need this &mdash; it is what F5 has to rebuild from. Applies to <strong>all sessions</strong>, and larger values mean larger session files on disk. Used to be counted in &ldquo;chunks&rdquo;, which said nothing about size: 500 of them measured 50 KB and rebuilt 39 lines.</p>
                         <div class="scrollback-row">
-                            <input type="number" id="scrollbackChunks" min="50" max="5000" step="50" value="500">
+                            <input type="number" id="scrollbackChunks" min="0.25" max="16" step="0.25" value="2">
                             <span class="setting-unit">chunks</span>
                         </div>
                     </div>

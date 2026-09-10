@@ -83,23 +83,35 @@ describe('SessionStore', function () {
       assert.deepStrictEqual(files, [], 'nothing was written');
     });
 
-    it('caps the output buffer at the configured depth, keeping the newest', async function () {
-      // The cap moved from a hard-coded 100 to store.maxOutputChunks (default
-      // 500) when it became a user setting; the tail-not-head rule did not.
-      const chunks = Array.from({ length: 700 }, (_, i) => `chunk-${i}`);
+    it('caps the output buffer at the configured size, keeping the newest', async function () {
+      // The budget is BYTES now, not a chunk count: a chunk is whatever one read
+      // off the pty returned, so counting them said nothing about how much
+      // history survived — measured on a live session, 500 chunks were 50 KB and
+      // replayed back to 39 lines. The tail-not-head rule is unchanged.
+      const chunks = Array.from({ length: 700 }, (_, i) => `chunk-${String(i).padStart(3, '0')}`);
+      store.maxOutputChunks = 100 * 9;   // exactly 100 nine-byte chunks
       await store.saveSessions(new Map([[ID(1), sessionOf({ outputBuffer: chunks })]]));
       const back = (await store.loadSessions()).get(ID(1));
-      assert.strictEqual(back.outputBuffer.length, 500);
-      assert.strictEqual(back.outputBuffer[499], 'chunk-699', 'kept the newest');
+      assert.strictEqual(back.outputBuffer.length, 100);
+      assert.strictEqual(back.outputBuffer[99], 'chunk-699', 'kept the newest');
     });
 
-    it('follows a changed depth rather than the default', async function () {
-      store.maxOutputChunks = 120;
-      const chunks = Array.from({ length: 250 }, (_, i) => `chunk-${i}`);
+    it('follows a changed budget rather than the default', async function () {
+      store.maxOutputChunks = 20 * 9;
+      const chunks = Array.from({ length: 250 }, (_, i) => `chunk-${String(i).padStart(3, '0')}`);
       await store.saveSessions(new Map([[ID(1), sessionOf({ outputBuffer: chunks })]]));
       const back = (await store.loadSessions()).get(ID(1));
-      assert.strictEqual(back.outputBuffer.length, 120);
-      assert.strictEqual(back.outputBuffer[119], 'chunk-249', 'kept the newest');
+      assert.strictEqual(back.outputBuffer.length, 20);
+      assert.strictEqual(back.outputBuffer[19], 'chunk-249', 'kept the newest');
+    });
+
+    it('keeps the newest chunk even when it alone busts the budget', async function () {
+      // Otherwise a session whose last write was one huge burst persists as
+      // nothing at all — the worst possible reading of "keep 256 KB".
+      store.maxOutputChunks = 10;
+      await store.saveSessions(new Map([[ID(1), sessionOf({ outputBuffer: ['x'.repeat(5000)] })]]));
+      const back = (await store.loadSessions()).get(ID(1));
+      assert.strictEqual(back.outputBuffer.length, 1);
     });
 
     it('does not persist runtime state', async function () {

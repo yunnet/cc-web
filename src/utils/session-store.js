@@ -38,7 +38,7 @@ const MAX_AGE_DAYS = 7;
 // median is 77-174 bytes — so 100 chunks came to 8-24 KB, much of it Claude's
 // redraw escapes rather than text. 500 is the new default; the running value is
 // per-instance (`maxOutputChunks`) because it is user-configurable at runtime.
-const DEFAULT_OUTPUT_CHUNKS = 500;
+const DEFAULT_OUTPUT_CHUNKS = 2 * 1024 * 1024;  // bytes, see server.js:SCROLLBACK_DEFAULT
 
 // Ids are interpolated into a path, so re-check the shape rather than trust
 // the caller — the same guard, and the same reasoning, as
@@ -94,6 +94,22 @@ class SessionStore {
     // What actually goes on disk. Runtime-only fields are dropped rather than
     // stored false: a restored session's PTY died with the process that owned
     // it, so `active` can only ever be false and `connections` empty.
+    // The newest chunks that fit in `budget` bytes. The newest chunk is always
+    // kept, even if it alone is over budget: a session whose last write was huge
+    // must not persist as nothing.
+    static tailBytes(buffer, budget) {
+        if (!Array.isArray(buffer) || buffer.length === 0) return [];
+        let bytes = 0;
+        let start = buffer.length;
+        while (start > 0) {
+            const size = Buffer.byteLength(String(buffer[start - 1]));
+            if (bytes + size > budget && start < buffer.length) break;
+            bytes += size;
+            start--;
+        }
+        return buffer.slice(start);
+    }
+
     toRecord(id, session) {
         return {
             id,
@@ -110,9 +126,14 @@ class SessionStore {
             // Persisted so a restart still refuses to fall back to a fresh
             // launch under that id — see server.startClaude.
             resumedConversation: !!session.resumedConversation,
-            outputBuffer: Array.isArray(session.outputBuffer)
-                ? session.outputBuffer.slice(-this.maxOutputChunks)
-                : [],
+            // Trimmed by BYTES, not by chunk count. A chunk is whatever one
+            // read off the pty returned and is mostly Claude's redraw escapes —
+            // measured on a live session, 500 chunks were 50 KB and replayed
+            // back to 39 lines, which is why "how much history survives a
+            // reload" could never be expressed in them. `maxOutputChunks` now
+            // holds a byte budget (the name is kept so the field it is assigned
+            // from stays one thing).
+            outputBuffer: SessionStore.tailBytes(session.outputBuffer, this.maxOutputChunks),
             lastAccessed: session.lastAccessed || Date.now(),
             savedAt: new Date().toISOString(),
         };

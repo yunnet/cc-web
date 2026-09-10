@@ -36,9 +36,14 @@ describe('terminal state on session join', function () {
   };
 
   it('resets the terminal when joining, not just clears it', function () {
+    // Written against the terminal that OWNS the message, not `this.terminal`:
+    // since each tab keeps its own terminal alive, a join can arrive for a view
+    // that is not the one on screen.
     const h = joinHandler();
-    assert.ok(/this\.terminal\.reset\(\)/.test(h),
+    assert.ok(/\.reset\(\)/.test(h),
       'joining must reset() the terminal — clear() leaves the alternate buffer active');
+    assert.ok(/view && view\.terminal/.test(h),
+      'the reset must target the joining view\'s terminal, not whatever is visible');
   });
 
   it('resets even when the session has nothing to replay', function () {
@@ -46,7 +51,7 @@ describe('terminal state on session join', function () {
     // Resetting only inside `if (outputBuffer.length)` leaves the one case where
     // the user has no content to look at AND no way to scroll.
     const h = joinHandler();
-    const resetAt = h.indexOf('this.terminal.reset()');
+    const resetAt = h.indexOf('.reset()');
     const guardAt = h.indexOf('message.outputBuffer && message.outputBuffer.length');
     assert.ok(resetAt > 0 && guardAt > 0, 'expected both the reset and the replay guard');
     assert.ok(resetAt < guardAt,
@@ -58,7 +63,7 @@ describe('terminal state on session join', function () {
     // would show a blank terminal.
     const h = joinHandler();
     assert.ok(/queueTerminalWrite/.test(h), 'the replay must still happen');
-    assert.ok(h.indexOf('this.terminal.reset()') < h.indexOf('queueTerminalWrite'),
+    assert.ok(h.indexOf('.reset()') < h.indexOf('queueTerminalWrite'),
       'reset must come before the replay, or it erases what it just wrote');
   });
 });
