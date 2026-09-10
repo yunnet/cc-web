@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-09-10
+
+### Added
+- **A rendered .html now carries its own images, so a page of screenshots
+  actually shows them.** Opening `delegate-list-scope.visual-check.html` from
+  the file explorer produced a page of broken images: four `<img>` blocked with
+  *"violates the following Content Security Policy directive: img-src data:
+  blob:"*, `naturalWidth` 0.
+  - Relaxing the sandbox would not even have been enough. Two further breaks sit
+    behind the CSP: the render URL keeps the whole absolute path in a **single**
+    path segment, so a browser resolves `sibling.png` against the ticket rather
+    than the directory (measured: 404); and the ticket is single-use, already
+    spent by the page's own request (measured: second use → 401). `base-uri
+    'none'` rules out a `<base href>` workaround.
+  - `img-src data:` was always allowed, so the bytes now travel inside the page.
+    Nothing about the sandbox moves: still an opaque origin, still
+    `default-src 'none'`, still no host in `img-src`, still one spent ticket. A
+    test asserts the CSP has not grown a `'self'`.
+  - Scope is narrow: images only, only paths that resolve **inside the page's
+    own directory** (realpath'd on both sides, so a symlink cannot climb out),
+    only up to a 6 MB budget, and only when *rendering* — the source view stays
+    byte-for-byte the file on disk. CSS `url()` is covered too, since the same
+    directive governs background images.
+  - Verified end to end on the real file: 1924 bytes in, 691228 out, four
+    `data:image/png` inlined, zero relative links left, **zero CSP errors and
+    zero failed requests** in the browser, all four screenshots at their full
+    1440×900 / 2048×1320.
+
+### Notes
+- The `containment fail` caption on that page is **not** a cc-web symptom: it is
+  static text the diagram generator wrote into the file (five occurrences), the
+  verdict of its own automated layout check. cc-web's bug was only that the
+  images did not load.
+
 ## [4.9.2] - 2026-09-10
 
 ### Fixed

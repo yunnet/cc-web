@@ -11,6 +11,7 @@ const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const claudeHistory = require('./utils/claude-history');
 const claudeTheme = require('./utils/claude-theme');
+const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
 
@@ -1886,7 +1887,27 @@ class ClaudeCodeWebServer {
       const render = !!(ticket && ticket.real === real);
       const csp = this.renderSandboxCsp(real, render);
       if (csp) res.setHeader('Content-Security-Policy', csp);
-      return this.sendInlineFile(res, real, this.contentTypeForFile(real, render), fs.readFileSync(real));
+      let body = fs.readFileSync(real);
+
+      // A rendered page has no network: opaque origin, `default-src 'none'`,
+      // `img-src data: blob:`. So a page that points at its own screenshots by
+      // relative path showed nothing — four <img> blocked as "violates ...
+      // img-src data: blob:", naturalWidth 0 — and relaxing the CSP would not
+      // even have been enough: the render URL keeps the whole absolute path in
+      // ONE segment, so a sibling resolves against the ticket, and the ticket is
+      // already spent by this very request.
+      //
+      // `img-src data:` is allowed, so carry the bytes in the page instead.
+      // Nothing about the sandbox moves. Only for html, only when rendering:
+      // the source view must stay byte-for-byte the file on disk.
+      if (render && /\.html?$/i.test(real)) {
+        const inlined = inlineLocalAssets(body.toString('utf8'), path.dirname(real));
+        body = Buffer.from(inlined.html, 'utf8');
+        if (this.dev && (inlined.inlined || inlined.skipped)) {
+          console.log(`Inlined ${inlined.inlined} asset(s), ${inlined.bytes} bytes, skipped ${inlined.skipped} for ${real}`);
+        }
+      }
+      return this.sendInlineFile(res, real, this.contentTypeForFile(real, render), body);
     } catch (_) {
       return res.status(404).json({ error: 'Not found' });
     }
