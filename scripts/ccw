@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# ccw — start / stop / restart / status for the cc-web instances on this box.
+#
+#   ccw status              both instances: pid, uptime, version, data dir, health
+#   ccw start   [stable|dev|all]
+#   ccw stop    [stable|dev|all]
+#   ccw restart [stable|dev|all]
+#   ccw logs    [stable|dev]     tail the instance's log
+#
+# "stable" and "dev" are named, not typed as ports, because the two differ in
+# more than a number — different source trees, different tokens, different data
+# directories — and getting one of those wrong is how you end up with two
+# servers writing each other's sessions.
+#
+# Three traps this exists to keep you out of:
+#
+#   1. `pkill -f "port 32352"` matches the shell that ran it. Killing an
+#      instance that way takes your own terminal with it (seen: exit 144). This
+#      finds the LISTENER on the port with `ss` and signals that pid, nothing
+#      else.
+#   2. The dev instance must be started with CCW_DATA_DIR. Without it both
+#      servers share ~/.claude-code-web and the second one refuses to start:
+#      "Two servers sharing a data directory read and write each other's
+#      sessions."
+#   3. Restarting the stable instance from a Claude session that RUNS inside it
+#      kills the shell doing the restarting, half way through. When that is
+#      detected the work is handed to a detached session (setsid) so it finishes
+#      after this process is gone.
+
+set -uo pipefail
+
+# --- local deployment ---------------------------------------------------------
+# Machine-specific. Edit here if a path or token file moves.
+
+STABLE_PORT=32352
+STABLE_DIR=/data/work/gongxinyun/ts/claude-code-web
+STABLE_AUTH=/home/myhi/.ccweb-token-32352
+STABLE_PLANS=/data/work/gongxinyun/ts/.claude/plans,/data/work/gongxinyun/work/cgs-master/.claude/plans
+STABLE_DATA=          # empty = the default ~/.claude-code-web
+
+DEV_PORT=32353
+DEV_DIR=/data/work/gongxinyun/ts/cc-web
+DEV_AUTH=/home/myhi/.ccweb-token-32353
+DEV_PLANS=/data/work/gongxinyun/ts/.claude/plans
+DEV_DATA=/home/myhi/.claude-code-web-dev
+
+LOG_DIR=${CCW_LOG_DIR:-/tmp/ccw-logs}
+STOP_TIMEOUT=15       # seconds to wait for a clean exit before SIGKILL
+START_TIMEOUT=25      # seconds to wait for the port to answer
+
+# --- plumbing -----------------------------------------------------------------
+
+c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
+warn() { printf '%s!%s %s\n' "$c_yel" "$c_off" "$*"; }
+die()  { printf '%s✗%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
+
+# Resolve a name to its settings. Sets the cfg_* globals.
+load() {
+  case "$1" in
+    stable|32352) cfg_name=stable; cfg_port=$STABLE_PORT; cfg_dir=$STABLE_DIR
+                  cfg_auth=$STABLE_AUTH; cfg_plans=$STABLE_PLANS; cfg_data=$STABLE_DATA ;;
+    dev|32353)    cfg_name=dev;    cfg_port=$DEV_PORT;    cfg_dir=$DEV_DIR
+                  cfg_auth=$DEV_AUTH;    cfg_plans=$DEV_PLANS;    cfg_data=$DEV_DATA ;;
+    *) die "unknown instance '$1' (use: stable | dev | all)" ;;
+  esac
+  cfg_log="$LOG_DIR/ccw-$cfg_name.log"
+}
+
+# The pid LISTENING on a port — never a pattern match against a command line,
+# which is what makes `pkill -f` eat the caller.
+pid_on_port() {
+  ss -lptnH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2
+}
+
+# Is `pid` an ancestor of this script? (i.e. would killing it kill us)
+is_ancestor() {
+  local target=$1 p=$$
+  while [ -n "$p" ] && [ "$p" != "1" ] && [ "$p" != "0" ]; do
+    [ "$p" = "$target" ] && return 0
+    p=$(awk '/^PPid:/{print $2}' "/proc/$p/status" 2>/dev/null)
+  done
+  return 1
+}
+
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# --- commands -----------------------------------------------------------------
+
+do_status() {
+  load "$1"
+  local pid; pid=$(pid_on_port "$cfg_port")
+  local version; version=$(node -e "try{process.stdout.write(require('$cfg_dir/package.json').version)}catch(e){process.stdout.write('?')}" 2>/dev/null)
+
+  printf '%s%-7s%s :%s\n' "$c_dim" "$cfg_name" "$c_off" "$cfg_port"
+  if [ -z "$pid" ]; then
+    printf '  %s停止%s   磁盘代码 v%s  %s\n' "$c_red" "$c_off" "$version" "$cfg_dir"
+    return
+  fi
+  local started; started=$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//')
+  local uptime;  uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+  local rundir;  rundir=$(readlink "/proc/$pid/cwd" 2>/dev/null)
+  local data;    data=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CCW_DATA_DIR=//p')
+  local kids;    kids=$(pgrep -P "$pid" 2>/dev/null | wc -l)
+  local health;  health=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:$cfg_port/" 2>/dev/null)
+
+  printf '  %s运行中%s pid=%s  已跑 %s  HTTP %s  claude 子进程 %s\n' "$c_grn" "$c_off" "$pid" "$uptime" "$health" "$kids"
+  printf '  磁盘代码 v%s   %s\n' "$version" "$cfg_dir"
+  [ "$rundir" != "$cfg_dir" ] && warn "  运行目录与配置不符: $rundir"
+  printf '  数据目录 %s\n' "${data:-$HOME/.claude-code-web (默认)}"
+  printf '  启动于 %s\n' "$started"
+  # The version on disk is not the version running: the process loaded its code
+  # at startup. Frontend files are read per request, so they ARE live.
+  printf '  %s注意：磁盘上的版本不等于运行中的版本——服务端改动要重启才生效%s\n' "$c_dim" "$c_off"
+}
+
+start_cmd() {
+  # Printed as one line so `ccw restart` can hand it to a detached shell.
+  # The env assignment has to sit on the `node` command, NOT in front of `cd`.
+  # `CCW_DATA_DIR=x cd dir && node …` applies the variable to `cd` and the
+  # server starts without it — which is exactly the "two servers sharing a data
+  # directory" refusal this script exists to prevent. Caught by testing it.
+  local data_env=''
+  [ -n "$cfg_data" ] && data_env="CCW_DATA_DIR=$(printf '%q' "$cfg_data") "
+  printf 'cd %q && %snohup node bin/cc-web.js --no-open --port %s --auth-file %q --plans-dir %q >> %q 2>&1 &' \
+    "$cfg_dir" "$data_env" "$cfg_port" "$cfg_auth" "$cfg_plans" "$cfg_log"
+}
+
+do_start() {
+  load "$1"
+  local pid; pid=$(pid_on_port "$cfg_port")
+  if [ -n "$pid" ]; then ok "$cfg_name 已经在跑 (pid=$pid)"; return 0; fi
+  [ -d "$cfg_dir" ] || die "$cfg_name 的目录不存在: $cfg_dir"
+  mkdir -p "$LOG_DIR"
+
+  eval "$(start_cmd)"
+  local waited=0
+  while [ "$waited" -lt "$START_TIMEOUT" ]; do
+    if port_open "$cfg_port"; then
+      ok "$cfg_name 已启动 (pid=$(pid_on_port "$cfg_port"))  端口 $cfg_port"
+      return 0
+    fi
+    sleep 1; waited=$((waited + 1))
+  done
+  warn "$cfg_name 起了但 ${START_TIMEOUT}s 内没监听端口，看日志: $cfg_log"
+  tail -5 "$cfg_log" 2>/dev/null
+  return 1
+}
+
+do_stop() {
+  load "$1"
+  local pid; pid=$(pid_on_port "$cfg_port")
+  if [ -z "$pid" ]; then ok "$cfg_name 本来就没在跑"; return 0; fi
+
+  if is_ancestor "$pid"; then
+    warn "$cfg_name (pid=$pid) 是当前进程的祖先——停掉它会一并杀掉你正在用的会话"
+    warn "这一步交给脱离出去的 shell 执行，本进程随后会被终止"
+    setsid bash -c "kill $pid" >/dev/null 2>&1 < /dev/null &
+    return 0
+  fi
+
+  kill "$pid" 2>/dev/null
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$STOP_TIMEOUT" ]; do
+    sleep 1; waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    warn "$cfg_name ${STOP_TIMEOUT}s 内没退出，改用 SIGKILL"
+    kill -9 "$pid" 2>/dev/null; sleep 1
+  fi
+  ok "$cfg_name 已停止"
+}
+
+do_restart() {
+  load "$1"
+  local pid; pid=$(pid_on_port "$cfg_port")
+  mkdir -p "$LOG_DIR"
+
+  # Restarting the instance we are running inside: the kill lands on our own
+  # ancestor, so everything after it in this shell would never execute. Hand the
+  # whole sequence to a detached session and get out of the way.
+  if [ -n "$pid" ] && is_ancestor "$pid"; then
+    warn "你正在 $cfg_name (pid=$pid) 里面——重启会杀掉当前会话"
+    say  "已交给后台执行：停止 → 等端口释放 → 启动。会话会按原 id --resume 恢复。"
+    setsid bash -c "
+      kill $pid 2>/dev/null
+      for i in \$(seq 1 $STOP_TIMEOUT); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+      kill -0 $pid 2>/dev/null && kill -9 $pid 2>/dev/null
+      sleep 2
+      $(start_cmd)
+    " >> "$cfg_log" 2>&1 < /dev/null &
+    return 0
+  fi
+
+  do_stop "$1"
+  sleep 1
+  do_start "$1"
+}
+
+do_logs() {
+  load "$1"
+  [ -f "$cfg_log" ] || die "还没有日志: $cfg_log"
+  tail -f "$cfg_log"
+}
+
+# --- dispatch -----------------------------------------------------------------
+
+cmd=${1:-status}
+target=${2:-all}
+[ "$cmd" = "logs" ] && [ "$target" = "all" ] && target=dev   # tail needs one file
+
+expand() { [ "$1" = "all" ] && echo "stable dev" || echo "$1"; }
+
+case "$cmd" in
+  status)  for i in $(expand "$target"); do do_status  "$i"; echo; done ;;
+  start)   for i in $(expand "$target"); do do_start   "$i"; done ;;
+  stop)    for i in $(expand "$target"); do do_stop    "$i"; done ;;
+  restart) for i in $(expand "$target"); do do_restart "$i"; done ;;
+  logs)    do_logs "$target" ;;
+  -h|--help|help)
+    sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "未知命令 '$cmd'（可用: status | start | stop | restart | logs）" ;;
+esac
