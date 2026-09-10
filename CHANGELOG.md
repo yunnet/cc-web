@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [4.9.1] - 2026-09-10
+
+### Fixed
+- **A tab that was open before the renderer change could not scroll back, and
+  its mouse wheel did nothing.** Reported on a PC after the v4.8.0 upgrade. The
+  history was there and the wheel was not being swallowed — the page was stuck
+  in the terminal's *alternate* screen buffer. A page attached while Claude ran
+  the fullscreen renderer stays in that buffer when its Claude dies without
+  emitting `ESC[?1049l`, and a killed process never emits it, so the upgrade
+  restart left every open tab wedged. The alternate buffer has no scrollback by
+  design and hands the wheel to the application, which explains both symptoms at
+  once.
+  - Reconnecting could not rescue it: the join path called `terminal.clear()`,
+    which blanks the screen but resets no modes. Measured against a live
+    session: normal buffer scrolled 456→453; after `ESC[?1049h` the wheel was
+    dead; after `clear()` + replay it was **still** in the alternate buffer and
+    still dead; `ESC[?1049l` restored the wheel and the 495 lines that had been
+    sitting underneath the whole time.
+  - Joining now calls `terminal.reset()`, and does so whether or not there is
+    anything to replay — a session with an empty buffer is exactly the case
+    where there is nothing to look at *and* no way to scroll. This also clears
+    the rest of what a half-dead app leaves behind: scroll regions, application
+    cursor keys, mouse tracking, bracketed paste.
+
+### Notes
+- Frontend-only, so the deploy needs no server restart and no session restart —
+  but an already-open tab keeps the old script until it is reloaded. A wedged
+  tab is fixed by reloading it once.
+
 ## [4.9.0] - 2026-09-09
 
 ### Added

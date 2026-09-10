@@ -1290,10 +1290,34 @@ class ClaudeCodeWebInterface {
                     this.pendingJoinSessionId = null;
                 }
                 
+                // Put the terminal back into a KNOWN state before replaying.
+                //
+                // reset(), not clear(). clear() blanks the screen and leaves
+                // every mode exactly as it was — including the ALTERNATE screen
+                // buffer. A page that was attached while Claude ran the
+                // fullscreen renderer is left in that buffer when its Claude
+                // dies without emitting ESC[?1049l, and a killed process never
+                // emits it. The alternate buffer has no scrollback by design and
+                // hands the wheel to the application, so such a page is stuck
+                // with no history and a dead mouse wheel — and reconnecting
+                // could not rescue it, because clear() is not a mode reset.
+                // Measured against a live session: after ESC[?1049h the wheel
+                // was dead and clear()+replay left it dead; ESC[?1049l restored
+                // both the wheel and the 495 lines still sitting underneath.
+                //
+                // Outside the "is there anything to replay" guard on purpose: a
+                // session with an empty buffer is exactly the case where the
+                // user has nothing to look at AND no way to scroll.
+                //
+                // It also clears the rest of what a half-dead app leaves behind
+                // — scroll regions, application cursor keys, mouse tracking,
+                // bracketed paste — so the replayed bytes land on the terminal
+                // state they were recorded against.
+                this.clearTerminalWriteQueue();
+                this.terminal.reset();
+
                 // Replay output buffer if available
                 if (message.outputBuffer && message.outputBuffer.length > 0) {
-                    this.clearTerminalWriteQueue();
-                    this.terminal.clear();
                     message.outputBuffer.forEach(data => {
                         // Filter out focus tracking sequences (^[[I and ^[[O)
                         const filteredData = data.replace(/\x1b\[\[?[IO]/g, '');
