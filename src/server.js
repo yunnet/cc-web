@@ -1240,9 +1240,20 @@ class ClaudeCodeWebServer {
       outputBuffer: this.replaySlice(session.outputBuffer)
     });
 
-    // The joining client's own size arrives a beat later; the repaint is
-    // deferred past it so Claude lays out at the size everyone actually has.
-    this.scheduleRepaint(session);
+    // No forced repaint here. v4.6.3 used to nudge the pty down a row and back
+    // on every join, because Claude's FULLSCREEN renderer drew its input box and
+    // status line at the last rows of the pty and a client joining at a
+    // different row count saw nothing there. v4.8.0 forced the classic
+    // renderer, which draws that UI inline with the conversation, so the
+    // failure the nudge existed for cannot happen — while the nudge itself
+    // became the visible bug: the replay draws Claude's UI block, the fake
+    // resize makes Claude print a FRESH block below it, and the user gets two
+    // input boxes with only the lower one live. Instrumented in the browser:
+    // one status bar after the replay, two after the post-resize repaint.
+    //
+    // A genuine size change still resizes the pty (negotiatePtySize) and still
+    // makes Claude reprint below the old block — the same thing a native
+    // terminal does, and only when the size really changed.
 
     if (this.dev) {
       console.log(`WebSocket ${wsId} joined Claude session ${claudeSessionId}`);
@@ -2106,37 +2117,6 @@ class ClaudeCodeWebServer {
     return size;
   }
 
-  // Make Claude re-read the terminal size and lay its UI out again.
-  //
-  // It draws the input box and the status line at the LAST rows of the pty, so
-  // a client that joins with a different row count than Claude last laid out
-  // for sees nothing there — reported over and over as "the input box border
-  // and the status bar are gone". Asking Claude to redraw would not help: it
-  // would repaint from the same stale idea of the size. A resize round-trip
-  // sends SIGWINCH twice, which is what forces the recompute.
-  //
-  // Deferred and coalesced: a client sends its own size a beat after joining
-  // (app.js:syncPtySize), and reconnects arrive in bursts. Repainting per event
-  // would make Claude redraw its whole UI several times in a row.
-  scheduleRepaint(session) {
-    if (!session || !session.active) return;
-    if (session.repaintTimer) clearTimeout(session.repaintTimer);
-    session.repaintTimer = setTimeout(async () => {
-      session.repaintTimer = null;
-      const size = this.effectivePtySize(session);
-      // No size means nobody has reported one yet; nudging to a guess would be
-      // worse than leaving the layout alone.
-      if (!size || !session.active) return;
-      try {
-        await this.claudeBridge.resize(session.id, size.cols, Math.max(1, size.rows - 1));
-        await new Promise((r) => setTimeout(r, 40));
-        await this.claudeBridge.resize(session.id, size.cols, size.rows);
-      } catch (error) {
-        if (this.dev) console.log(`Repaint failed for ${session.id}: ${error.message}`);
-      }
-    }, 300);
-  }
-
   // Forget a client's size and re-negotiate, so closing the phone gives the
   // desktop its full canvas back instead of leaving it stuck small.
   async detachClientSize(wsId) {
@@ -2485,8 +2465,6 @@ class ClaudeCodeWebServer {
     
     // Stop all sessions
     for (const [sessionId, session] of this.claudeSessions.entries()) {
-      // A pending repaint would fire against a session that is going away.
-      if (session.repaintTimer) { clearTimeout(session.repaintTimer); session.repaintTimer = null; }
       if (session.flowResumeTimer) { clearTimeout(session.flowResumeTimer); session.flowResumeTimer = null; }
       if (session.active) {
         this.claudeBridge.stopSession(sessionId);

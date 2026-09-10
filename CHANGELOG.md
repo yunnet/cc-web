@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [4.9.2] - 2026-09-10
+
+### Fixed
+- **Two input boxes after switching tabs, only one of them live.** Joining a
+  session drew Claude's input box and status line twice: once from the replayed
+  buffer, then a second copy underneath.
+  - The duplicate came from cc-web manufacturing a resize. v4.6.3 nudged the pty
+    down one row and back on every join, because Claude's *fullscreen* renderer
+    drew that UI at the last rows of the pty and a client joining at a different
+    row count saw nothing there. v4.8.0 forced the classic renderer, which draws
+    the UI inline with the conversation — so the failure the nudge existed for
+    cannot happen, while the nudge itself became the bug: Claude answers SIGWINCH
+    by printing a *fresh* UI block at the cursor, which sits just below the one
+    the replay drew.
+  - Instrumented per write in the browser: the replay (49782 bytes) left **one**
+    status bar; the repaint that arrived 95ms after the resize (2921 bytes) made
+    it **two**. Replaying the same 500 chunks into an offline terminal with no
+    resize produced one, which is what ruled out the recorded bytes.
+  - The forced repaint is gone. A genuine size change still resizes the pty and
+    still makes Claude reprint below the old block — the same thing a native
+    terminal does, and only when the size really changed.
+
+### Notes
+- Server-side, so this one needs a restart to take effect (sessions resume; the
+  page reload is not enough).
+
 ## [4.9.1] - 2026-09-10
 
 ### Fixed
