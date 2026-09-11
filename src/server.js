@@ -2290,17 +2290,6 @@ class ClaudeCodeWebServer {
   // setting over to the new unit rather than silently resetting it.
   static LEGACY_BYTES_PER_CHUNK = 100;
 
-  // A second, independent ceiling on what a RECONNECT sends. The chunk cap alone
-  // is the wrong unit here: measured against real sessions, 5000 chunks is a
-  // ~1.75 MB JSON message, and joinClaudeSession runs on every reconnect, for
-  // every device attached to the session, serialising on the shared event loop.
-  // (The old hard-coded 200 was ~89 KB.)
-  //
-  // 512 KB is chosen so the DEFAULT setting is untouched — 500 chunks measures
-  // ~180 KB — and only the deliberately large settings feel it. Raising the
-  // setting still buys more replay, just not without limit. What is persisted is
-  // unaffected: this bounds delivery, not storage.
-  static SCROLLBACK_REPLAY_MAX_BYTES = 512 * 1024;
 
   scrollbackFile() {
     return this.dataDirFile('scrollback.json');

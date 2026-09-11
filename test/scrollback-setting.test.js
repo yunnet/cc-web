@@ -163,7 +163,7 @@ describe('scrollback chunk setting', function () {
     // Truncating to nothing would turn one huge burst of output into a blank
     // terminal, which is the failure the ceiling is supposed to prevent.
     const sent = [];
-    const huge = 'y'.repeat(ClaudeCodeWebServer.SCROLLBACK_REPLAY_MAX_BYTES * 2);
+    const huge = 'y'.repeat(2 * 1024 * 1024);   // well past any budget
     server.claudeSessions.set(SESSION_ID, fakeSession([huge]));
     server.webSocketConnections.set('ws1', { ws: {}, claudeSessionId: null });
     server.sendToWebSocket = (_ws, msg) => sent.push(msg);
