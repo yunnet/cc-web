@@ -111,8 +111,7 @@ class ClaudeCodeWebInterface {
             // Hide the loading overlay now that we've joined a session — but keep
             // the "Start Claude" restart prompt visible when the joined session's
             // Claude process has stopped.
-            const startPromptVisible = document.getElementById('startPrompt')?.style.display === 'block';
-            if (!startPromptVisible) this.hideOverlay();
+            if (!this.startPromptVisible()) this.hideOverlay();
         } else {
             // No sessions anywhere - show the folder picker to create the first one.
             this.hideOverlay();
@@ -1373,7 +1372,11 @@ class ClaudeCodeWebInterface {
         const { cols, rows } = this.termDims();
         if (cols && rows) this.sendOn(view, { type: 'resize', cols, rows });
         this.positionModeSwitcher();
-        this.hideOverlay();
+        // Not unconditionally: for a brand-new view the await above is exactly
+        // when session_joined arrives and raises the "Start Claude" prompt, and
+        // hiding it here left a blank terminal with no way to start — which
+        // reads as "the session wasn't created".
+        if (!this.startPromptVisible()) this.hideOverlay();
         try { this.terminal.focus(); } catch (_) {}
     }
 
@@ -2010,6 +2013,13 @@ class ClaudeCodeWebInterface {
         this.pendingStart = null;
         this.isCreatingNewSession = false;
         this.closeFolderBrowser();
+    }
+
+    // Is the "Start Claude" prompt the overlay's current content? Callers that
+    // hide the overlay as cleanup ask this first, so they don't wipe a prompt
+    // that session_joined raised while they were awaiting something else.
+    startPromptVisible() {
+        return document.getElementById('startPrompt')?.style.display === 'block';
     }
 
     showOverlay(contentId) {

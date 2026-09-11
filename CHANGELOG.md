@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixed
+- **A new session opened a blank, dead tab.** Reported as "can't create a
+  session" against a particular working directory; the directory was a red
+  herring — every new session was hit, and the ones already open were not,
+  because they resume into an already-running Claude.
+  - `showSession()` awaits `openViewSocket()` the first time a view is built.
+    The server's `session_joined` lands *during* that await and, for a session
+    whose Claude has not started, raises the "Start Claude" prompt. The line
+    after the await then hid the overlay unconditionally — wiping the prompt and
+    leaving an empty terminal with no way to start anything.
+  - Console from the reproduction on :32352, the two lines back to back:
+    `[session_joined] New session detected, showing start prompt` /
+    `[hideOverlay] Hiding overlay, current display: flex`. The session itself was
+    healthy throughout: re-showing the overlay by hand and clicking Start logged
+    `Starting Claude session … [fresh] cwd=/home/myhi/gongxinyun/ts` →
+    `started successfully`.
+  - Both cleanup-time hides now ask `startPromptVisible()` first. The bootstrap
+    path had grown this guard inline already; it is one helper now, so a third
+    caller cannot quietly copy the check and let it drift.
+
 ## [4.11.1] - 2026-09-11
 
 ### Fixed
