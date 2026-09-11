@@ -15,3 +15,11 @@ node_modules/
 *~
 .claude/
 test-*.js
+
+# Local tooling, per-machine — never part of the published package.
+# .mcp.json points Claude Code at a codegraph server that has to exist on THIS
+# box; .codegraph/ is its index (megabytes, rebuilt by `codegraph init`).
+# .playwright-mcp/ is where the Playwright MCP drops screenshots and console logs.
+.mcp.json
+.codegraph/
+.playwright-mcp/
