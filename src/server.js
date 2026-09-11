@@ -1082,11 +1082,12 @@ class ClaudeCodeWebServer {
       // One conversation, one tab: two Claude processes resuming the same
       // transcript would interleave writes into it. The list greys these out;
       // this is the check that holds when another device got there first.
-      if (this.claudeSessions.has(resumeId)) {
+      const holder = this.sessionHoldingConversation(resumeId);
+      if (holder) {
         return res.status(409).json({
           error: 'Conversation already open',
           message: 'That conversation is already open in another tab.',
-          sessionId: resumeId
+          sessionId: holder
         });
       }
       // `--resume` only finds a conversation recorded in the same directory, so
@@ -1382,6 +1383,9 @@ class ClaudeCodeWebServer {
         // before (bound to this session id via --session-id). Survives server
         // restarts / dead PTYs instead of starting a brand-new conversation.
         resume: !!session.claudeStarted,
+        // ...and resume what Claude is ACTUALLY writing to, which is our own id
+        // until a /clear moves it. See resumeIdFor.
+        resumeId: this.resumeIdFor(session),
         // A conversation the user picked from the history list must not quietly
         // become a new empty one when --resume fails: the tab would claim to be
         // continuing a conversation it is not. Fail loudly instead.
@@ -1542,14 +1546,62 @@ class ClaudeCodeWebServer {
     }
 
     const event = req.body || {};
-    this.broadcastToSession(sessionId, {
+    const message = {
       type: 'hook_event',
       sessionId,
       event: event.hook_event_name,
       tool_name: event.tool_name,
       tool_input: event.tool_input
-    });
+    };
+    if (event.hook_event_name === 'SessionStart') {
+      // Only persist when it actually moved: Claude fires SessionStart on every
+      // start, and the common case reports back the id we asked for.
+      if (this.recordClaudeSessionStart(session, event)) this.saveSessionsToDisk();
+      message.claudeSessionId = session.claudeConversationId;
+      message.source = event.source;
+    }
+    this.broadcastToSession(sessionId, message);
     res.json({ ok: true });
+  }
+
+  // Record the conversation id Claude reports at SessionStart. Returns true when
+  // it changed, which is the only case worth a disk write.
+  //
+  // Claude sends `session_id`; nothing else in the payload is trusted here.
+  recordClaudeSessionStart(session, event) {
+    const real = event && event.session_id;
+    if (!real || !claudeHistory.UUID.test(String(real))) return false;
+    if (session.claudeConversationId === real) return false;
+    session.claudeConversationId = real;
+    return true;
+  }
+
+  // Which Claude conversation a (re)start should re-attach to.
+  //
+  // cc-web mints the id and binds it with `--session-id`, so for most of a
+  // session's life this IS the session id. They part company the moment Claude
+  // starts a transcript of its own — `/clear` does exactly that — and from then
+  // on resuming our own id would bring back the conversation from before the
+  // clear. The SessionStart hook tells us where Claude went; this is where that
+  // knowledge is spent. Re-validated rather than trusted: the value round-trips
+  // through a session file on disk and is about to become a CLI argument.
+  resumeIdFor(session) {
+    if (!session) return null;
+    const real = session.claudeConversationId;
+    return (real && claudeHistory.UUID.test(String(real))) ? real : session.id;
+  }
+
+  // The session, if any, that is already writing to conversation `convId` —
+  // either because it was created under that id or because Claude moved it
+  // there. Keeps "one conversation, one tab" true across a /clear: the forked
+  // conversation shows up in the history list like any other, and opening it
+  // would put a second Claude on a transcript a live tab already owns.
+  sessionHoldingConversation(convId) {
+    if (this.claudeSessions.has(convId)) return convId;
+    for (const [id, session] of this.claudeSessions) {
+      if (session && session.claudeConversationId === convId) return id;
+    }
+    return null;
   }
 
   // Serve a plan markdown file for GET /api/plan. Extracted so it is unit-testable

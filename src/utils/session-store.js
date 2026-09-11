@@ -122,6 +122,11 @@ class SessionStore {
             // --session-id). Lets a restart resume the conversation instead of
             // starting fresh.
             claudeStarted: !!session.claudeStarted,
+            // The conversation Claude is actually writing to. Normally the
+            // same as `id` — until a `/clear` moves Claude to a new transcript
+            // mid-session. Persisted so a restart resumes what the user last
+            // had in front of them, not the conversation from before the clear.
+            claudeConversationId: session.claudeConversationId || undefined,
             // Bound to a conversation the user picked from the history list.
             // Persisted so a restart still refuses to fall back to a fresh
             // launch under that id — see server.startClaude.

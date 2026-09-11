@@ -72,7 +72,12 @@ class ClaudeBridge {
       // detected via a structured event instead of scraping the terminal.
       hookScript = '',
       hookPort = 0,
-      hookToken = ''
+      hookToken = '',
+      // Which Claude conversation `--resume` re-attaches to. Defaults to the
+      // cc-web session id because that is what `--session-id` bound on the first
+      // start — but Claude can move itself to a new transcript (`/clear`), and
+      // the server tracks where it went. See server.resumeIdFor.
+      resumeId = ''
     } = options;
 
     // Args shared by a fresh launch and a resume.
@@ -102,7 +107,12 @@ class ClaudeBridge {
     // later (after a server restart or a dead PTY) so the conversation is NOT
     // lost. The id is the cc-web session's own uuid.
     const spawnClaude = (mode) => {
-      const idArgs = mode === 'resume' ? ['--resume', sessionId] : ['--session-id', sessionId];
+      // Only the RESUME target may differ from our own id: a fresh launch still
+      // binds the cc-web id via --session-id, which is what makes the two the
+      // same in the first place.
+      const idArgs = mode === 'resume'
+        ? ['--resume', resumeId || sessionId]
+        : ['--session-id', sessionId];
       console.log(`Starting Claude session ${sessionId} [${mode}] cwd=${workingDir} size=${cols}x${rows}`);
       if (dangerouslySkipPermissions) {
         console.log(`⚠️ WARNING: Skipping permissions with --dangerously-skip-permissions flag`);
@@ -446,6 +456,17 @@ class ClaudeBridge {
       settings.hooks = {
         PreToolUse: [
           { matcher: 'ExitPlanMode', hooks: [{ type: 'command', command }] }
+        ],
+        // Claude's conversation id is not ours to assume. We bind ours with
+        // --session-id, but `/clear` starts a NEW transcript inside the same
+        // process: measured on Claude Code 2.1.266 driving a real PTY,
+        // SessionStart fires again with source "clear" and a fresh uuid. Resume
+        // our own id after that and the user gets the conversation from BEFORE
+        // the clear, with everything since silently gone. This hook is how we
+        // hear about the move. (`/compact` does not fork on this version — the
+        // summary is appended to the same file.)
+        SessionStart: [
+          { matcher: '*', hooks: [{ type: 'command', command }] }
         ]
       };
     }
