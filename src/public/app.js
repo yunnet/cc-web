@@ -1981,6 +1981,35 @@ class ClaudeCodeWebInterface {
         console.log('Working directory:', dir);
     }
 
+    // The working directory belongs to the SESSION, not to the app.
+    //
+    // It was a plain field, written only when a session was created or joined.
+    // But switching tabs goes through showSession() and switching split panes
+    // through focusSplit() — both move currentClaudeSessionId without either
+    // message ever arriving. The field then still pointed at whichever project
+    // was joined last, and everything that asks it (the branch panel above all)
+    // answered for the wrong tab: come back to the "ts" tab, open the branch
+    // panel, read "PMS".
+    //
+    // Deriving it from the active session leaves nothing to keep in sync, so a
+    // future switch path cannot forget to.
+    get currentWorkingDir() {
+        const id = this.currentClaudeSessionId;
+        const rec = id && this.sessionTabManager && this.sessionTabManager.activeSessions
+            ? this.sessionTabManager.activeSessions.get(id)
+            : null;
+        // A known tab answers for itself even when its directory is unknown:
+        // falling back would hand back some other project's path, which is the
+        // bug. The written value is only for before a tab exists — session_created
+        // writes the dir a beat before addTab() registers it.
+        if (rec) return rec.workingDir || null;
+        return this._currentWorkingDir || null;
+    }
+
+    set currentWorkingDir(dir) {
+        this._currentWorkingDir = dir || null;
+    }
+
     // Whether starting an assistant should first prompt for a project folder.
     // True when there is no chosen directory, or the directory would be the
     // launch/home directory (which we don't treat as a real project).
