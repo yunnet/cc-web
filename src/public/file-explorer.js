@@ -16,9 +16,13 @@
     return t.content.firstElementChild;
   };
   const DOWNLOAD_ICON = '<svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>';
+  // An at-sign, because an at-sign is literally what the button types. `dl-icon`
+  // is the shared per-row glyph size, not a download-only class.
+  const AT_ICON = '<svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"/></svg>';
   const FOLDER_ICON_NODE = iconNode(FOLDER_ICON);
   const FILE_ICON_NODE = iconNode(FILE_ICON);
   const DOWNLOAD_ICON_NODE = iconNode(DOWNLOAD_ICON);
+  const AT_ICON_NODE = iconNode(AT_ICON);
 
   const toast = (msg, err) => { try { window.app && window.app.showToast(msg, err); } catch (_) {} };
 
@@ -67,6 +71,15 @@
       // attach 2000 closures. Rows carry their target in data-path/data-type
       // (dataset, never innerHTML, so a crafted filename can't inject markup).
       this.el('explorerList').addEventListener('click', (e) => {
+        // Both row buttons are checked BEFORE the row itself: without the early
+        // return, clicking one would also open the directory / preview the file
+        // underneath it.
+        const ins = e.target.closest && e.target.closest('.row-insert');
+        if (ins && ins.dataset.insert) {
+          e.stopPropagation();
+          this.insertPath(ins.dataset.insert);
+          return;
+        }
         const dl = e.target.closest && e.target.closest('.row-download');
         if (dl && dl.dataset.download) {
           e.stopPropagation();
@@ -202,6 +215,26 @@
       if (modal) modal.classList.remove('active');
     }
 
+    // Type a path into the terminal input, the way pasting an image already does
+    // (app.js uploadAndInsertImage): injected as keystrokes, with NO newline, so
+    // the user writes their prompt after it and sends it themselves.
+    //
+    // `@` + an ABSOLUTE path, measured against Claude Code 2.1.266 in a real pty:
+    // Claude reads it even when the file is outside the session's cwd (a relative
+    // path would break the moment you browse out of the project), the trailing
+    // space dismisses the `@` autocomplete popup so the following keystrokes are
+    // not eaten by it, and a path containing spaces needs no quoting.
+    insertPath(path) {
+      const app = window.app;
+      if (!app || !app.currentClaudeSessionId) {
+        toast('Start Claude before inserting a path', true);
+        return;
+      }
+      app.send({ type: 'input', data: '@' + path + ' ' });
+      this.close();
+      toast('Path inserted');
+    }
+
     async load(dirPath) {
       const list = this.el('explorerList');
       if (!list) return;
@@ -285,11 +318,26 @@
 
         const full = this.join(this.currentPath, item.name);
 
+        // Files and folders alike: handing Claude a directory is at least as
+        // common as handing it one file, and a folder row had no button at all
+        // until now. Same "always visible" rule as the download button — this is
+        // used on a phone, where there is no hover to reveal anything.
+        const ins = document.createElement('button');
+        ins.type = 'button';
+        ins.className = 'row-insert';
+        ins.dataset.insert = full;
+        ins.title = 'Insert path into the terminal';
+        ins.setAttribute('aria-label', `Insert path of ${item.name}`);
+        ins.appendChild(AT_ICON_NODE.cloneNode(true));
+
         if (item.type === 'file') {
           const size = document.createElement('span');
           size.className = 'folder-size';
           size.textContent = formatSize(item.size);
           row.appendChild(size);
+          // After the size, so the two buttons sit together at the end of the row
+          // rather than with the file size wedged between them.
+          row.appendChild(ins);
 
           // Always present, never hover-revealed: this is used on a phone, where
           // there is no hover and a long-press is both undiscoverable and in the
@@ -306,6 +354,9 @@
           const previewable = this.canPreview(full);
           row.dataset.preview = previewable ? '1' : '';
           row.title = previewable ? 'Open in a new tab' : 'Download';
+        } else {
+          // A folder row has no size and no download, so this is its only button.
+          row.appendChild(ins);
         }
 
         row.dataset.type = item.type;

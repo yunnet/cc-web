@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+- **Insert a path into the terminal from the file explorer.** Every row — files
+  and folders alike — gets an at-sign button next to the download one. Clicking
+  it types `@<absolute path>` plus a space into the terminal input and closes the
+  explorer, leaving the cursor after the path so you write the prompt yourself.
+  No newline is ever sent: pressing Enter for you would fire a half-written
+  message.
+  - `@` with an **absolute** path, measured against Claude Code 2.1.266 driving a
+    real pty: Claude reads the file even when it sits outside the session's
+    working directory (a relative path breaks the moment you browse out of the
+    project), the trailing space dismisses the `@` autocomplete popup so the
+    keystrokes after it are not eaten, and a path containing spaces needs no
+    quoting.
+  - A folder row had no button at all until now; handing Claude a directory is at
+    least as common as handing it one file.
+
 ### Fixed
 - **A new session opened a blank, dead tab.** Reported as "can't create a
   session" against a particular working directory; the directory was a red
