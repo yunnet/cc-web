@@ -75,6 +75,24 @@ describe('SessionStore', function () {
       assert.deepStrictEqual(leftovers, []);
     });
 
+    // The server calls saveSessionsToDisk() from a dozen places without waiting
+    // for the previous call. With a pid-only temp name, two saves of the same
+    // session shared one temp file: the first rename moved it away and the
+    // second failed with ENOENT — or, worse, one write truncated the other's
+    // file mid-way and a half-written JSON got renamed into place. Seen live
+    // on :32352 with ~3 MB session files, which widen the window.
+    it('survives overlapping saves of the same session in one process', async function () {
+      const big = sessionOf({ outputBuffer: ['x'.repeat(2 * 1024 * 1024)] });
+      const sessions = new Map([[ID(1), big], [ID(2), big]]);
+      const results = await Promise.all(Array.from({ length: 8 }, () => store.saveSessions(sessions)));
+      assert.deepStrictEqual(results, results.map(() => true), 'every save must succeed');
+
+      const files = await fs.readdir(path.join(dir, 'sessions'));
+      assert.deepStrictEqual(files.filter(f => f.includes('.tmp')), [], 'no temp file left behind');
+      const loaded = await store.loadSessions();
+      assert.strictEqual(loaded.size, 2, 'both files must still parse');
+    });
+
     it('refuses an id that is not a uuid, rather than building a path from it', async function () {
       for (const bad of ['session1', '../../etc/passwd', '', null, undefined, 'a/b']) {
         assert.strictEqual(await store.writeOne(bad, sessionOf()), false, `must refuse ${JSON.stringify(bad)}`);

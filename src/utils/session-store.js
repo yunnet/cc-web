@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 
 // Session persistence: one file per session.
 //
@@ -147,9 +148,13 @@ class SessionStore {
     async writeOne(id, session) {
         if (!isValidSessionId(id)) return false;
         const target = this.sessionFile(id);
-        // Temp name carries the pid so two writers cannot clobber each other's
-        // partial write, then rename makes the swap atomic for readers.
-        const tmp = `${target}.${process.pid}.tmp`;
+        // Temp name is unique per WRITE, not just per process: the server fires
+        // overlapping saves of the same session, and a pid-only name made them
+        // share one temp file — the second rename hit ENOENT, or one write
+        // truncated the other's mid-way and a torn file was renamed into place.
+        // The pid stays so a stray temp file still says who left it. Rename
+        // then makes the swap atomic for readers.
+        const tmp = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
         try {
             await fs.mkdir(this.sessionsDir, { recursive: true, mode: 0o700 });
             await fs.writeFile(tmp, JSON.stringify(this.toRecord(id, session), null, 2));
