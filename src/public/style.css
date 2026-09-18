@@ -141,7 +141,10 @@ body {
     color: var(--text-secondary);
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    /* No transition: `all 0.3s` faded every part of the switch — the accent
+       fill, the border, the text colour, even the weight going to 600 — so the
+       tab you just clicked took a third of a second to look clicked. Switching
+       tabs should land the moment it happens. See .folder-item. */
     min-width: 120px;
     max-width: 200px;
     position: relative;
@@ -579,7 +582,8 @@ body {
     justify-content: space-between;
     align-items: center;
     cursor: pointer;
-    transition: background-color 0.2s;
+    /* No transition: 200ms of fade is the highlight trailing the pointer down
+       the list. See .folder-item. */
 }
 
 .session-item:hover {
@@ -1649,9 +1653,12 @@ body {
     border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
-    /* Snappy, colour-only hover so the highlight tracks the cursor instead of
-       lagging ~200ms behind (the old `transition: all 0.2s` felt draggy). */
-    transition: background-color 0.08s ease, border-color 0.08s ease, color 0.08s ease;
+    /* No transition. A folder list is read with the pointer sweeping down it,
+       so the highlight has to be under the cursor, not catching up to it: with
+       the old `transition: ... 0.08s` the row was still its base colour one
+       frame after the pointer entered and only reached full accent at 83ms —
+       one row of lag the whole way down the list. Measured, not guessed. Same
+       conclusion as .conv-row, which has carried it since it was written. */
     font-size: 14px;
 }
 
