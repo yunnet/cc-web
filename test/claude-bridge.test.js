@@ -174,6 +174,49 @@ describe('ClaudeBridge', function() {
     });
   });
 
+  // Which option starts highlighted is Claude's choice, and it has changed. The
+  // old prompt opened on "1. Yes, I trust this folder", so a bare Enter
+  // accepted; today's opens on "No, exit", so the same Enter QUITS — one second
+  // into every session in a folder Claude had not seen before. These pin the
+  // cursor arithmetic that replaced the blind Enter.
+  describe('trustPromptCursorDelta', function() {
+    const currentPrompt =
+      '\u001b[2G\u001b[38;2;210;153;34m\u001b[1mAccessing\u001b[12Gworkspace:\u001b[22m\u001b[39m\r\r\n\r\r\n\u001b[2G\u001b[1m/data/work/gongxinyun/dataset\u001b[22m\r\r\n\r\r\n\u001b[2GQuick\u001b[8Gsafety\u001b[15Gcheck:\u001b[22GIs\u001b[25Gthis\u001b[30Ga\u001b[32Gproject\u001b[40Gyou\u001b[44Gcreated\r\r\n\r\r\n\u001b[2G\u001b[38;2;139;148;158mSecurity\u001b[11Gguide\u001b[39m\r\r\n\r\r\n\u001b[2G\u001b[38;2;177;185;249m\u276f\u001b[4GNo,\u001b[8Gexit\u001b[39m\r\r\n\u001b[4GYes,\u001b[9GI\u001b[11Gtrust\u001b[17Gthis\u001b[22Gfolder\r\r\n\r\r\n\u001b[2G\u001b[38;2;139;148;158mEnter\u001b[8Gto\u001b[11Gconfirm\u001b[19G\u00b7\u001b[21GEsc\u001b[25Gto\u001b[28Gcancel\u001b[39m\r\r\n';
+
+    it('measures one row down to the accept option on the current prompt', function() {
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(currentPrompt), 1);
+    });
+
+    it('returns 0 when the cursor already sits on the accept option', function() {
+      const old =
+        '\u001b[2G\u001b[38;2;87;105;247m\u276f\u001b[4G1.\u001b[7GYes,\u001b[12GI\u001b[14Gtrust' +
+        '\u001b[20Gthis\u001b[25Gfolder\u001b[39m\r\r\n' +
+        '\u001b[4G2.\u001b[7GNo,\u001b[11Gexit\r\r\n';
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(old), 0);
+    });
+
+    it('reads the LAST frame, not an earlier repaint', function() {
+      // Claude repaints the whole prompt on every resize. An older frame with the
+      // cursor elsewhere must not decide where we move now.
+      const stale = currentPrompt.replace('\u276f\u001b[4GNo,', '\u001b[4GNo,')
+        .replace('\u001b[4GYes,', '\u276f\u001b[4GYes,');
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(stale + currentPrompt), 1);
+    });
+
+    it('refuses to guess when the accept option is not on screen', function() {
+      // Nothing is sent in that case: leaving the prompt up beats quitting for
+      // the user.
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta('Quick safety check: ...'), null);
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(''), null);
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(undefined), null);
+    });
+
+    it('ignores a lone marker far from the options', function() {
+      const withInputBox = '\u276f\u001b[4Gsome typed text\r\n'.repeat(6) + currentPrompt;
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(withInputBox), 1);
+    });
+  });
+
   describe('clearEmptyTranscript', function() {
     // The id is interpolated into paths this deletes — one of them recursively,
     // inside the user's home. Anything that isn't a uuid must be refused before

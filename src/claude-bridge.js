@@ -220,10 +220,24 @@ class ClaudeBridge {
           }
           if (!trustPromptHandled && ClaudeBridge.looksLikeTrustPrompt(dataBuffer)) {
             trustPromptHandled = true;
-            console.log(`Auto-accepting trust prompt for session ${sessionId}`);
+            console.log(`Trust prompt detected for session ${sessionId}`);
             setTimeout(() => {
-              try { session.process.write('\r'); } catch (_) {}
-              console.log(`Sent Enter to accept trust prompt for session ${sessionId}`);
+              // Read the SETTLED buffer, not the fragment that tripped the
+              // match: the prompt is still being painted when the first chunk
+              // arrives, and only the finished frame says which option the
+              // cursor is on.
+              const delta = ClaudeBridge.trustPromptCursorDelta(dataBuffer);
+              if (delta === null) {
+                console.log(`Trust prompt for ${sessionId}: accept option not found; leaving the choice on screen`);
+                return;
+              }
+              const arrow = delta >= 0 ? '\x1b[B' : '\x1b[A';
+              try {
+                for (let i = 0; i < Math.abs(delta); i++) session.process.write(arrow);
+                // Let the TUI repaint the new selection before confirming it.
+                setTimeout(() => { try { session.process.write('\r'); } catch (_) {} }, 120);
+              } catch (_) {}
+              console.log(`Accepting trust prompt for session ${sessionId} (cursor ${delta} row(s) from the accept option)`);
             }, 500);
           }
           if (dataBuffer.length > 10000) {
@@ -409,6 +423,47 @@ class ClaudeBridge {
       .replace(/\s+/g, '')
       .toLowerCase();
     return /doyoutrustthefilesinthisfolder|quicksafetycheck|yes,?itrustthisfolder/.test(dense);
+  }
+
+  // How far the selection cursor sits from "Yes, I trust this folder", counted
+  // in option rows: 0 when it is already there, positive when the accept line
+  // is below it. null when the screen cannot be read that way.
+  //
+  // This exists because a bare Enter is NOT safe. WHICH option starts
+  // highlighted is Claude's choice and it has changed: the old prompt opened on
+  // "1. Yes, I trust this folder", today's opens on "No, exit". The blind Enter
+  // this replaced therefore quit for the user — a second into every session in
+  // a folder Claude had not seen before, the PTY died and the tab fell back to
+  // the start screen with no explanation. Measure, then move, then confirm.
+  static trustPromptCursorDelta(text) {
+    // Same de-escaping as looksLikeTrustPrompt, but per line: Claude gives every
+    // word its own cursor-column escape, so a row only reads as text once the
+    // escapes and the spaces they stand in for are gone. Blank rows drop out so
+    // "one row down" means one OPTION down, which is what the arrow key moves.
+    const rows = String(text || '')
+      .replace(/\x1b\[[0-9;?<>=!]*[a-zA-Z]/g, '')
+      .replace(/\r\n|\r/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, '').toLowerCase())
+      .filter((line) => line.length > 0);
+
+    // Last frame wins: Claude repaints the whole prompt on every resize, and the
+    // buffer holds all of those repaints.
+    let accept = -1;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (/yes,?itrustthisfolder/.test(rows[i])) { accept = i; break; }
+    }
+    if (accept < 0) return null;
+
+    // The options are consecutive rows and the cursor is on one of them. Only
+    // look at that neighbourhood, so a "❯" from elsewhere on screen (Claude's
+    // own input box draws one) cannot be mistaken for the selection.
+    let cursor = -1;
+    for (let i = Math.max(0, accept - 3); i <= Math.min(rows.length - 1, accept + 3); i++) {
+      if (rows[i].startsWith('❯')) cursor = i;
+    }
+    if (cursor < 0) return null;
+    return accept - cursor;
   }
 
   // Claude's theme has to match the background WE paint, because the browser
