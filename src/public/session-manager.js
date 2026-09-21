@@ -992,18 +992,9 @@ class SessionTabManager {
         setTimeout(() => document.addEventListener('mousedown', close, true), 0);
     }
 
+    // + in the tab bar, Ctrl+T and the Sessions panel's New Session all land here.
     createNewSession() {
-        // Set flag to indicate we're creating a new session
-        if (this.claudeInterface) {
-            this.claudeInterface.isCreatingNewSession = true;
-            // Show the folder browser to let user pick a folder for the new session
-            if (this.claudeInterface.showFolderBrowser) {
-                this.claudeInterface.showFolderBrowser();
-            }
-        } else {
-            // Fallback: show the folder browser modal directly
-            document.getElementById('folderBrowserModal').classList.add('active');
-        }
+        if (this.claudeInterface) this.claudeInterface.openNewTabDialog();
     }
 
     switchToNextTab() {

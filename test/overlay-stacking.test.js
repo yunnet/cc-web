@@ -11,6 +11,7 @@ describe('overlay stacking', function () {
   const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
   const CSS = read('src', 'public', 'style.css');
   const APP = read('src', 'public', 'app.js');
+  const HTML = read('src', 'public', 'index.html');
 
   const OVERLAY_Z = 5000;
 
@@ -30,17 +31,23 @@ describe('overlay stacking', function () {
     assert.strictEqual(zIndexOf('.terminal-overlay'), OVERLAY_Z);
   });
 
-  it('lifts the tab bar and the two stacks it would otherwise invert', function () {
+  it('lifts the tab bar and the stack it would otherwise invert', function () {
     const bar = zIndexOf('body.overlay-open .session-tabs-bar');
     const menu = zIndexOf('body.overlay-open .mobile-menu');
-    const browser = zIndexOf('body.overlay-open .folder-browser-modal');
 
     assert.ok(bar > OVERLAY_Z, `tab bar (${bar}) must clear the overlay (${OVERLAY_Z})`);
     // Lifting the bar unconditionally would drop the mobile side menu (3000)
-    // and the centered folder browser (2000) behind it. Inside the scope they
-    // have to come along, above the bar.
+    // behind it. Inside the scope it has to come along, above the bar.
     assert.ok(menu > bar, `mobile menu (${menu}) must stay above the tab bar (${bar})`);
-    assert.ok(browser > bar, `folder browser (${browser}) must stay above the tab bar (${bar})`);
+  });
+
+  it('puts the new tab dialog in the lifted .session-modal stack', function () {
+    // The centered folder browser used to be lifted on its own. It is now part
+    // of #newTabModal, which the tab bar's + and the menu's New Session open
+    // straight from the overlay — so it must carry the class the lift targets.
+    const tag = /<div[^>]*id="newTabModal"[^>]*>/.exec(HTML);
+    assert.ok(tag, '#newTabModal is gone');
+    assert.ok(/class="[^"]*\bsession-modal\b/.test(tag[0]), '#newTabModal must be a .session-modal');
   });
 
   it('lifts every modal that can open while the overlay is up', function () {
@@ -63,25 +70,24 @@ describe('overlay stacking', function () {
 
   it('keeps the lift scoped, so normal stacking is untouched', function () {
     // The unscoped rules must NOT have grown a z-index of their own: outside
-    // the overlay state, the mobile menu and folder browser still have to sit
+    // the overlay state, the mobile menu and the modals still have to sit
     // above a tab bar that is back down at its ordinary level.
     assert.ok(zIndexOf('.session-tabs-bar') === null || zIndexOf('.session-tabs-bar') < zIndexOf('.mobile-menu'),
       'unscoped tab bar stays below the mobile menu');
-    for (const rule of ['.session-tabs-bar', '.mobile-menu', '.folder-browser-modal',
-                        '.session-modal', '.settings-modal']) {
+    for (const rule of ['.session-tabs-bar', '.mobile-menu', '.session-modal', '.settings-modal']) {
       assert.ok(new RegExp(`body\\.overlay-open ${rule.replace('.', '\\.')}\\s*\\{`).test(CSS),
         `${rule} is lifted only under body.overlay-open`);
     }
   });
 
   it('leaves the file explorer drawer on top of everything it was lifted over', function () {
-    // #fileExplorerModal is an id selector (1,0,0) and outranks
-    // `body.overlay-open .folder-browser-modal` (0,2,1) despite sharing the
-    // class — so the drawer must still win on the number too.
+    // #fileExplorerModal shares .folder-browser-modal with nothing that is
+    // lifted any more, but it must still clear the overlay and every lifted
+    // modal, the new tab dialog included.
     const drawer = zIndexOf('#fileExplorerModal');
     assert.ok(drawer > OVERLAY_Z, 'the drawer still clears the overlay');
-    assert.ok(drawer > zIndexOf('body.overlay-open .folder-browser-modal'),
-      'the drawer outranks the scoped folder-browser lift');
+    assert.ok(drawer > zIndexOf('body.overlay-open .session-modal'),
+      'the drawer outranks the lifted modals');
   });
 
   it('toggles the flag in both directions, from the only two writers', function () {

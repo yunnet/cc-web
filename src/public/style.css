@@ -694,34 +694,6 @@ body {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
-.form-group {
-    margin-bottom: 16px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-}
-
-.form-group input {
-    width: 100%;
-    padding: 8px 12px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 13px;
-}
-
-.form-group input:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
 .btn-small {
     padding: 6px 12px;
     font-size: 12px;
@@ -1858,11 +1830,6 @@ body {
     cursor: pointer;
 }
 
-.folder-browser-buttons {
-    display: flex;
-    gap: 8px;
-}
-
 .empty-folder-message {
     padding: 40px;
     text-align: center;
@@ -2756,25 +2723,22 @@ pre, code {
    left underneath the overlay — the drawer was usable and unreachable.
 
    Scoped to body.overlay-open on purpose. Lifting the tab bar unconditionally
-   would invert two other stacks: the mobile side menu (3000) and the centered
-   folder browser (2000) would both fall behind it. Inside the scope those two
-   are re-lifted above the bar; outside it, the normal stacking order is
-   untouched. #fileExplorerModal keeps 6000 — an id selector (1,0,0) outranks
-   `body.overlay-open .folder-browser-modal` (0,2,1) — so the drawer stays on top.
+   would invert the mobile side menu (3000), which would fall behind it. Inside
+   the scope it is re-lifted above the bar; outside it, the normal stacking
+   order is untouched. #fileExplorerModal keeps 6000 by its id rule, so the
+   drawer stays on top.
    --------------------------------------------------------------------------- */
 body.overlay-open .session-tabs-bar     { z-index: 5001; }
 body.overlay-open .mobile-menu          { z-index: 5002; }
-body.overlay-open .folder-browser-modal { z-index: 5003; }
 /* Lifting the two entry points without lifting what they OPEN was half a fix.
    Both roads out of the overlay end in a modal: the tab bar's + and the mobile
-   menu's "New Session" reach the folder browser, and picking a directory closes
-   it and opens #newSessionModal (.session-modal, 2000) — under the overlay, a
-   ghost outline behind a 95%-opaque scrim. On a phone that read as "creating a
-   session does nothing", and it was: every tap landed on .overlay-content and
-   the server never saw a POST /api/sessions/create. The mobile menu's Settings
-   (.settings-modal, 1000) was dead the same way.
-   Above the folder browser (5003) because .session-modal is what replaces it,
-   and still below #fileExplorerModal (6000) and .plan-modal (10001). */
+   menu's "New Session" open #newTabModal (.session-modal, 2000) — which, left
+   at 2000, sits under the overlay, a ghost outline behind a 95%-opaque scrim.
+   On a phone that read as "creating a session does nothing", and it was: every
+   tap landed on .overlay-content and the server never saw a POST
+   /api/sessions/create. The mobile menu's Settings (.settings-modal, 1000) was
+   dead the same way. Still below #fileExplorerModal (6000) and .plan-modal
+   (10001). */
 body.overlay-open .session-modal        { z-index: 5004; }
 body.overlay-open .settings-modal       { z-index: 5004; }
 
@@ -2980,7 +2944,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 /* ── Claude conversation history ──────────────────────────────────────────
-   Two places show the same list: the New Session modal's "Continue previous"
+   Two places show the same list: the new tab dialog's "继续之前的对话"
    picker and the toolbar history modal (#conversationsModal). Rows are built by
    conversations.js. Colours come from the theme tokens, so light mode follows
    without a second rule set. */
@@ -3015,7 +2979,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     color: #fff;
 }
 
-/* The picker inside the New Session modal is capped so the modal keeps its
+/* The picker inside the new tab dialog is capped so the dialog keeps its
    shape with a long history; the toolbar modal gets the taller cap. */
 .conv-list {
     max-height: 240px;
@@ -3295,4 +3259,98 @@ body.overlay-open .settings-modal       { z-index: 5004; }
    nothing left to overlap with and no reason to keep them positioned. */
 .terminal-container.kb-open .terminal-view.active {
     position: static;
+}
+
+/* ---------------------------------------------------------------------------
+   New tab dialog (#newTabModal)
+
+   Self-contained and scoped to this one dialog, like the blocks above: the
+   generic .modal-content / .folder-* rules are shared with the file explorer.
+   One dialog replaces the old three (folder browser, Create New Session, the
+   Start Claude prompt), so it has to hold a folder tree without growing past
+   the viewport: the tree is folded away behind 浏览… and capped when open, and
+   the body scrolls rather than the footer, so 启动 is always reachable.
+   --------------------------------------------------------------------------- */
+.new-tab-modal .modal-content {
+    width: 92%;
+    max-width: 640px;
+    max-height: 90vh;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.new-tab-modal .modal-header { padding: 14px 20px; }
+.new-tab-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.new-tab-modal .nt-section { display: flex; flex-direction: column; gap: 8px; }
+.new-tab-modal .nt-label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.new-tab-modal .folder-path-bar { flex-wrap: nowrap; }
+.new-tab-modal .folder-path-input { min-width: 0; }
+.new-tab-modal .nt-browse-btn { flex-shrink: 0; height: 36px; }
+.new-tab-modal .nt-browse-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.new-tab-modal .nt-browser { flex-direction: column; gap: 8px; }
+.new-tab-modal .folder-list-container { min-height: 0; max-height: 240px; flex: none; }
+.new-tab-modal .session-mode-toggle { margin-bottom: 0; }
+
+.new-tab-modal .nt-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.new-tab-modal .nt-recent:empty { display: none; }
+.new-tab-modal .nt-chip {
+    max-width: 200px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.new-tab-modal .nt-chip:hover { color: var(--text-primary); border-color: var(--accent); }
+.new-tab-modal .nt-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.new-tab-modal .nt-row { flex-direction: row; flex-wrap: wrap; gap: 12px; }
+.new-tab-modal .nt-name { flex: 1 1 200px; }
+.new-tab-modal .start-option input {
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: var(--font-mono);
+}
+.new-tab-modal .start-option input:focus { outline: none; border-color: var(--accent); }
+.new-tab-modal .start-option select { min-width: 120px; }
+
+.new-tab-modal .nt-error {
+    padding: 8px 12px;
+    border: 1px solid var(--danger, #f85149);
+    border-radius: 6px;
+    background: rgba(248, 81, 73, 0.12);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.new-tab-modal .nt-footer { gap: 10px; align-items: center; padding: 12px 20px; }
+.new-tab-modal .nt-spacer { flex: 1; }
+
+@media (max-width: 768px) {
+    .new-tab-modal .modal-content { width: 100%; max-height: 100%; height: 100%; border-radius: 0; }
+    .new-tab-modal .folder-list-container { max-height: 36vh; }
+    .new-tab-modal .nt-row .start-option { flex: 1 1 140px; }
+    .new-tab-modal .nt-footer { flex-wrap: wrap; }
+    .new-tab-modal .nt-footer .btn { flex: 1 1 auto; }
+    .new-tab-modal .nt-spacer { display: none; }
 }

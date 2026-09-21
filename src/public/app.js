@@ -13,7 +13,6 @@ class ClaudeCodeWebInterface {
         this.folderMode = true; // Always use folder mode
         this.currentFolderPath = null;
         this.claudeSessions = [];
-        this.isCreatingNewSession = false;
         this.isMobile = this.detectMobile();
         this.planDetector = null;
         this.planModal = null;
@@ -101,7 +100,7 @@ class ClaudeCodeWebInterface {
         if (reconcile && reconcile.mode === 'unavailable') {
             this.hideOverlay();
             this.showError('Could not load the session list — check the connection and reload.');
-            this.showFolderBrowser();
+            this.openNewTabDialog();
         } else if (reconcile && reconcile.mode === 'conflict') {
             this.hideOverlay();
             this.showSessionReconcileModal(reconcile);
@@ -115,7 +114,7 @@ class ClaudeCodeWebInterface {
         } else {
             // No sessions anywhere - show the folder picker to create the first one.
             this.hideOverlay();
-            this.showFolderBrowser();
+            this.openNewTabDialog();
         }
         
         this.setupViewportSizing();
@@ -1041,13 +1040,13 @@ class ClaudeCodeWebInterface {
         document.getElementById('closeSessionSelection').addEventListener('click', () => {
             modal.remove();
             this.hideOverlay();
-            this.showFolderBrowser();
+            this.openNewTabDialog();
         });
         
         document.getElementById('selectSessionNewFolder').addEventListener('click', () => {
             modal.remove();
             this.hideOverlay();
-            this.showFolderBrowser();
+            this.openNewTabDialog();
         });
         
         // Close on background click
@@ -1055,7 +1054,7 @@ class ClaudeCodeWebInterface {
             if (e.target === modal) {
                 modal.remove();
                 this.hideOverlay();
-                this.showFolderBrowser();
+                this.openNewTabDialog();
             }
         });
     }
@@ -1110,8 +1109,7 @@ class ClaudeCodeWebInterface {
         }
         
         this.setupSettingsModal();
-        this.setupFolderBrowser();
-        this.setupNewSessionModal();
+        this.setupNewTabDialog();
         this.setupMobileSessionsModal();
 
         // Custom prompts dropdown removed
@@ -2028,28 +2026,16 @@ class ClaudeCodeWebInterface {
         return null;
     }
 
-    // Open the folder browser to pick a project, routing the selection into the
-    // new-session flow. Returns true if selection was required (caller should
-    // stop and let the user choose).
+    // Open the new tab dialog when there is no usable project folder, saying
+    // why when the folder is one we refuse. Returns true if it opened (caller
+    // should stop and let the user choose). The launch options the user already
+    // picked come along, so the dialog's 启动 finishes what they started.
     ensureProjectFolder(options) {
         if (!this.needsFolderSelection()) return false;
-        // Remember the start the user asked for so it can run in the folder they
-        // are about to choose, instead of prompting them twice.
-        this.pendingStart = { options: options || {} };
-        this.isCreatingNewSession = true;
-        this.hideOverlay(); // hide the start prompt behind the folder browser
-        this.showFolderBrowser();
         const dir = this.currentClaudeSessionId ? this.currentWorkingDir : this.selectedWorkingDir;
-        const reason = dir && this.nonProjectDirReason(dir);
-        if (reason) this.showToast(reason, true, 5000);
+        this.hideOverlay(); // hide the start prompt behind the dialog
+        this.openNewTabDialog({ reason: dir && this.nonProjectDirReason(dir), options });
         return true;
-    }
-
-    // Cancelling folder selection abandons any pending auto-start.
-    cancelFolderBrowser() {
-        this.pendingStart = null;
-        this.isCreatingNewSession = false;
-        this.closeFolderBrowser();
     }
 
     // Is the "Start Claude" prompt the overlay's current content? Callers that
@@ -2436,92 +2422,210 @@ class ClaudeCodeWebInterface {
         }, 30000);
     }
 
-    // Folder Browser Methods
-    setupFolderBrowser() {
-        const modal = document.getElementById('folderBrowserModal');
-        const upBtn = document.getElementById('folderUpBtn');
-        const homeBtn = document.getElementById('folderHomeBtn');
-        const selectBtn = document.getElementById('selectFolderBtn');
-        const cancelBtn = document.getElementById('cancelFolderBtn');
-        const showHiddenCheckbox = document.getElementById('showHiddenFolders');
-        const createFolderBtn = document.getElementById('createFolderBtn');
-        const confirmCreateBtn = document.getElementById('confirmCreateFolderBtn');
-        const cancelCreateBtn = document.getElementById('cancelCreateFolderBtn');
-        const newFolderInput = document.getElementById('newFolderNameInput');
-        
-        upBtn.addEventListener('click', () => this.navigateToParent());
-        homeBtn.addEventListener('click', () => this.navigateToHome());
+    // New tab dialog (#newTabModal): folder, conversation, name and launch
+    // options in one place. It replaced a chain of three — folder browser →
+    // Create New Session → the Start prompt — so the folder controls kept their
+    // old ids, which is what loadFolders / renderFolders / createFolder address.
+    setupNewTabDialog() {
+        const $ = (id) => document.getElementById(id);
+        const modal = $('newTabModal');
 
-        // Let the path bar be typed into: Enter navigates to the entered path,
-        // Escape restores the current path. (Was readonly before.)
-        const pathInput = document.getElementById('currentPathInput');
-        if (pathInput) {
-            pathInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const target = pathInput.value.trim();
-                    if (target) this.loadFolders(target);
-                } else if (e.key === 'Escape') {
-                    pathInput.value = this.currentFolderPath || '';
-                    pathInput.blur();
-                }
-            });
-        }
-        selectBtn.addEventListener('click', () => this.selectCurrentFolder());
-        cancelBtn.addEventListener('click', () => this.cancelFolderBrowser());
-        showHiddenCheckbox.addEventListener('change', () => this.loadFolders(this.currentFolderPath));
-        createFolderBtn.addEventListener('click', () => this.showCreateFolderInput());
-        confirmCreateBtn.addEventListener('click', () => this.createFolder());
-        cancelCreateBtn.addEventListener('click', () => this.hideCreateFolderInput());
-        
-        // Allow Enter key to create folder
-        newFolderInput.addEventListener('keypress', (e) => {
+        $('folderUpBtn').addEventListener('click', () => this.navigateToParent());
+        $('folderHomeBtn').addEventListener('click', () => this.navigateToHome());
+        // The path bar can be typed into: Enter navigates to the entered path,
+        // Escape restores the current one.
+        const pathInput = $('currentPathInput');
+        pathInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
+                const target = pathInput.value.trim();
+                if (target) this.loadFolders(target);
+            } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                pathInput.value = this.currentFolderPath || '';
+                pathInput.blur();
+            }
+        });
+        $('newTabBrowseBtn').addEventListener('click', () => this.toggleNewTabBrowser());
+        $('newTabRecent').addEventListener('click', (e) => {
+            const chip = e.target.closest('.nt-chip');
+            if (chip) this.loadFolders(chip.dataset.dir);
+        });
+        $('showHiddenFolders').addEventListener('change', () => this.loadFolders(this.currentFolderPath));
+        $('createFolderBtn').addEventListener('click', () => this.showCreateFolderInput());
+        $('confirmCreateFolderBtn').addEventListener('click', () => this.createFolder());
+        $('cancelCreateFolderBtn').addEventListener('click', () => this.hideCreateFolderInput());
+        $('newFolderNameInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
                 this.createFolder();
             } else if (e.key === 'Escape') {
+                e.stopPropagation();
                 this.hideCreateFolderInput();
             }
         });
-        
-        // Close modal when clicking outside
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                this.cancelFolderBrowser();
+
+        // New conversation vs continue one of Claude's conversations in the
+        // chosen folder. The toggle only changes what 启动 does.
+        $('sessionModeToggle').querySelectorAll('.session-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.setNewSessionMode(btn.dataset.mode));
+        });
+
+        // Remember whether the name was typed rather than prefilled, so picking
+        // a folder or a conversation can fill it in without overwriting the
+        // user's own words.
+        const nameInput = $('sessionName');
+        nameInput.addEventListener('input', () => { nameInput.dataset.userEdited = 'true'; });
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.createNewSession();
             }
+        });
+
+        $('newTabStartBtn').addEventListener('click', () => this.createNewSession());
+        $('newTabDangerousBtn').addEventListener('click', () => this.createNewSession({ dangerous: true }));
+        $('cancelNewTabBtn').addEventListener('click', () => this.hideNewTabDialog());
+        $('closeNewTabBtn').addEventListener('click', () => this.hideNewTabDialog());
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) this.hideNewTabDialog();
+        });
+        modal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.hideNewTabDialog();
         });
     }
 
-    async showFolderBrowser() {
-        const modal = document.getElementById('folderBrowserModal');
+    // Open the new tab dialog prefilled, so the common case — another tab on
+    // the project you are already in — is just Enter. `reason` says why it
+    // opened (a folder we refuse), `options` carries launch options the user
+    // already chose on the Start prompt.
+    async openNewTabDialog({ reason = null, options = null } = {}) {
+        const $ = (id) => document.getElementById(id);
+        const modal = $('newTabModal');
+        this.pendingStart = null;
+        this.hideCreateFolderInput();
+        const nameInput = $('sessionName');
+        nameInput.value = '';
+        nameInput.dataset.userEdited = 'false';
+        const opts = options || this.loadStored('cc-web-last-start-options', {});
+        $('newTabModelSelect').value = opts.model || '';
+        $('newTabPermissionSelect').value = opts.permissionMode || '';
+        // Always opens on "new" — continuing a conversation is a deliberate
+        // act, not a state left over from the last time the dialog was used.
+        this.setNewSessionMode('new');
+
         modal.classList.add('active');
-        
-        // Prevent body scroll on mobile when modal is open
-        if (this.isMobile) {
-            document.body.style.overflow = 'hidden';
-        }
-        
-        // Load home directory by default
-        await this.loadFolders();
+        // Prevent body scroll on mobile when the dialog is open
+        if (this.isMobile) document.body.style.overflow = 'hidden';
+
+        const dir = this.newTabRecentDirs().find(d => !this.nonProjectDirReason(d));
+        // No usable folder to offer: open the tree, that is what they need.
+        this.toggleNewTabBrowser(!dir);
+        const loaded = await this.loadFolders(dir || null);
+        if (!loaded && dir) await this.loadFolders();
+        this.setNewTabError(reason);
+        // Enter starts. A Dangerous start that sent the user here keeps its
+        // meaning: focus lands on the button that does the same.
+        $(opts.dangerouslySkipPermissions ? 'newTabDangerousBtn' : 'newTabStartBtn').focus();
     }
 
-    closeFolderBrowser() {
-        const modal = document.getElementById('folderBrowserModal');
+    // `cancelled` is false when the dialog closes because a tab was created.
+    hideNewTabDialog({ cancelled = true } = {}) {
+        const modal = document.getElementById('newTabModal');
+        if (!modal.classList.contains('active')) return;
         modal.classList.remove('active');
-        
         // Restore body scroll
-        if (this.isMobile) {
-            document.body.style.overflow = '';
-        }
-        
-        // Reset the creating new session flag if canceling
-        this.isCreatingNewSession = false;
-        
-        // If no folder selected, show error
-        if (!this.currentFolderPath) {
-            this.showError('You must select a folder to continue');
+        if (this.isMobile) document.body.style.overflow = '';
+        this.hideCreateFolderInput();
+        // With no tab at all there is nothing behind the dialog. Leave the Start
+        // prompt up — its button brings the dialog back — rather than a blank
+        // terminal with no way forward.
+        if (cancelled && (!this.sessionTabManager || this.sessionTabManager.tabs.size === 0)) {
+            this.showOverlay('startPrompt');
         }
     }
 
+    toggleNewTabBrowser(open) {
+        const panel = document.getElementById('newTabBrowser');
+        const show = typeof open === 'boolean' ? open : panel.style.display === 'none';
+        panel.style.display = show ? 'flex' : 'none';
+        document.getElementById('newTabBrowseBtn').setAttribute('aria-expanded', String(show));
+    }
+
+    setNewTabError(message) {
+        const el = document.getElementById('newTabError');
+        el.textContent = message || '';
+        el.style.display = message ? '' : 'none';
+    }
+
+    // Folders to offer, most relevant first: the active tab's, the other open
+    // tabs', then the ones started in lately on this browser.
+    newTabRecentDirs() {
+        const dirs = [this.currentWorkingDir];
+        const sessions = this.sessionTabManager && this.sessionTabManager.activeSessions;
+        if (sessions) sessions.forEach(s => dirs.push(s.workingDir));
+        dirs.push(...this.loadStored('cc-web-recent-dirs', []));
+        return [...new Set(dirs.filter(d => typeof d === 'string' && d))];
+    }
+
+    renderNewTabRecent() {
+        const box = document.getElementById('newTabRecent');
+        box.textContent = '';
+        this.newTabRecentDirs().filter(d => !this.nonProjectDirReason(d)).slice(0, 8).forEach(dir => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = dir === this.currentFolderPath ? 'nt-chip active' : 'nt-chip';
+            chip.textContent = dir.split('/').pop() || dir;
+            chip.title = dir;
+            chip.dataset.dir = dir;
+            box.appendChild(chip);
+        });
+    }
+
+    // The folder is what the rest of the dialog hangs off: the default name,
+    // the conversation list and the recent-folder highlight all follow it.
+    newTabDirChanged() {
+        if (!document.getElementById('newTabModal').classList.contains('active')) return;
+        this.setNewTabError(null);
+        this.renderNewTabRecent();
+        if (this.newSessionMode === 'resume') this.setNewSessionMode('resume');
+        else this.syncNewTabName();
+    }
+
+    // Prefill the name — the picked conversation's title, else the folder's
+    // name — unless the user has typed one themselves.
+    syncNewTabName() {
+        const nameInput = document.getElementById('sessionName');
+        if (nameInput.dataset.userEdited === 'true') return;
+        nameInput.value = this.selectedConversation
+            ? this.conversationName(this.selectedConversation)
+            : ((this.currentFolderPath || '').split('/').pop() || '');
+    }
+
+    loadStored(key, fallback) {
+        try {
+            const value = JSON.parse(localStorage.getItem(key));
+            return value == null ? fallback : value;
+        } catch (_) {
+            return fallback;
+        }
+    }
+
+    // What the next dialog prefills: this folder first among the recent ones,
+    // and these launch options. Skipping permissions is never remembered — it
+    // has to be asked for each time.
+    rememberNewTab(dir, options) {
+        try {
+            const recent = [dir, ...this.loadStored('cc-web-recent-dirs', []).filter(d => d !== dir)].slice(0, 8);
+            localStorage.setItem('cc-web-recent-dirs', JSON.stringify(recent));
+            localStorage.setItem('cc-web-last-start-options', JSON.stringify({
+                model: options.model || '',
+                permissionMode: options.permissionMode || ''
+            }));
+        } catch (_) { /* storage full or blocked: prefill just falls back */ }
+    }
+
+    // Returns whether the folder loaded, so callers can fall back.
     async loadFolders(path = null) {
         const showHidden = document.getElementById('showHiddenFolders').checked;
         const params = new URLSearchParams();
@@ -2535,7 +2639,7 @@ class ClaudeCodeWebInterface {
                 if (response.status === 401) {
                     console.log('Authentication required - showing login prompt');
                     window.authManager.showLoginPrompt();
-                    return;
+                    return false;
                 }
                 const error = await response.json();
                 throw new Error(error.message || 'Failed to load folders');
@@ -2544,9 +2648,12 @@ class ClaudeCodeWebInterface {
             const data = await response.json();
             this.currentFolderPath = data.currentPath;
             this.renderFolders(data);
+            this.newTabDirChanged();
+            return true;
         } catch (error) {
             console.error('Failed to load folders:', error);
-            this.showError(`Failed to load folders: ${error.message}`);
+            this.setNewTabError(`无法打开目录：${error.message}`);
+            return false;
         }
     }
 
@@ -2555,8 +2662,10 @@ class ClaudeCodeWebInterface {
         const folderList = document.getElementById('folderList');
         const upBtn = document.getElementById('folderUpBtn');
         
-        // Update path display
+        // Update path display. Scrolled to its end: on a narrow screen the
+        // folder's own name is the part worth seeing, not the /home/… prefix.
         pathInput.value = data.currentPath;
+        if (document.activeElement !== pathInput) pathInput.scrollLeft = pathInput.scrollWidth;
         
         // Enable/disable up button
         upBtn.disabled = !data.parentPath;
@@ -2576,7 +2685,7 @@ class ClaudeCodeWebInterface {
                     <polyline points="12 15 9 12 12 9"/>
                     <line x1="9" y1="12" x2="16" y2="12"/>
                 </svg>
-                <span class="folder-name">.. (parent directory)</span>
+                <span class="folder-name">.. (上一级)</span>
             `;
             upItem.addEventListener('click', () => this.loadFolders(data.parentPath));
             folderList.appendChild(upItem);
@@ -2585,7 +2694,7 @@ class ClaudeCodeWebInterface {
         if (data.folders.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'empty-folder-message';
-            empty.textContent = data.parentPath ? 'No subfolders here' : 'No folders found';
+            empty.textContent = data.parentPath ? '这里没有子文件夹' : '没有文件夹';
             folderList.appendChild(empty);
             return;
         }
@@ -2619,6 +2728,7 @@ class ClaudeCodeWebInterface {
     showCreateFolderInput() {
         const createBar = document.getElementById('folderCreateBar');
         const input = document.getElementById('newFolderNameInput');
+        this.toggleNewTabBrowser(true);
         createBar.style.display = 'flex';
         input.value = '';
         input.focus();
@@ -2636,12 +2746,12 @@ class ClaudeCodeWebInterface {
         const folderName = input.value.trim();
         
         if (!folderName) {
-            this.showError('Please enter a folder name');
+            this.setNewTabError('请输入文件夹名称。');
             return;
         }
         
         if (folderName.includes('/') || folderName.includes('\\')) {
-            this.showError('Folder name cannot contain path separators');
+            this.setNewTabError('文件夹名称不能包含 / 或 \\。');
             return;
         }
         
@@ -2673,103 +2783,10 @@ class ClaudeCodeWebInterface {
             await this.loadFolders(this.currentFolderPath);
         } catch (error) {
             console.error('Failed to create folder:', error);
-            this.showError(`Failed to create folder: ${error.message}`);
+            this.setNewTabError(`创建文件夹失败：${error.message}`);
         }
     }
 
-    async selectCurrentFolder() {
-        if (!this.currentFolderPath) {
-            this.showError('No folder selected');
-            return;
-        }
-        // Refuse here, with the reason, rather than let the start flow bounce
-        // the user back to this browser silently.
-        const reason = this.nonProjectDirReason(this.currentFolderPath);
-        if (reason) {
-            this.showToast(reason, true, 5000);
-            return;
-        }
-        
-        // Store the selected working directory
-        this.selectedWorkingDir = this.currentFolderPath;
-        
-        // If not connected yet, connect first with the selected directory
-        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-            try {
-                // Set the working directory on the server
-                const response = await this.authFetch('/api/folders/select', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ path: this.currentFolderPath })
-                });
-                
-                if (!response.ok) throw new Error('Failed to set working directory');
-                
-                const data = await response.json();
-                this.selectedWorkingDir = data.workingDir;
-                
-                // Update UI - working dir now shown in tab titles
-                
-                // Close folder browser
-                this.closeFolderBrowser();
-                
-                // Connect to the server
-                await this.connect();
-                
-                // Show new session modal with folder name pre-filled
-                this.showNewSessionModal();
-                const folderName = this.selectedWorkingDir.split('/').pop() || 'Session';
-                document.getElementById('sessionName').value = folderName;
-                document.getElementById('sessionWorkingDir').value = this.selectedWorkingDir;
-                return;
-            } catch (error) {
-                console.error('Failed to set working directory:', error);
-                this.showError('Failed to set working directory');
-                return;
-            }
-        }
-        
-        // If we're creating a new session (either no active session OR explicitly creating new)
-        if (!this.currentClaudeSessionId || this.isCreatingNewSession) {
-            this.closeFolderBrowser();
-            this.showNewSessionModal();
-            // Pre-fill the session name with folder name and working directory
-            const folderName = this.currentFolderPath.split('/').pop() || 'Session';
-            document.getElementById('sessionName').value = folderName;
-            document.getElementById('sessionWorkingDir').value = this.currentFolderPath;
-            this.isCreatingNewSession = false; // Reset the flag
-            return;
-        }
-        
-        // Otherwise, set working directory for current session
-        try {
-            const response = await this.authFetch('/api/set-working-dir', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ path: this.currentFolderPath })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to set working directory');
-            }
-            
-            const result = await response.json();
-            console.log('Working directory set to:', result.workingDir);
-            
-            // Close folder browser and connect
-            this.closeFolderBrowser();
-            await this.connect();
-        } catch (error) {
-            console.error('Failed to set working directory:', error);
-            this.showError(`Failed to set working directory: ${error.message}`);
-        }
-    }
-    
     async closeSession() {
         try {
             // Send close session message via WebSocket if connected
@@ -2804,7 +2821,7 @@ class ClaudeCodeWebInterface {
             this.clearTerminal();
             
             // Show folder browser again
-            this.showFolderBrowser();
+            this.openNewTabDialog();
             
         } catch (error) {
             console.error('Failed to close session:', error);
@@ -2914,7 +2931,7 @@ class ClaudeCodeWebInterface {
             const id = row && row.dataset.id;
             if (id && confirm('Delete this session? This cannot be undone.')) { this.deleteSession(id, { skipConfirm: true }); row.remove(); }
         }));
-        modal.querySelector('#rcNew').addEventListener('click', () => { modal.remove(); this.showFolderBrowser(); });
+        modal.querySelector('#rcNew').addEventListener('click', () => { modal.remove(); this.openNewTabDialog(); });
         modal.querySelector('#rcConfirm').addEventListener('click', async () => {
             const rowsEls = [...modal.querySelectorAll('.reconcile-row')];
             const chosen = rowsEls.filter((r) => r.querySelector('.rc-open').checked).map((r) => r.dataset.id);
@@ -2935,7 +2952,7 @@ class ClaudeCodeWebInterface {
             const ignoredIds = rowsEls.map((r) => r.dataset.id).filter((id) => !chosenSet.has(id));
             stm.saveTabState(ignoredIds);
             if (activeId) { await stm.switchToTab(activeId); this.hideOverlay(); }
-            else { this.hideOverlay(); this.showFolderBrowser(); }
+            else { this.hideOverlay(); this.openNewTabDialog(); }
         });
     }
 
@@ -3060,48 +3077,6 @@ class ClaudeCodeWebInterface {
         console.log('Session:', text);
     }
     
-    setupNewSessionModal() {
-        const modal = document.getElementById('newSessionModal');
-        const closeBtn = document.getElementById('closeNewSessionBtn');
-        const cancelBtn = document.getElementById('cancelNewSessionBtn');
-        const createBtn = document.getElementById('createSessionBtn');
-        const nameInput = document.getElementById('sessionName');
-        const dirInput = document.getElementById('sessionWorkingDir');
-        
-        closeBtn.addEventListener('click', () => this.hideNewSessionModal());
-        cancelBtn.addEventListener('click', () => this.hideNewSessionModal());
-        createBtn.addEventListener('click', () => this.createNewSession());
-
-        // New conversation vs continue an existing one. The toggle only changes
-        // what the create button does; the folder is already chosen by then, and
-        // it is what the conversation list is read from.
-        const toggle = document.getElementById('sessionModeToggle');
-        if (toggle) {
-            toggle.querySelectorAll('.session-mode-btn').forEach(btn => {
-                btn.addEventListener('click', () => this.setNewSessionMode(btn.dataset.mode));
-            });
-        }
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                this.hideNewSessionModal();
-            }
-        });
-        
-        // Remember whether the name was typed rather than prefilled, so picking
-        // a conversation can fill it in without overwriting the user's own words.
-        if (nameInput) nameInput.addEventListener('input', () => { nameInput.dataset.userEdited = 'true'; });
-
-        // Allow Enter key to create session
-        [nameInput, dirInput].forEach(input => {
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    this.createNewSession();
-                }
-            });
-        });
-    }
-    
     setupMobileSessionsModal() {
         const closeMobileSessionsBtn = document.getElementById('closeMobileSessionsModal');
         const newSessionBtnMobile = document.getElementById('newSessionBtnMobile');
@@ -3112,45 +3087,12 @@ class ClaudeCodeWebInterface {
         if (newSessionBtnMobile) {
             newSessionBtnMobile.addEventListener('click', () => {
                 this.hideMobileSessionsModal();
-                // Show folder picker for new session
-                this.isCreatingNewSession = true;
-                this.selectedWorkingDir = null;
-                this.currentFolderPath = null;
-                this.showFolderBrowser();
+                this.openNewTabDialog();
             });
         }
     }
     
-    showNewSessionModal() {
-        document.getElementById('newSessionModal').classList.add('active');
-        // Always opens on "new" — continuing a conversation is a deliberate act,
-        // not a state left over from the last time the modal was used.
-        const nameInput = document.getElementById('sessionName');
-        if (nameInput) nameInput.dataset.userEdited = 'false';
-        this.setNewSessionMode('new');
-        // Session dropdown removed - using tabs
-        
-        // Prevent body scroll on mobile when modal is open
-        if (this.isMobile) {
-            document.body.style.overflow = 'hidden';
-        }
-        
-        document.getElementById('sessionName').focus();
-    }
-    
-    hideNewSessionModal() {
-        document.getElementById('newSessionModal').classList.remove('active');
-        
-        // Restore body scroll
-        if (this.isMobile) {
-            document.body.style.overflow = '';
-        }
-        
-        document.getElementById('sessionName').value = '';
-        document.getElementById('sessionWorkingDir').value = '';
-    }
-    
-    // Switch the New Session modal between starting empty and continuing one of
+    // Switch the new tab dialog between starting empty and continuing one of
     // Claude's existing conversations in the chosen folder.
     setNewSessionMode(mode) {
         const resuming = mode === 'resume';
@@ -3162,21 +3104,16 @@ class ClaudeCodeWebInterface {
         });
         const picker = document.getElementById('resumePicker');
         if (picker) picker.style.display = resuming ? '' : 'none';
-        const createBtn = document.getElementById('createSessionBtn');
-        if (createBtn) createBtn.textContent = resuming ? 'Resume Conversation' : 'Create Session';
+        this.syncNewTabName();
 
-        if (!resuming || !window.conversationList) return;
-        const dir = document.getElementById('sessionWorkingDir').value.trim() || this.selectedWorkingDir;
+        if (!resuming || !window.conversationList || !this.currentFolderPath) return;
         window.conversationList.renderPicker(document.getElementById('newSessionConversations'), {
-            dir,
+            dir: this.currentFolderPath,
             onPick: (conv) => {
                 this.selectedConversation = conv;
                 // The conversation's own title is a better tab name than the
                 // folder name — unless the user has typed one themselves.
-                const nameInput = document.getElementById('sessionName');
-                if (nameInput && (!nameInput.dataset.userEdited || nameInput.dataset.userEdited === 'false')) {
-                    nameInput.value = this.conversationName(conv);
-                }
+                this.syncNewTabName();
             }
         });
     }
@@ -3190,36 +3127,49 @@ class ClaudeCodeWebInterface {
         return title.length > 40 ? `${title.slice(0, 39)}…` : title;
     }
 
-    async createNewSession() {
-        const name = document.getElementById('sessionName').value.trim() || `Session ${new Date().toLocaleString()}`;
-        const workingDir = document.getElementById('sessionWorkingDir').value.trim() || this.selectedWorkingDir;
-        
-        if (!workingDir) {
-            this.showError('Please select a working directory first');
-            return;
-        }
-
-        const resuming = this.newSessionMode === 'resume';
-        if (resuming && !this.selectedConversation) {
-            this.showToast('Pick a conversation to continue', true);
-            return;
-        }
-        const resumeId = resuming ? this.selectedConversation.id : undefined;
-
+    async createNewSession({ dangerous = false } = {}) {
         // Every click while the request is in flight used to create another
         // session: the dialog stays open and the button stays live until the
         // POST comes back, so an impatient second click is a second session and
         // a second tab. Measured: three clicks, three sessions.
         if (this._creatingSession) return;
         this._creatingSession = true;
-        const createBtn = document.getElementById('createSessionBtn');
-        const createLabel = createBtn ? createBtn.textContent : '';
-        if (createBtn) {
-            createBtn.disabled = true;
-            createBtn.textContent = resuming ? 'Resuming…' : 'Creating…';
-        }
+        const startBtn = document.getElementById('newTabStartBtn');
+        const dangerBtn = document.getElementById('newTabDangerousBtn');
+        const startLabel = startBtn.textContent;
+        startBtn.disabled = dangerBtn.disabled = true;
+        startBtn.textContent = '启动中…';
 
         try {
+            // A path typed into the bar but not yet entered is still the one meant.
+            const typed = document.getElementById('currentPathInput').value.trim();
+            if (typed && typed !== this.currentFolderPath && !(await this.loadFolders(typed))) return;
+
+            const workingDir = this.currentFolderPath;
+            if (!workingDir) {
+                this.setNewTabError('请先选择一个工程目录。');
+                return;
+            }
+            const reason = this.nonProjectDirReason(workingDir);
+            if (reason) {
+                this.setNewTabError(reason);
+                return;
+            }
+            const resuming = this.newSessionMode === 'resume';
+            if (resuming && !this.selectedConversation) {
+                this.setNewTabError('请先在列表里选一个要继续的对话。');
+                return;
+            }
+            const resumeId = resuming ? this.selectedConversation.id : undefined;
+            const name = document.getElementById('sessionName').value.trim()
+                || workingDir.split('/').pop() || `Session ${new Date().toLocaleString()}`;
+            const options = {};
+            const model = document.getElementById('newTabModelSelect').value;
+            const permissionMode = document.getElementById('newTabPermissionSelect').value;
+            if (model) options.model = model;
+            if (permissionMode) options.permissionMode = permissionMode;
+            if (dangerous) options.dangerouslySkipPermissions = true;
+
             const created = await this.requestSession({ name, workingDir, resumeId });
             if (!created) {
                 // Refused (already open elsewhere, or gone). The list is stale, so
@@ -3228,16 +3178,20 @@ class ClaudeCodeWebInterface {
                 return;
             }
 
-            this.hideNewSessionModal();
+            this.selectedWorkingDir = workingDir;
+            this.rememberNewTab(workingDir, options);
+            // Start as soon as the new tab joins: session_joined takes this
+            // instead of raising the Start prompt. Set before the tab exists —
+            // the join lands while attachSessionTab is still awaiting.
+            this.pendingStart = { options };
+            this.hideNewTabDialog({ cancelled: false });
             await this.attachSessionTab(created.sessionId, name, workingDir);
         } finally {
-            // Always restored, including on the refusal path above: a dialog
+            // Always restored, including on the refusal paths above: a dialog
             // left with a dead button is worse than the duplicate it prevents.
             this._creatingSession = false;
-            if (createBtn) {
-                createBtn.disabled = false;
-                createBtn.textContent = createLabel;
-            }
+            startBtn.disabled = dangerBtn.disabled = false;
+            startBtn.textContent = startLabel;
         }
     }
 
@@ -3255,15 +3209,15 @@ class ClaudeCodeWebInterface {
                 // One conversation, one tab: a second Claude on the same
                 // transcript would corrupt it. Go to the tab that has it.
                 const data = await response.json().catch(() => ({}));
-                this.showToast('That conversation is already open — switching to it', true);
+                this.showToast('这个对话已经在另一个标签页里打开，正在切换过去', true);
                 if (data.sessionId && this.sessionTabManager) {
-                    this.hideNewSessionModal();
+                    this.hideNewTabDialog({ cancelled: false });
                     await this.sessionTabManager.switchToTab(data.sessionId);
                 }
                 return null;
             }
             if (response.status === 404) {
-                this.showToast('That conversation no longer exists in this folder', true);
+                this.showToast('这个目录下已经没有这个对话了', true);
                 return null;
             }
             if (!response.ok) throw new Error(`create failed: ${response.status}`);
@@ -3271,7 +3225,7 @@ class ClaudeCodeWebInterface {
             return await response.json();
         } catch (error) {
             console.error('Failed to create session:', error);
-            this.showError('Failed to create session');
+            this.showToast('创建会话失败，请检查连接后重试', true, 5000);
             return null;
         }
     }

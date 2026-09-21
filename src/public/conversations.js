@@ -19,7 +19,7 @@
 // which is why a conversation a session already holds is listed under Sessions
 // instead, and why the server refuses the second attempt.
 //
-// The New Session modal's "Continue previous" picker uses renderPicker: the same
+// The new tab dialog's "继续之前的对话" picker uses renderPicker: the same
 // rows, minus the actions, with a click meaning "select".
 
 (function () {
@@ -138,7 +138,7 @@
       }
     }
 
-    // ── The New Session modal's picker: history only, click = select.
+    // ── The new tab dialog's picker: history only, click = select.
     async renderPicker(container, { dir, onPick } = {}) {
       if (!container) return;
       this.busy(container, 'Loading conversations…');

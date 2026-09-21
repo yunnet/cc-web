@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed
+- **One dialog to open a tab, not three.** Opening a tab used to walk through
+  the folder browser, then Create New Session, then the Start Claude prompt.
+  They are now one dialog, 新建标签页 (`#newTabModal`), and it arrives filled
+  in — the active tab's folder, a name taken from it, the launch options used
+  last — so another tab on the project you are in is `+` then Enter.
+  - The folder tree is folded behind 浏览…, with recently used folders one click
+    away; a path typed into the bar counts even without pressing Enter.
+  - 新对话 / 继续之前的对话 sits in the same dialog, and the conversation list
+    follows the folder as you change it.
+  - 启动 and 危险模式启动 create the session and start Claude in one step; the
+    Start Claude prompt no longer appears for a new tab, only to restart a
+    stopped one.
+  - Nothing the three dialogs enforced was dropped: the launch folder, home and
+    `/` are refused with the reason shown in the dialog, a double click still
+    creates one session, a conversation open in another tab is greyed out (and a
+    409 switches to it), and skipping permissions is never remembered.
+
 ### Added
 - **Insert a path into the terminal from the file explorer.** Every row — files
   and folders alike — gets an at-sign button next to the download one. Clicking
