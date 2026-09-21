@@ -2022,9 +2022,9 @@ class ClaudeCodeWebInterface {
     // user's home, or filesystem root. Shown to the user, because otherwise
     // picking one just reopens the folder browser with no explanation.
     nonProjectDirReason(dir) {
-        if (this.baseFolder && dir === this.baseFolder) return `${dir} is the folder this server was launched from, not a project. Pick a project folder.`;
-        if (this.homeDir && dir === this.homeDir) return `${dir} is your home folder, not a project. Pick a project folder.`;
-        if (dir === '/') return 'The filesystem root is not a project. Pick a project folder.';
+        if (this.baseFolder && dir === this.baseFolder) return `${dir} 是本服务的启动目录，不是工程目录，请选择一个工程目录。`;
+        if (this.homeDir && dir === this.homeDir) return `${dir} 是你的主目录，不是工程目录，请选择一个工程目录。`;
+        if (dir === '/') return '根目录 / 不是工程目录，请选择一个工程目录。';
         return null;
     }
 
