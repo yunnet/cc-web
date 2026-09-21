@@ -109,17 +109,33 @@ function registerPlanLinks(term, getSessionId) {
         provideLinks(lineNumber, callback) {
             const line = term.buffer.active.getLine(lineNumber - 1);
             if (!line) { callback(undefined); return; }
-            const text = line.translateToString(true);
+            // Build the text cell by cell, recording each UTF-16 unit's column:
+            // wide (CJK) glyphs span 2 cells and surrogate pairs are 2 units in
+            // 1 cell, so string index != column and the underline would drift.
+            let text = '';
+            const col = [];
+            const cell = line.getCell(0);
+            for (let x = 0; x < line.length; x++) {
+                line.getCell(x, cell);
+                if (cell.getWidth() === 0) continue; // trailing half of a wide glyph
+                const ch = cell.getChars() || ' ';
+                for (let k = 0; k < ch.length; k++) col.push(x);
+                text += ch;
+            }
             const links = [];
             let m;
             RE.lastIndex = 0;
             while ((m = RE.exec(text)) !== null) {
                 const matched = m[0];
-                const startX = m.index + 1; // xterm columns are 1-based
+                const last = m.index + matched.length - 1;
+                // xterm columns are 1-based; end covers the last glyph's full width.
+                const startX = col[m.index] + 1;
+                line.getCell(col[last], cell);
+                const endX = col[last] + cell.getWidth();
                 links.push({
                     range: {
                         start: { x: startX, y: lineNumber },
-                        end: { x: startX + matched.length - 1, y: lineNumber }
+                        end: { x: endX, y: lineNumber }
                     },
                     text: matched,
                     activate() {
