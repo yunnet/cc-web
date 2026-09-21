@@ -823,7 +823,7 @@ class ClaudeCodeWebInterface {
 
     // Minimal self-removing toast (bottom-center). Avoids hijacking the terminal
     // with the full-screen error overlay for transient paste feedback.
-    showToast(message, isError = false) {
+    showToast(message, isError = false, ms = 2200) {
         const el = document.createElement('div');
         el.textContent = message;
         el.style.cssText = [
@@ -837,7 +837,7 @@ class ClaudeCodeWebInterface {
         setTimeout(() => {
             el.style.opacity = '0';
             setTimeout(() => el.remove(), 250);
-        }, 2200);
+        }, ms);
     }
 
     // Translate one-finger vertical swipes into terminal scrolling. Needed on
@@ -2015,12 +2015,17 @@ class ClaudeCodeWebInterface {
     // launch/home directory (which we don't treat as a real project).
     needsFolderSelection() {
         const dir = this.currentClaudeSessionId ? this.currentWorkingDir : this.selectedWorkingDir;
-        if (!dir) return true;
-        // Not a real project: the launch dir, the user's home, or filesystem root.
-        if (this.baseFolder && dir === this.baseFolder) return true;
-        if (this.homeDir && dir === this.homeDir) return true;
-        if (dir === '/') return true;
-        return false;
+        return !dir || !!this.nonProjectDirReason(dir);
+    }
+
+    // Why `dir` can't be a project, or null if it can: the launch dir, the
+    // user's home, or filesystem root. Shown to the user, because otherwise
+    // picking one just reopens the folder browser with no explanation.
+    nonProjectDirReason(dir) {
+        if (this.baseFolder && dir === this.baseFolder) return `${dir} is the folder this server was launched from, not a project. Pick a project folder.`;
+        if (this.homeDir && dir === this.homeDir) return `${dir} is your home folder, not a project. Pick a project folder.`;
+        if (dir === '/') return 'The filesystem root is not a project. Pick a project folder.';
+        return null;
     }
 
     // Open the folder browser to pick a project, routing the selection into the
@@ -2034,6 +2039,9 @@ class ClaudeCodeWebInterface {
         this.isCreatingNewSession = true;
         this.hideOverlay(); // hide the start prompt behind the folder browser
         this.showFolderBrowser();
+        const dir = this.currentClaudeSessionId ? this.currentWorkingDir : this.selectedWorkingDir;
+        const reason = dir && this.nonProjectDirReason(dir);
+        if (reason) this.showToast(reason, true, 5000);
         return true;
     }
 
@@ -2672,6 +2680,13 @@ class ClaudeCodeWebInterface {
     async selectCurrentFolder() {
         if (!this.currentFolderPath) {
             this.showError('No folder selected');
+            return;
+        }
+        // Refuse here, with the reason, rather than let the start flow bounce
+        // the user back to this browser silently.
+        const reason = this.nonProjectDirReason(this.currentFolderPath);
+        if (reason) {
+            this.showToast(reason, true, 5000);
             return;
         }
         
