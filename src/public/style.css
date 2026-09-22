@@ -3429,3 +3429,38 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (max-width: 480px) {
     #fileExplorerModal .folder-size { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Claude is working (.session-tab[data-working])
+
+   Self-contained. Claude marks its terminal title with a half-filled circle
+   (◐/◑, alternating) while it works — the "spinning ball" a terminal like Warp
+   shows on its tab — and claude-title.js reads it. The status dot becomes that
+   ball: half solid, half hollow, turning once a second, in the tab's own text
+   colour so it reads on the active tab's accent fill and on a plain tab in
+   either theme. It overrides every status colour, the unread one included
+   (which is !important), and their pulses, so two animations never stack.
+   --------------------------------------------------------------------------- */
+.session-tab[data-working] .tab-status {
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    border: 1.5px solid currentColor;
+    background-color: transparent !important;
+    background-image: linear-gradient(90deg, currentColor 50%, transparent 50%) !important;
+    box-shadow: none;
+    opacity: 1;
+    /* The dot's own `transition: all .3s` would morph the dot into the ball
+       over a third of a second — size, border and fill all mid-way. */
+    transition: none;
+    animation: tab-working-spin 1s linear infinite !important;
+}
+
+@keyframes tab-working-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Still the ball, just not turning. */
+@media (prefers-reduced-motion: reduce) {
+    .session-tab[data-working] .tab-status { animation: none !important; }
+}

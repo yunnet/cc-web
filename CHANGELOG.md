@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- **Tabs show when Claude is working.** While Claude answers, its tab's status
+  dot turns into a spinning half-filled ball, like the one Warp shows, and goes
+  back to the dot when it is done — on background tabs and split panes too, so
+  you can see from one tab that another has finished. It follows Claude's own
+  terminal title, which leads with ◐/◑ while it works and ✳ when idle
+  (measured on 2.1.278); the topic Claude names the task with joins the
+  folder in the tab's tooltip. Stopping or exiting mid-answer stops the ball.
+  The ball holds still under "reduce motion".
 - **Delete from the file explorer.** Every row but `..` has a red trash button
   that asks first (a folder: "and everything inside it"), then calls the new
   `POST /api/fs/delete`. The server refuses `/`, the home directory, the launch

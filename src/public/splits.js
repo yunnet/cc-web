@@ -295,6 +295,15 @@ class Split {
             }
         });
         
+        // Claude working in this pane shows on its session's tab, as it does for
+        // the main terminal (app.js, claude-title.js).
+        this.terminal.onTitleChange((title) => {
+            const stm = this.app && this.app.sessionTabManager;
+            if (!this.sessionId || !stm) return;
+            const { working, topic } = ClaudeTitle.claudeTitleState(title);
+            stm.setTabWorking(this.sessionId, working, topic);
+        });
+
         // Setup resize handler
         this.terminal.onResize(({ cols, rows }) => {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -380,6 +389,9 @@ class Split {
                 
             case 'exit':
                 this.terminal.write('\r\n[Process exited]\r\n');
+                if (this.sessionId && this.app && this.app.sessionTabManager) {
+                    this.app.sessionTabManager.setTabWorking(this.sessionId, false);
+                }
                 break;
                 
             case 'error':

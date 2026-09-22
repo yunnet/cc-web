@@ -48,6 +48,7 @@ Single `ClaudeCodeWebServer` class. Owns the Express app (REST under `/api/*`), 
 - `app.js` — main controller: terminal setup, WebSocket, input handling
 - `session-manager.js` — session tab UI, notifications, multi-session switching
 - `splits.js` — split-pane / multi-terminal layout
+- `claude-title.js` — reads Claude's terminal title (OSC 0): a leading ◐/◑ means working, ✳ idle, the rest is Claude's topic for the task (2.1.278). Every view's `onTitleChange` — background tabs and split panes included — calls `sessionTabManager.setTabWorking`, which sets `data-working` on the tab (an attribute, because `updateTabStatus` rewrites the dot's className wholesale) and adds the topic to the tooltip; the CSS turns the dot into a spinning half-filled ball. `exit` / `claude_stopped` clear it, since the last title before a stop can still be ◐. Only the visible view still sets `document.title`.
 - `file-explorer.js` — read-only file/folder explorer (`window.fileExplorer`), opened by the toolbar folder button (replaced the old Settings gear; Settings stays in the hamburger menu)
 - Plan mode approval UI — the modal is driven by structured Claude Code hook events (see below), not by scraping terminal output
 - `auth.js` — client-side auth

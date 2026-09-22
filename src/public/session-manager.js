@@ -1047,6 +1047,28 @@ class SessionTabManager {
         }
     }
 
+    // Claude is working in this session (its terminal title leads with ◐/◑,
+    // see claude-title.js), or no longer is. An attribute on the tab, not a
+    // class on the dot: updateTabStatus rewrites the dot's className wholesale
+    // on every status change and would wipe a class. The topic — Claude's own
+    // short name for the task — joins the folder in the tab's tooltip.
+    setTabWorking(sessionId, working, topic) {
+        const tab = this.tabs.get(sessionId);
+        if (!tab) return;
+        // The title changes about once a second while Claude works; touch the
+        // DOM only when something actually changed.
+        if (working !== tab.hasAttribute('data-working')) {
+            if (working) tab.dataset.working = '';
+            else delete tab.dataset.working;
+        }
+        const nameEl = tab.querySelector('.tab-name');
+        if (!nameEl || topic === undefined) return;
+        if (nameEl.dataset.baseTitle === undefined) nameEl.dataset.baseTitle = nameEl.title || '';
+        const base = nameEl.dataset.baseTitle;
+        const next = topic && topic !== 'Claude Code' ? (base ? `${base} · ${topic}` : topic) : base;
+        if (nameEl.title !== next) nameEl.title = next;
+    }
+
     updateTabStatus(sessionId, status) {
         const tab = this.tabs.get(sessionId);
         if (tab) {

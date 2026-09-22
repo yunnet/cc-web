@@ -754,11 +754,17 @@ class ClaudeCodeWebInterface {
         // Strip Claude's leading animated spinner glyph (✳ ✶ ✻ ✽ ● …) and any
         // other leading symbol decoration — next to the favicon it looks like a
         // second tab icon. Keep only the actual title text.
+        //
+        // The same title says whether Claude is working (◐/◑ in front, see
+        // claude-title.js) — for EVERY view, a background tab included: seeing
+        // that another tab is still busy, or has finished, is the point.
         term.onTitleChange((title) => {
-            if (this.activeView !== view) return;   // a background session must not rename the tab
-            if (!title) return;
-            const cleaned = title.replace(/^[\s\p{S}]+/u, '').trim();
-            if (cleaned) document.title = cleaned;
+            const { working, topic } = ClaudeTitle.claudeTitleState(title);
+            if (view.sessionId && this.sessionTabManager) {
+                this.sessionTabManager.setTabWorking(view.sessionId, working, topic);
+            }
+            if (this.activeView !== view) return;   // a background session must not rename the browser tab
+            if (topic) document.title = topic;
         });
 
         return view;
@@ -1616,13 +1622,17 @@ class ClaudeCodeWebInterface {
                 }
                 break;
                 
-            case 'claude_stopped':
+            case 'claude_stopped': {
+                // Stopped mid-answer, the last title may still be ◐: stop the ball.
+                const stoppedId = (view && view.sessionId) || this.currentClaudeSessionId;
+                if (this.sessionTabManager && stoppedId) this.sessionTabManager.setTabWorking(stoppedId, false);
                 this.flushTerminalWrites();
                 this.terminal.writeln(`\r\n\x1b[33m${this.getAlias()} stopped\x1b[0m`);
                 // Show start prompt to allow restarting Claude in this session
                 this.showOverlay('startPrompt');
                 this.loadSessions(); // Refresh session list
                 break;
+            }
                 
             case 'output': {
                 // Filter out focus tracking sequences (^[[I and ^[[O)
@@ -1646,6 +1656,8 @@ class ClaudeCodeWebInterface {
 
                 // Mark session as error if non-zero exit code
                 const exitId = (view && view.sessionId) || this.currentClaudeSessionId;
+                // Exited mid-answer, the last title may still be ◐: stop the ball.
+                if (this.sessionTabManager && exitId) this.sessionTabManager.setTabWorking(exitId, false);
                 if (this.sessionTabManager && exitId && message.code !== 0) {
                     this.sessionTabManager.markSessionError(exitId, true);
                 }
