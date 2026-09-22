@@ -2300,6 +2300,17 @@ pre, code {
     }
 }
 
+/* Desktop: ESC alone. Clicking it twice clears Claude's input box (Esc Esc),
+   which is otherwise a chord to remember; MODE and the line break stay
+   phone-only because Shift+Tab and Shift+Enter cover them on a keyboard. The
+   query is the complement of the one above. */
+@media (min-width: 769px) and (hover: hover),
+       (min-width: 1025px) {
+    .mode-switcher { display: flex; }
+    .mode-switcher .mode-switcher-btn,
+    .mode-switcher .newline-btn { display: none; }
+}
+
 .mode-switcher-btn {
     display: flex;
     align-items: center;

@@ -126,3 +126,26 @@ describe('mobile fab position', function () {
     });
   });
 });
+
+// The floating keys are buttons first and draggable second. Capturing the
+// pointer on pointerdown sent the pointerup — and so the click — to the stack
+// instead of the button under the pointer, so a plain press of ESC, MODE or
+// the line break never reached its handler. Capture starts with the drag.
+describe('floating keys: a press reaches the button', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const APP = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'app.js'), 'utf8');
+  const CSS = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'style.css'), 'utf8');
+
+  it('does not capture the pointer on pointerdown', function () {
+    const down = /sw\.addEventListener\('pointerdown', \(e\) => \{([\s\S]*?)\n        \}\);/.exec(APP);
+    assert.ok(down, 'the drag pointerdown handler is gone');
+    assert.ok(!/setPointerCapture\(/.test(down[1].replace(/\/\/.*$/gm, '')), 'no capture before the drag starts');
+    assert.ok(/dragging = true;[\s\S]{0,200}setPointerCapture\(id\)/.test(APP), 'capture once it is a drag');
+  });
+
+  it('shows ESC alone on a desktop', function () {
+    assert.ok(/@media \(min-width: 769px\) and \(hover: hover\),\s*\(min-width: 1025px\) \{\s*\.mode-switcher \{ display: flex; \}\s*\.mode-switcher \.mode-switcher-btn,\s*\.mode-switcher \.newline-btn \{ display: none; \}/.test(CSS));
+    assert.ok(!/if \(this\.isMobile\) \{\s*this\.showModeSwitcher\(\);/.test(APP), 'the stack is built on every device now');
+  });
+});

@@ -85,10 +85,11 @@ class ClaudeCodeWebInterface {
             this.splitContainer.setupDropZones();
         }
         
-        // Show mode switcher on mobile
-        if (this.isMobile) {
-            this.showModeSwitcher();
-        }
+        // The floating keys. On a phone all three show; on a desktop only ESC
+        // does (style.css) — MODE and the line break have Shift+Tab and
+        // Shift+Enter there, but "clear the draft" is Esc twice, and two clicks
+        // on a button is easier to find than a chord.
+        this.showModeSwitcher();
         
         // Session restore. reconcileSessions decided one of:
         //  - conflict: the persisted tab set doesn't match the server → let the
@@ -338,7 +339,11 @@ class ClaudeCodeWebInterface {
             const r = sw.getBoundingClientRect();
             id = e.pointerId; startX = e.clientX; startY = e.clientY; startTop = r.top;
             dragging = false;
-            try { sw.setPointerCapture(id); } catch (_) {}
+            // No pointer capture yet. Capturing here sent the pointerup — and so
+            // the click — to this container instead of the button under the
+            // pointer, so a plain press of ESC / MODE / line break never reached
+            // its handler (measured with a mouse: pointerdown on #escapeBtn, then
+            // nothing). Capture starts with the drag, below.
         });
 
         sw.addEventListener('pointermove', (e) => {
@@ -347,7 +352,12 @@ class ClaudeCodeWebInterface {
             // Fingers wobble on a plain tap; below the threshold this is still a
             // press of ESC or MODE, not a move.
             if (!dragging && Math.hypot(dx, dy) < FAB.DRAG_THRESHOLD_PX) return;
-            if (!dragging) { dragging = true; sw.classList.add('fab-dragging'); }
+            if (!dragging) {
+                dragging = true;
+                sw.classList.add('fab-dragging');
+                // Now it is a drag: keep the moves coming even off the stack.
+                try { sw.setPointerCapture(id); } catch (_) {}
+            }
             e.preventDefault();
             const v = this.fabViewport(sw);
             const r = sw.getBoundingClientRect();
@@ -418,6 +428,10 @@ class ClaudeCodeWebInterface {
             // Send ESC key (ASCII 27 or \x1b)
             this.send({ type: 'input', data: '\x1b' });
         }
+        // A click moves focus to the button, so the next keystroke would go
+        // nowhere. Hand it back to the terminal on a desktop; not on a phone,
+        // where focusing the terminal raises the soft keyboard.
+        if (!this.isMobile && this.terminal) this.terminal.focus();
         
         // Add visual feedback
         const btn = document.getElementById('escapeBtn');
