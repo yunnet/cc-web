@@ -135,3 +135,51 @@ describe('feature list parsing and diff', function () {
     }
   });
 });
+
+// FEATURES.md and the code must agree both ways. This is the check that stops
+// a feature from being dropped without anyone deciding to (the user's rule:
+// nothing existing is removed or weakened without their say-so).
+describe('FEATURES.md matches the code', function () {
+  const ROOT = path.join(__dirname, '..');
+  const { sourceFiles } = require('../scripts/feature-surfaces');
+  const rows = parseFeatures(fs.readFileSync(path.join(ROOT, 'FEATURES.md'), 'utf8'));
+  const listed = new Set(rows.flatMap(r => r.entries));
+  const found = surfaces();
+
+  it('lists every entry point in the code', function () {
+    const missing = found.filter(s => !listed.has(s.id));
+    assert.deepStrictEqual(missing.map(s => s.id), [],
+      missing.map(s => `entry point ${s.id} (${s.file}) is not in FEATURES.md — if it is new, list its feature; if its row was deleted, that removes a feature and needs the user's consent, quoted in the plan`).join('\n'));
+  });
+
+  it('still finds every entry point it lists', function () {
+    const ids = new Set(found.map(s => s.id));
+    const gone = [...listed].filter(t => t.startsWith('file:') ? !fs.existsSync(path.join(ROOT, t.slice(5))) : !ids.has(t));
+    assert.deepStrictEqual(gone, [],
+      gone.map(t => `listed entry point ${t} is gone from the code — this removes a feature: it needs the user's consent, quoted in the plan`).join('\n'));
+  });
+
+  it('names guard tests that exist', function () {
+    const missing = rows.flatMap(r => [...r.guards.matchAll(/`(test\/[^`]+\.test\.js)`/g)].map(m => m[1]))
+      .filter(f => !fs.existsSync(path.join(ROOT, f)));
+    assert.deepStrictEqual(missing, []);
+  });
+
+  it('has unique, well-formed IDs, each with a description', function () {
+    const ids = rows.map(r => r.id);
+    assert.deepStrictEqual(ids.filter((x, i) => ids.indexOf(x) !== i), [], 'duplicate IDs');
+    for (const r of rows) {
+      assert.ok(r.what, `${r.id} has no description`);
+      assert.ok(r.entries.length || r.manual, `${r.id} has neither an entry point nor 手工`);
+    }
+  });
+
+  it('covers every source file', function () {
+    const covered = new Set([
+      ...found.filter(s => listed.has(s.id)).map(s => s.file),
+      ...[...listed].filter(t => t.startsWith('file:')).map(t => t.slice(5))
+    ]);
+    const bare = sourceFiles().filter(f => !covered.has(f));
+    assert.deepStrictEqual(bare, [], bare.map(f => `${f} holds no listed feature — list what it does`).join('\n'));
+  });
+});
