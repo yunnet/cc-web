@@ -810,7 +810,10 @@ class ClaudeCodeWebInterface {
         if (document.title !== next) document.title = next;
     }
 
-    handleBell(sessionId) {
+    // A short WebAudio blip at `freq` Hz. Shared by the bell and the plan
+    // modal. Best-effort: silent where audio is unsupported or not yet
+    // allowed (before the first user interaction).
+    playBeep(freq) {
         try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             if (Ctx) {
@@ -819,7 +822,7 @@ class ClaudeCodeWebInterface {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = 'sine';
-                osc.frequency.value = 880;
+                osc.frequency.value = freq;
                 gain.gain.setValueAtTime(0.0001, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
                 gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
@@ -828,6 +831,10 @@ class ClaudeCodeWebInterface {
                 osc.stop(ctx.currentTime + 0.2);
             }
         } catch (e) { /* audio blocked before first interaction — ignore */ }
+    }
+
+    handleBell(sessionId) {
+        this.playBeep(880);
 
         try {
             // Claude rings together with its permission_prompt and idle_prompt
@@ -3552,16 +3559,12 @@ class ClaudeCodeWebInterface {
         }, 3000);
     }
     
+    // The plan modal's chime. It used to play an embedded WAV that was cut
+    // short (its header promised 1546 bytes of samples, 568 were there), so
+    // the browser refused it and it never sounded (GAP-10). Now the same
+    // WebAudio blip as the bell, a fifth lower so the two can be told apart.
     playNotificationSound() {
-        // Optional: Play a subtle sound when plan is detected
-        // You can add an audio element to play a notification sound
-        try {
-            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBRld0Oy9diMFl2+z2e7NeSgFxYvg+8SEIwW3we6eVg0FqOTupjMBSanLvV0OBba37J5QCgU4cLvfvn0cBUCd1Oq2yFSvvayILgm359+2pw8HVqfu3LNDCEij59+NLwBarvfZN20aBVGU4OyrdR0Ff5/i5paFFDGD0+ylVBYF3NTaz38nBThl4fDbmU0NF1PD5uyqUBcIJJDO5buGNggMoNvyx08FB1er/OykQRIKrau3mHs0BQ5azvfZx30VBbDe3LVmFAVK0PC1vnoPC42S4ObNozsJB1Ox58+TYyAKL5zN9r19JAWFz9P6s4s6C2uz+L2VJwUUncflwpdMC0HD5d5sFAVWv+PYiEQIDXq16eyxlSAK57vi75NkBqOZ88WzlnAHl9TmsS8JBaLj4rQ8BigO1/rPuIMtBjGI1PG+kCcFxoTg+bxnMwfSfOL55LVeCn/R+Mltbw8FBpP48KBwKgtDqPDfnzsLCJDZ/dpTWRUHo+S6+M9+lQdRp/DdnysJFXG559GdWwgTgN7z04k2Be/B8d2AUAILJLTy2Y8xBZmduvneOxYFy6H24LhpGgWunuznm0sTDbXm9bldBQuK6u7LfxUIPLH74Z5CBRt37uWmTRgB7ez+0ogeCi+J0Oe4X');
-            audio.volume = 0.3;
-            audio.play();
-        } catch (e) {
-            // Ignore sound errors
-        }
+        this.playBeep(660);
     }
 
 }

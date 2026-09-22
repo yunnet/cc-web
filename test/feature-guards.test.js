@@ -178,3 +178,37 @@ describe('SET-04 the settings title names the active tab', function () {
     assert.ok(/const name = this\.activeSessionName\(\);\s*title\.textContent = name \? `Settings — \$\{name\}` : 'Settings';/.test(read('app.js')));
   });
 });
+
+describe('TERM-23 / UI-04 sounds: the bell and the plan chime', function () {
+  // GAP-10: the plan chime was a truncated WAV the browser could not decode.
+  // Both now go through playBeep, run here against a stub AudioContext.
+  function play(method, arg) {
+    const played = [];
+    function Ctx() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.createOscillator = () => ({ type: '', frequency: {}, connect(g) { this._g = g; return g; }, start() { played.push({ type: this.type, freq: this.frequency.value }); }, stop() {} });
+      this.createGain = () => ({ gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect(d) { return d; } });
+    }
+    const src = `({ ${lift(read('app.js'), 'playBeep', { method: true })}, ${lift(read('app.js'), method, { method: true })} })`;
+    const obj = vm.runInNewContext(src, { window: { AudioContext: Ctx }, document: { hidden: false } });
+    obj.sessionTabManager = null;
+    obj[method](arg);
+    return played;
+  }
+
+  it('the plan modal chimes (it never did)', function () {
+    assert.deepStrictEqual(play('playNotificationSound'), [{ type: 'sine', freq: 660 }]);
+    assert.ok(!/data:audio\/wav/.test(read('app.js')), 'no embedded WAV left');
+    assert.ok(/showPlanModal\([^)]*\) \{[\s\S]*?this\.playNotificationSound\(\);/.test(read('app.js')), 'the modal still calls it');
+  });
+
+  it('the bell still rings as before', function () {
+    assert.deepStrictEqual(play('handleBell', 's1'), [{ type: 'sine', freq: 880 }]);
+  });
+
+  it('stays silent, without throwing, where there is no audio', function () {
+    const obj = vm.runInNewContext(`({ ${lift(read('app.js'), 'playBeep', { method: true })} })`, { window: {} });
+    assert.doesNotThrow(() => obj.playBeep(660));
+  });
+});

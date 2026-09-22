@@ -37,7 +37,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-20 | 过滤焦点上报序列（^[[I / ^[[O），不会作为乱码出现 | 手工 | — |
 | TERM-21 | 终端自动适配容器大小并同步给 PTY；窗口缩放、旋转、字体加载完成后重新适配并滚到底 | `ws-server:resize` | `test/pty-size-negotiation.test.js` |
 | TERM-22 | 多个设备共享同一个 PTY 时取最小尺寸；切走的标签撤回尺寸投票，不会把 PTY 压小；加入正在运行的会话时同步为本机宽度 | `ws-server:detach_size` `ws-server:resize` | `test/pty-size-negotiation.test.js` `test/session-views.test.js` |
-| TERM-23 | 终端响铃时播放一声短提示音，后台标签响铃也会响 | `xterm:app.js:onBell` | — |
+| TERM-23 | 终端响铃时播放一声短提示音，后台标签响铃也会响 | `xterm:app.js:onBell` | `test/feature-guards.test.js` |
 | TERM-24 | 页面在后台时，响铃会弹出系统通知「Claude needs your attention」，同一会话的通知替换而不叠加；标签在「待批准」时只响铃不重复通知，已有 ✓ 时照常提醒（答完约 60 秒后的那次响铃） | `xterm:app.js:onBell` | `test/claude-title.test.js` |
 | TERM-25 | Claude 设置的终端标题去掉前面的动画符号后，作为浏览器标签标题；只有正在看的会话会改标题 | `xterm:app.js:onTitleChange` `file:src/public/claude-title.js` | `test/claude-title.test.js` |
 | TERM-26 | 切到某个标签后终端自动获得焦点；开始或加入会话时不自动聚焦 | 手工 | — |
@@ -205,7 +205,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | UI-01 | 工具栏图标悬停时不出现底框，只把图标变成强调色；统一 44×44 点击区域 | 手工 | — |
 | UI-02 | 深色和浅色两套配色；浅色主题下 Claude 的输入框边线、消息底色都看得清（高对比 ANSI 配色 + 最低对比度校正） | `file:src/public/style.css` | `test/light-contrast.test.js` |
 | UI-03 | 页面加载时提前应用已保存的主题，避免闪烁，并设置浏览器 theme-color | `file:src/public/index.html` | — |
-| UI-04 | 计划模式：Claude 提交计划时弹出「Claude's Plan」弹窗，渲染 Markdown 并播放提示音；Accept 发回车批准，Reject 发 Esc 留在计划模式，× 只关闭弹窗 | `control:acceptPlanBtn` `control:rejectPlanBtn` `control:closePlanBtn` `ws-client:app.js:hook_event` | `test/hook-endpoint.test.js` |
+| UI-04 | 计划模式：Claude 提交计划时弹出「Claude's Plan」弹窗，渲染 Markdown 并播放提示音；Accept 发回车批准，Reject 发 Esc 留在计划模式，× 只关闭弹窗 | `control:acceptPlanBtn` `control:rejectPlanBtn` `control:closePlanBtn` `ws-client:app.js:hook_event` | `test/hook-endpoint.test.js` `test/feature-guards.test.js` |
 | UI-05 | 可安装为 PWA（CC Web，绿色机器人图标），浏览器允许时出现「Install App」按钮 | `route:GET /manifest.json` `file:src/public/icons.js` `file:src/public/icon-generator.js` | — |
 | UI-06 | Service Worker 每分钟检查更新，有新版本时询问刷新；离线时静态资源读缓存，API 返回 503 提示 | `file:src/public/service-worker.js` | — |
 | UI-07 | 标签页图标由服务器按尺寸动态生成 | `route:GET /` | — |
@@ -292,7 +292,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GAP-07 | 设置弹窗不支持 Esc 关闭 | 手工 | — |
 | GAP-08 | 分屏窗格没有响铃声和通知，也不做写入合并和限流 | 手工 | — |
 | GAP-09 | **已修复（2026-09-23）**：原来切换标签后，设置弹窗标题仍显示上一个会话的名字；现在标题取自标签栏里当前会话的名字，切换和重命名后都正确 | 手工 | `test/feature-guards.test.js` |
-| GAP-10 | 计划弹窗的提示音加载失败，从来不响（内嵌的 wav 数据报 "no supported source"；冒烟 S19 发现） | 手工 | — |
+| GAP-10 | **已修复（2026-09-23）**：原来计划弹窗的提示音从来不响（内嵌的 wav 数据被截断，浏览器无法解码）；现在改用与终端响铃相同的 WebAudio 提示音（660Hz，比响铃低一些以便区分） | 手工 | `test/feature-guards.test.js` |
 
 ## 建清单的比对记录
 
