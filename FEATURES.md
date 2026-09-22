@@ -65,8 +65,8 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-13 | 标签状态圆点：运行中绿色脉冲，空闲蓝色呼吸，断开或出错红色 | 手工 | — |
 | TAB-14 | 后台标签从运行转为空闲时标为未读（圆点变蓝闪烁、名字蓝色粗体），切过去后清除 | 手工 | — |
 | TAB-15 | Claude 工作时标签圆点变成旋转的半实心小球（后台标签和分屏也生效；减少动效时不转）；停止或退出时立即消失；提示框追加 Claude 的任务主题 | `state:working` `ws-client:splits.js:exit` | `test/claude-title.test.js` |
-| TAB-16 | Claude 在没人看的标签里答完后（等 8 秒宽限期），圆点变成绿色 ✓ 并闪 3 下；宽限期内有新工作、出现权限请求或打开该标签，都会取消；进程停止或退出不算答完 | `state:done` | `test/claude-title.test.js` |
-| TAB-17 | Claude 在没人看的标签里等待权限批准时，圆点变成琥珀色慢脉冲，名字后出现「待批准」徽章，优先于 ✓；只有权限请求触发，空闲提醒不触发 | `state:awaiting` `ws-client:app.js:hook_event` `ws-client:splits.js:hook_event` | `test/claude-title.test.js` |
+| TAB-16 | Claude 在没人看的标签里答完后，圆点变成绿色 ✓ 并闪 3 下：收到 Stop hook 时立即标；没有 Stop 时（旧会话、hook 失效）按标题等 8 秒宽限期再标，宽限期内有新工作、出现权限请求或打开该标签都会取消；Stop 和标题先后到达都只标一次、只通知一次；进程停止或退出不算答完 | `state:done` | `test/claude-title.test.js` |
+| TAB-17 | Claude 在没人看的标签里等待权限批准（包括用提问框问你、在计划模式里等你批准计划，2.1.278 实测这两种也发 permission_prompt）时，圆点变成琥珀色慢脉冲，名字后出现「待批准」徽章，优先于 ✓；只有权限请求触发，空闲提醒不触发 | `state:awaiting` `ws-client:app.js:hook_event` `ws-client:splits.js:hook_event` | `test/claude-title.test.js` |
 | TAB-18 | 只有「没人在看」的标签才打 ✓ 和「待批准」；切到标签、Claude 重新开始工作、页面回到前台且标签在眼前时清除 | 手工 | `test/claude-title.test.js` |
 | TAB-19 | 页面在后台且有标签带 ✓ 时，浏览器标签标题前加「✓ 」，回到页面后去掉 | 手工 | `test/claude-title.test.js` |
 
@@ -77,7 +77,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | NOTI-01 | 启动约 2 秒后，如果还没决定过通知权限，右上角提示「Enable Desktop Notifications?」（Enable / Not Now），10 秒后自动消失；权限为默认时直接请求授权 | 手工 | — |
 | NOTI-02 | 通知只在页面处于后台、且不是当前标签时发；已授权时发系统通知（同一会话替换），5 秒后关闭，点击通知切到该标签 | 手工 | — |
 | NOTI-03 | 没有系统通知时的兜底：浏览器标题闪「• 标题」约 7 秒、Android 振动、顶部滑出蓝色提示条（5 秒收回，点击切到该标签，文字按纯文本显示）、800Hz 提示音 | 手工 | `test/claude-title.test.js` |
-| NOTI-04 | 后台标签答完时通知「<标签名> 答完了」，正文为 Claude 的任务主题 | 手工 | `test/claude-title.test.js` |
+| NOTI-04 | 后台标签答完时通知「<标签名> 答完了」，正文为 Claude 最后一句回复的第一行（最多 100 字）；拿不到回复时用 Claude 的任务主题 | 手工 | `test/claude-title.test.js` |
 | NOTI-05 | 后台标签等待权限时通知「<标签名> 待批准」，正文为 Claude 的提示消息 | 手工 | `test/claude-title.test.js` |
 | NOTI-06 | 后台标签 90 秒没有新输出时，通知「<标签名> — Claude appears finished」，正文「No output for 90 seconds (worked for Ns)」，并把标签标为空闲、未读 | 手工 | `test/claude-title.test.js` |
 | NOTI-07 | 后台标签输出中出现 build successful、tests passed、deployment complete、Done in X.Xs 等字样时，标为未读并通知对应结果 | 手工 | — |

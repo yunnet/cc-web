@@ -1,3 +1,10 @@
+// The first line of Claude's reply, whitespace folded, short enough for a
+// notification body.
+function replyOpening(text) {
+    const line = String(text || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(Boolean) || '';
+    return line.length > 100 ? line.slice(0, 99) + '…' : line;
+}
+
 class SessionTabManager {
     constructor(claudeInterface) {
         this.claudeInterface = claudeInterface;
@@ -1071,6 +1078,9 @@ class SessionTabManager {
         if (working !== tab.hasAttribute('data-working')) {
             if (working) {
                 tab.dataset.working = '';
+                // A new turn: whatever the last one said is spent.
+                if (this._doneByStop) this._doneByStop.delete(sessionId);
+                if (this._lastReply) this._lastReply.delete(sessionId);
                 this.setTabDone(sessionId, false);
                 this.setTabAwaiting(sessionId, false);
             } else {
@@ -1093,7 +1103,13 @@ class SessionTabManager {
     // hook only arrives about 6s later (measured on 2.1.278). So wait a little
     // longer than that; new work, a permission request or opening the tab in
     // the meantime calls it off (setTabDone(…, false) clears the timer).
+    //
+    // This is the fallback now: the Stop hook (turnFinished) says it sooner and
+    // for sure, but a Claude started before it was registered, or a hook that
+    // never arrives, still gets its ✓ this way.
     scheduleTabDone(sessionId, topic) {
+        // Stop already put the ✓ up for this turn (it can beat the ✳ title).
+        if (this._doneByStop && this._doneByStop.has(sessionId)) return;
         this.setTabDone(sessionId, false);
         this._doneTimers = this._doneTimers || new Map();
         this._doneTimers.set(sessionId, setTimeout(() => {
@@ -1101,11 +1117,48 @@ class SessionTabManager {
             const tab = this.tabs.get(sessionId);
             if (!tab || tab.hasAttribute('data-working') || tab.hasAttribute('data-awaiting')) return;
             if (this.isSessionInView(sessionId)) return;
-            this.setTabDone(sessionId, true);
-            const session = this.activeSessions.get(sessionId);
-            const name = (session && session.name) || 'Session';
-            this.sendNotification(`${name} 答完了`, topic && topic !== 'Claude Code' ? topic : '', sessionId);
+            this.markTabDone(sessionId, topic);
         }, ClaudeTitle.DONE_GRACE_MS));
+    }
+
+    // The turn ended — the Stop hook. Unlike the title turning ✳, it does not
+    // happen while Claude waits on you (measured on 2.1.278), so a tab nobody
+    // is looking at gets its ✓ now instead of after the grace period. A tab
+    // being watched when the turn ended keeps the grace timer as it always
+    // did (leaving within it still earns the ✓); it only borrows the reply
+    // for that notification.
+    turnFinished(sessionId, reply) {
+        const tab = this.tabs.get(sessionId);
+        if (!tab) return;
+        this._lastReply = this._lastReply || new Map();
+        if (reply) this._lastReply.set(sessionId, reply);
+        if (this.isSessionInView(sessionId) || tab.hasAttribute('data-awaiting')) return;
+        this.setTabDone(sessionId, false);   // calls off the grace timer
+        this._doneByStop = this._doneByStop || new Set();
+        this._doneByStop.add(sessionId);
+        this.markTabDone(sessionId);
+    }
+
+    // Put the ✓ up and say so. The body is the opening of Claude's reply when
+    // the Stop hook brought one, else Claude's topic for the task.
+    markTabDone(sessionId, topic) {
+        this.setTabDone(sessionId, true);
+        const session = this.activeSessions.get(sessionId);
+        const name = (session && session.name) || 'Session';
+        const reply = this._lastReply && this._lastReply.get(sessionId);
+        const body = replyOpening(reply) || (topic && topic !== 'Claude Code' ? topic : '');
+        this.sendNotification(`${name} 答完了`, body, sessionId);
+    }
+
+    // A hook event relayed by the server, for the tab marks. app.js and
+    // splits.js both hand theirs here; the plan modal (ExitPlanMode) stays
+    // with app.js.
+    hookEvent(sessionId, msg) {
+        if (msg.event === 'Notification' && msg.notification_type === 'permission_prompt') {
+            this.permissionRequested(sessionId, msg.message);
+        } else if (msg.event === 'Stop') {
+            this.turnFinished(sessionId, msg.last_assistant_message);
+        }
     }
 
     // The ✓ on a tab whose answer arrived while nobody was looking. Clearing

@@ -1740,10 +1740,7 @@ class ClaudeCodeWebInterface {
                     message.tool_input && message.tool_input.plan) {
                     this.showPlanModal({ content: message.tool_input.plan });
                 }
-                if (message.event === 'Notification' && message.notification_type === 'permission_prompt' &&
-                    this.sessionTabManager) {
-                    this.sessionTabManager.permissionRequested(message.sessionId, message.message);
-                }
+                if (this.sessionTabManager) this.sessionTabManager.hookEvent(message.sessionId, message);
                 break;
 
             default:

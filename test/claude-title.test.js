@@ -275,9 +275,23 @@ describe('tab awaiting approval', function () {
   });
 
   it('hears the request from the main view and from a split pane', function () {
-    const cond = /event === 'Notification' && m\w*\.notification_type === 'permission_prompt'/;
-    assert.ok(cond.test(read('app.js')) && /permissionRequested\(message\.sessionId, message\.message\)/.test(read('app.js')));
-    assert.ok(cond.test(read('splits.js')) && /permissionRequested\(this\.sessionId, msg\.message\)/.test(read('splits.js')));
+    // Both hand every hook_event to the tab manager, which routes it.
+    assert.ok(/sessionTabManager\.hookEvent\(message\.sessionId, message\)/.test(read('app.js')), 'main view');
+    assert.ok(/sessionTabManager\.hookEvent\(this\.sessionId, msg\)/.test(read('splits.js')), 'split pane');
+    const { m, has, notes } = setup();
+    m.hookEvent('b', { event: 'Notification', notification_type: 'idle_prompt', message: 'x' });
+    assert.strictEqual(has('b', 'awaiting'), false, 'idle_prompt is not a request');
+    m.hookEvent('b', { event: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission' });
+    assert.strictEqual(has('b', 'awaiting'), true);
+    assert.deepStrictEqual(notes, [{ title: 'B 待批准', body: 'Claude needs your permission', id: 'b' }]);
+  });
+
+  it('keeps the plan modal on hook_event in the main view (UI-04)', function () {
+    const src = read('app.js');
+    const at = src.indexOf("case 'hook_event':");
+    const body = src.slice(at, src.indexOf('break;', at));
+    assert.ok(/tool_name === 'ExitPlanMode'[\s\S]*?this\.showPlanModal\(\{ content: message\.tool_input\.plan \}\)/.test(body),
+      'ExitPlanMode must still open the plan modal');
   });
 
   it('is styled off an attribute, with the label after the name', function () {
@@ -319,5 +333,96 @@ describe('90-second "appears finished" notification', function () {
     assert.strictEqual(notes[0].title, 'B — Claude appears finished');
     assert.ok(/^No output for 90 seconds \(worked for \d+s\)$/.test(notes[0].body), notes[0].body);
     assert.strictEqual(notes[0].id, 'b');
+  });
+});
+
+// ✓ from the Stop hook: sooner than the title's grace period, and never twice.
+// Measured on 2.1.278: Stop arrives with the ✳ title on a real answer and not
+// at all while Claude waits on you.
+describe('tab finished by the Stop hook', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'session-manager.js'), 'utf8');
+
+  function setup({ hidden = false } = {}) {
+    const timers = [];
+    const notes = [];
+    const ctx = vm.createContext({
+      window: {}, document: { hidden }, console, navigator: {},
+      ClaudeTitle: { DONE_GRACE_MS: 8000 },
+      setTimeout: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; },
+      clearTimeout: (t) => { if (t) t.live = false; }
+    });
+    vm.runInContext(`${SRC}\nthis.M = SessionTabManager;`, ctx);
+    const m = Object.create(ctx.M.prototype);
+    Object.assign(m, { tabs: new Map(), activeSessions: new Map(), activeTabId: 'a', claudeInterface: null });
+    m.sendNotification = (title, body, id) => notes.push({ title, body, id });
+    for (const id of ['a', 'b']) {
+      m.tabs.set(id, { dataset: {}, hasAttribute(n) { return n.slice(5) in this.dataset; }, querySelector: () => null });
+      m.activeSessions.set(id, { name: id.toUpperCase() });
+    }
+    const fire = () => timers.filter(t => t.live).forEach(t => { t.live = false; t.fn(); });
+    const done = (id) => m.tabs.get(id).hasAttribute('data-done');
+    return { m, ctx, notes, fire, done, timers };
+  }
+  const stop = (m, id, reply) => m.hookEvent(id, { event: 'Stop', last_assistant_message: reply });
+
+  it('marks a background tab at once, with the opening of the reply', function () {
+    const { m, notes, done, timers } = setup();
+    m.setTabWorking('b', true, 'Fix bug');
+    stop(m, 'b', '\n\n  Done:   the bug was in\nthe parser.');
+    assert.strictEqual(done('b'), true, 'no grace period');
+    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Done: the bug was in', id: 'b' }]);
+    assert.strictEqual(timers.filter(t => t.live).length, 0);
+  });
+
+  it('does not mark or notify twice when the ✳ title comes before or after Stop', function () {
+    for (const order of ['title-first', 'stop-first']) {
+      const { m, notes, fire, done } = setup();
+      m.setTabWorking('b', true, 'x');
+      if (order === 'title-first') { m.setTabWorking('b', false, 'x'); stop(m, 'b', 'r'); }
+      else { stop(m, 'b', 'r'); m.setTabWorking('b', false, 'x'); }
+      fire();
+      assert.strictEqual(done('b'), true, order);
+      assert.strictEqual(notes.length, 1, order);
+      assert.strictEqual(notes[0].body, 'r', order);
+    }
+  });
+
+  it('leaves the grace timer alone for a watched tab, which still earns ✓ if left, now with the reply', function () {
+    const { m, ctx, notes, fire, done } = setup();
+    m.setTabWorking('a', true, 'x');
+    m.setTabWorking('a', false, 'Topic');
+    stop(m, 'a', 'The reply');
+    assert.strictEqual(done('a'), false, 'being watched');
+    ctx.document.hidden = true;          // walks away inside the grace period
+    fire();
+    assert.strictEqual(done('a'), true);
+    assert.deepStrictEqual(notes, [{ title: 'A 答完了', body: 'The reply', id: 'a' }]);
+  });
+
+  it('still falls back to the title after the grace period when no Stop comes', function () {
+    const { m, notes, fire, done } = setup();
+    m.setTabWorking('b', true, 'x');
+    m.setTabWorking('b', false, 'Topic');
+    fire();
+    assert.strictEqual(done('b'), true);
+    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Topic', id: 'b' }]);
+  });
+
+  it('forgets the last reply when a new turn starts', function () {
+    const { m, notes, fire } = setup();
+    m.setTabWorking('b', true, 'x'); stop(m, 'b', 'old'); m.setTabWorking('b', false, 'x');
+    m.setTabWorking('b', true, 'y'); m.setTabWorking('b', false, 'New topic'); fire();
+    assert.strictEqual(notes[notes.length - 1].body, 'New topic');
+  });
+
+  it('leaves a tab waiting for approval as it is', function () {
+    const { m, notes, done } = setup();
+    m.hookEvent('b', { event: 'Notification', notification_type: 'permission_prompt', message: 'm' });
+    stop(m, 'b', 'r');
+    assert.strictEqual(done('b'), false);
+    assert.strictEqual(notes.length, 1, 'only the approval notification');
   });
 });
