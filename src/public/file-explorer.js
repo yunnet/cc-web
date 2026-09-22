@@ -131,6 +131,17 @@
         await this.uploadFiles(this.filesFromDrop(e.dataTransfer));
       });
 
+      // New folder in the folder on screen: an inline bar, like the new tab
+      // dialog's. Enter creates, Esc closes the bar (not the drawer).
+      const nameInput = this.el('explorerNewFolderInput');
+      this.el('explorerNewFolderBtn').addEventListener('click', () => this.showCreateFolder(true));
+      this.el('explorerCancelFolderBtn').addEventListener('click', () => this.showCreateFolder(false));
+      this.el('explorerCreateFolderBtn').addEventListener('click', () => this.createFolder());
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.createFolder(); }
+        else if (e.key === 'Escape') { e.stopPropagation(); this.showCreateFolder(false); }
+      });
+
       // Esc closes while the explorer is open.
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) this.close();
@@ -213,6 +224,7 @@
     close() {
       const modal = this.el('fileExplorerModal');
       if (modal) modal.classList.remove('active');
+      if (this.el('explorerCreateBar')) this.showCreateFolder(false);
     }
 
     // Type a path into the terminal input, the way pasting an image already does
@@ -433,6 +445,29 @@
     // Upload files into the directory currently on screen, one request each.
     // Sequential on purpose: the body of each request is the whole file, so N in
     // flight is N files resident in memory on both ends.
+    showCreateFolder(show) {
+      this.el('explorerCreateBar').style.display = show ? 'flex' : 'none';
+      const input = this.el('explorerNewFolderInput');
+      input.value = '';
+      if (show) input.focus();
+    }
+
+    async createFolder() {
+      const name = this.el('explorerNewFolderInput').value.trim();
+      if (!name) return;
+      if (!this.currentPath) { toast('Open a folder first', true); return; }
+      const dir = this.currentPath;
+      try {
+        await window.app.requestCreateFolder(dir, name);
+      } catch (err) {
+        toast(err.message, true); // bar stays open so the name can be fixed
+        return;
+      }
+      this.showCreateFolder(false);
+      toast(`Created folder ${name}`);
+      if (dir === this.currentPath) await this.load(dir);
+    }
+
     async uploadFiles(files) {
       const list = Array.from(files || []);
       if (!list.length) return;

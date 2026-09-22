@@ -3354,3 +3354,16 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     .new-tab-modal .nt-footer .btn { flex: 1 1 auto; }
     .new-tab-modal .nt-spacer { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   File explorer: path bar and new-folder bar on a narrow screen
+
+   Scoped to #fileExplorerModal. Text inputs keep their intrinsic width unless
+   told otherwise, so with the new-folder button added the path bar pushed that
+   button off a 390px screen (measured: x=391) and the create bar's Cancel past
+   the drawer's edge. Letting the inputs shrink keeps every button on screen.
+   --------------------------------------------------------------------------- */
+#fileExplorerModal .folder-path-input,
+#fileExplorerModal .folder-name-input { min-width: 0; }
+#fileExplorerModal .folder-path-bar > .btn-icon,
+#fileExplorerModal .folder-create-bar > .btn { flex-shrink: 0; }

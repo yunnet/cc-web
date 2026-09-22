@@ -2766,6 +2766,23 @@ class ClaudeCodeWebInterface {
         input.value = '';
     }
 
+    // POST /api/create-folder. Shared by the new tab dialog and the file
+    // explorer drawer; throws with the server's reason ("Folder already exists").
+    async requestCreateFolder(parentPath, folderName) {
+        const response = await this.authFetch('/api/create-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parentPath, folderName })
+        });
+        if (response.ok) return response.json();
+        if (response.status === 401) {
+            window.authManager.showLoginPrompt();
+            throw new Error('Authentication required');
+        }
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'Failed to create folder');
+    }
+
     async createFolder() {
         const input = document.getElementById('newFolderNameInput');
         const folderName = input.value.trim();
@@ -2781,28 +2798,7 @@ class ClaudeCodeWebInterface {
         }
         
         try {
-            const response = await this.authFetch('/api/create-folder', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    parentPath: this.currentFolderPath || '/',
-                    folderName: folderName
-                })
-            });
-            
-            if (!response.ok) {
-                // Handle 401 specifically - show auth prompt
-                if (response.status === 401) {
-                    console.log('Authentication required - showing login prompt');
-                    window.authManager.showLoginPrompt();
-                    return;
-                }
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to create folder');
-            }
-            
+            await this.requestCreateFolder(this.currentFolderPath || '/', folderName);
             // Hide the input and reload the folder list
             this.hideCreateFolderInput();
             await this.loadFolders(this.currentFolderPath);

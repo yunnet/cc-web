@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **New folder from the file explorer drawer.** A button next to Upload opens
+  an inline name field (Enter creates, Esc closes the field, not the drawer).
+  It creates in the folder on screen through the existing
+  `/api/create-folder`, so the server's path checks apply unchanged; the
+  request is shared with the new tab dialog's own new-folder button. On a
+  390px screen the path field now shrinks so the new button stays on screen.
 - **Ctrl+Enter sends now.** Claude Code 2.1.275 added "send now": interrupt the
   turn and send the queued messages at once. Its Ctrl+Enter never reached
   Claude through xterm (every Enter chord is `\r`), so cc-web maps it to Ctrl+X
