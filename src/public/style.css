@@ -2473,7 +2473,9 @@ pre, code {
    do. */
 .fab-key-glyph {
     font-size: 24px;
-    font-weight: 600;
+    /* Normal weight: the arrow's stroke is already long and heavy at 24px, and
+       bold made it read as a blob next to the worded ESC and MODE. */
+    font-weight: 400;
 }
 
 
