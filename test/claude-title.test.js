@@ -163,3 +163,38 @@ describe('tab finished (✓)', function () {
     assert.ok(!/innerHTML/.test(fn[1]), 'title/body must go in as textContent');
   });
 });
+
+describe('page title and bell, next to the ✓', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const APP = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'app.js'), 'utf8');
+  const body = (name) => {
+    const m = new RegExp(`\\n    ${name}\\([^)]*\\) \\{([\\s\\S]*?)\\n    \\}`).exec(APP);
+    assert.ok(m, `${name} is gone`);
+    return m[1];
+  };
+
+  it('puts ✓ in front of the browser tab title only while the page is hidden', function () {
+    assert.ok(/document\.hidden && document\.querySelector\('\.session-tab\[data-done\]'\)/.test(body('updatePageTitle')));
+    assert.ok(/addEventListener\('visibilitychange', \(\) => this\.updatePageTitle\(\)\)/.test(APP), 'coming back takes it off');
+    // One writer: the title handler goes through it rather than setting document.title itself.
+    assert.ok(!/document\.title = topic/.test(APP));
+  });
+
+  it('rings but does not notify again for a tab that already said so', function () {
+    assert.ok(/term\.onBell\(\(\) => this\.handleBell\(view\.sessionId\)\)/.test(APP));
+    const src = body('handleBell');
+    assert.ok(/hasAttribute\('data-done'\) \|\| tab\.hasAttribute\('data-awaiting'\)/.test(src));
+    assert.ok(/document\.hidden && !told/.test(src));
+    assert.ok(/\{ tag: sessionId \}/.test(src), 'same tag as sendNotification, so one replaces the other');
+  });
+});
+
+describe('mobile notification title flash', function () {
+  it('ends on the current title, not the one it started from', function () {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'public', 'session-manager.js'), 'utf8');
+    const fn = /showMobileNotification\(title, body, sessionId\) \{([\s\S]*?)\n    \}\n/.exec(src)[1];
+    assert.ok(!/originalTitle/.test(fn), 'a title saved before the flash goes stale');
+    assert.ok(/clearInterval\(flashInterval\);\s*restore\(\);/.test(fn));
+  });
+});

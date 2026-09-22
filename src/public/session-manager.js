@@ -78,15 +78,19 @@ class SessionTabManager {
     }
     
     showMobileNotification(title, body, sessionId) {
-        // Update page title to show notification
-        const originalTitle = document.title;
+        // Update page title to show notification. Between flashes and after,
+        // the app's own title comes back as it is NOW (updatePageTitle), not
+        // as it was when the flashing began: the ✓ may have come off since.
+        const app = this.claudeInterface;
+        const restore = () => { if (app && app.updatePageTitle) app.updatePageTitle(); };
         let flashCount = 0;
         const flashInterval = setInterval(() => {
-            document.title = flashCount % 2 === 0 ? `• ${title}` : originalTitle;
+            if (flashCount % 2 === 0) document.title = `• ${title}`;
+            else restore();
             flashCount++;
             if (flashCount > 6) {
                 clearInterval(flashInterval);
-                document.title = originalTitle;
+                restore();
             }
         }, 1000);
         

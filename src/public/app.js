@@ -22,6 +22,9 @@ class ClaudeCodeWebInterface {
         
         // Initialize the session tab manager
         this.sessionTabManager = null;
+        // What the browser tab says, before any ✓ (updatePageTitle).
+        this.pageTopic = document.title;
+        document.addEventListener('visibilitychange', () => this.updatePageTitle());
         
         // Usage stats
         this.sessionStats = null;
@@ -746,7 +749,7 @@ class ClaudeCodeWebInterface {
         // Surface it as a short beep, and a desktop notification if the tab is
         // in the background — so a long task can finish while you work elsewhere.
         // A background session's bell still rings: that is the point of it.
-        term.onBell(() => this.handleBell());
+        term.onBell(() => this.handleBell(view.sessionId));
 
         // Terminal title parity. Claude Code sets the terminal title (OSC 0/2) to
         // reflect its state; a native terminal shows it in the window/tab. Mirror
@@ -764,7 +767,10 @@ class ClaudeCodeWebInterface {
                 this.sessionTabManager.setTabWorking(view.sessionId, working, topic);
             }
             if (this.activeView !== view) return;   // a background session must not rename the browser tab
-            if (topic) document.title = topic;
+            if (topic) {
+                this.pageTopic = topic;
+                this.updatePageTitle();
+            }
         });
 
         return view;
@@ -773,7 +779,16 @@ class ClaudeCodeWebInterface {
     // Ring the terminal bell: a short WebAudio blip plus, when the tab is hidden,
     // a browser notification. Best-effort — silently ignores unsupported browsers
     // or denied permissions.
-    handleBell() {
+    // The browser tab's title: the active session's topic, with ✓ in front
+    // while the page is hidden and a tab has finished (see setTabDone), so
+    // the finished answer shows in the browser's own tab strip.
+    updatePageTitle() {
+        const done = document.hidden && document.querySelector('.session-tab[data-done]');
+        const next = (done ? '✓ ' : '') + this.pageTopic;
+        if (document.title !== next) document.title = next;
+    }
+
+    handleBell(sessionId) {
         try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             if (Ctx) {
@@ -793,9 +808,16 @@ class ClaudeCodeWebInterface {
         } catch (e) { /* audio blocked before first interaction — ignore */ }
 
         try {
-            if (document.hidden && 'Notification' in window) {
+            // Claude rings together with its permission_prompt and idle_prompt
+            // notifications (measured on 2.1.278). A tab marked finished or
+            // awaiting approval has already said so: ring, but do not notify
+            // twice. The tag lets a later notification for the same session
+            // replace this one rather than stack.
+            const tab = this.sessionTabManager && this.sessionTabManager.tabs.get(sessionId);
+            const told = tab && (tab.hasAttribute('data-done') || tab.hasAttribute('data-awaiting'));
+            if (document.hidden && !told && 'Notification' in window) {
                 if (Notification.permission === 'granted') {
-                    new Notification(`${this.getAlias()} needs your attention`);
+                    new Notification(`${this.getAlias()} needs your attention`, { tag: sessionId });
                 } else if (Notification.permission !== 'denied') {
                     Notification.requestPermission();
                 }
