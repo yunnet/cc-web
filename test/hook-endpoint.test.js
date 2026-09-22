@@ -60,6 +60,21 @@ describe('hook event endpoint (handleHookEvent)', function() {
     assert.strictEqual(ev.tool_input.plan, '# Plan: hi');
   });
 
+  it('relays a permission request with its type and message', function() {
+    // The payload a real 2.1.278 sent (paths trimmed).
+    const body = {
+      session_id: 'x', transcript_path: '/t.jsonl', cwd: '/w', prompt_id: 'p',
+      hook_event_name: 'Notification', message: 'Claude needs your permission', notification_type: 'permission_prompt'
+    };
+    const res = mockRes();
+    server.handleHookEvent(mockReq({ sessionId: 'sid', auth: 'Bearer htok', body }), res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(broadcasts[0], {
+      type: 'hook_event', sessionId: 'sid', event: 'Notification',
+      notification_type: 'permission_prompt', message: 'Claude needs your permission'
+    });
+  });
+
   it('rejects a non-loopback caller with 403 and no broadcast', function() {
     const res = mockRes();
     server.handleHookEvent(mockReq({ sessionId: 'sid', remote: '10.0.0.5', auth: 'Bearer htok', body: PAYLOAD }), res);

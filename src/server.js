@@ -1572,6 +1572,10 @@ class ClaudeCodeWebServer {
       tool_name: event.tool_name,
       tool_input: event.tool_input
     };
+    if (event.hook_event_name === 'Notification') {
+      message.notification_type = event.notification_type;
+      message.message = event.message;
+    }
     if (event.hook_event_name === 'SessionStart') {
       // Only persist when it actually moved: Claude fires SessionStart on every
       // start, and the common case reports back the id we asked for.

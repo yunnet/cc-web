@@ -539,6 +539,15 @@ class ClaudeBridge {
         // summary is appended to the same file.)
         SessionStart: [
           { matcher: '*', hooks: [{ type: 'command', command }] }
+        ],
+        // Claude is waiting for a permission answer, so a tab nobody is looking
+        // at can say so. The matcher is the notification type: only
+        // permission_prompt, not idle_prompt (a minute after every answer).
+        // Measured on 2.1.278: it arrives about 6s after the title turns ✳,
+        // together with the bell, as {message: "Claude needs your permission",
+        // notification_type: "permission_prompt"}.
+        Notification: [
+          { matcher: 'permission_prompt', hooks: [{ type: 'command', command }] }
         ]
       };
     }

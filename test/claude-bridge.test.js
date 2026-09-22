@@ -141,6 +141,17 @@ describe('ClaudeBridge', function() {
       assert(!cmd.includes('--token'), 'command must NOT carry a --token flag');
     });
 
+    it('should hear about permission requests, and only those', function() {
+      const s = bridge.buildInjectedSettings('sess-abc', {
+        hookScript: '/opt/app/bin/cc-hook.js', hookPort: 32353, hookToken: 'tok-xyz'
+      });
+      assert.strictEqual(s.hooks.Notification.length, 1);
+      const group = s.hooks.Notification[0];
+      // Not '*': idle_prompt fires a minute after every answer.
+      assert.strictEqual(group.matcher, 'permission_prompt');
+      assert.strictEqual(group.hooks[0].command, s.hooks.PreToolUse[0].hooks[0].command, 'the same relay');
+    });
+
     it('should single-quote-escape argv to avoid shell injection', function() {
       const s = bridge.buildInjectedSettings("a'b; rm -rf /", {
         hookScript: '/bin/cc-hook.js', hookPort: 1, hookToken: 't'
