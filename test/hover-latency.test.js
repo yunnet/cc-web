@@ -53,4 +53,16 @@ describe('hover latency', function () {
       }
     });
   }
+
+  it('puts no backdrop blur behind anything the pointer sweeps', function () {
+    // The other half of hover lag: a backdrop-filter re-blurs the whole
+    // viewport on every composited frame. Measured sweeping the Sessions panel
+    // (a .session-modal): 24-36 fps with blur(4px) behind it, 58-60 fps with a
+    // plain scrim. It came back once after the folder browser dropped it, on
+    // the modals that were never checked — so check all of them.
+    const blurs = [...CSS.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+      .filter(m => /(^|[;\s])(-webkit-)?backdrop-filter\s*:\s*(?!none)/.test(m[2]))
+      .map(m => m[1].trim());
+    assert.deepStrictEqual(blurs, [], `backdrop-filter is back on: ${blurs.join(' | ')}`);
+  });
 });

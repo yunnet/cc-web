@@ -662,8 +662,12 @@ body {
     z-index: 2000;
     align-items: center;
     justify-content: center;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
+    /* Scrim only, no backdrop blur. A backdrop-filter re-blurs the whole
+       viewport on every composited frame — every hover repaint in the dialog,
+       every line Claude streams behind it. Measured sweeping the Sessions
+       panel: 24-36 fps with blur(4px), 58-60 fps without, frames up to 83ms
+       vs 17ms. That was the highlight "lagging" the pointer. Same finding as
+       the folder browser (see .folder-browser-modal). test/hover-latency. */
 }
 
 .session-modal.active {
@@ -943,7 +947,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(2px);
+    /* No backdrop blur: at 95% opacity it was all cost and no look. See
+       .session-modal. */
 }
 
 .overlay-content {
@@ -1047,8 +1052,7 @@ body {
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
+    /* Scrim only — see .session-modal. */
 }
 
 .settings-modal.active {
