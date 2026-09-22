@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- **Delete from the file explorer.** Every row but `..` has a red trash button
+  that asks first (a folder: "and everything inside it"), then calls the new
+  `POST /api/fs/delete`. The server refuses `/`, the home directory, the launch
+  folder and any session's working folder — and anything above them — compared
+  on real paths so a symlinked alias is caught; a symlink is removed as a link,
+  never its target. Deletion is async so a large tree does not stall the server.
+  On a phone the size column gives way so a file's name keeps some room.
 - **New folder from the file explorer drawer.** A button next to Upload opens
   an inline name field (Enter creates, Esc closes the field, not the drawer).
   It creates in the folder on screen through the existing

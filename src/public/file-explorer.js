@@ -22,6 +22,7 @@
   const FOLDER_ICON_NODE = iconNode(FOLDER_ICON);
   const FILE_ICON_NODE = iconNode(FILE_ICON);
   const DOWNLOAD_ICON_NODE = iconNode(DOWNLOAD_ICON);
+  const DELETE_ICON_NODE = iconNode('<svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>');
   const AT_ICON_NODE = iconNode(AT_ICON);
 
   const toast = (msg, err) => { try { window.app && window.app.showToast(msg, err); } catch (_) {} };
@@ -78,6 +79,12 @@
         if (ins && ins.dataset.insert) {
           e.stopPropagation();
           this.insertPath(ins.dataset.insert);
+          return;
+        }
+        const rm = e.target.closest && e.target.closest('.row-delete');
+        if (rm && rm.dataset.delete) {
+          e.stopPropagation();
+          this.deleteEntry(rm.dataset.delete, rm.dataset.kind);
           return;
         }
         const dl = e.target.closest && e.target.closest('.row-download');
@@ -367,9 +374,20 @@
           row.dataset.preview = previewable ? '1' : '';
           row.title = previewable ? 'Open in a new tab' : 'Download';
         } else {
-          // A folder row has no size and no download, so this is its only button.
+          // A folder row has no size and no download.
           row.appendChild(ins);
         }
+
+        // Last on every row, red, and it always asks first (deleteEntry).
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'row-delete';
+        rm.dataset.delete = full;
+        rm.dataset.kind = item.type;
+        rm.title = 'Delete';
+        rm.setAttribute('aria-label', `Delete ${item.name}`);
+        rm.appendChild(DELETE_ICON_NODE.cloneNode(true));
+        row.appendChild(rm);
 
         row.dataset.type = item.type;
         row.dataset.path = full;
@@ -445,6 +463,30 @@
     // Upload files into the directory currently on screen, one request each.
     // Sequential on purpose: the body of each request is the whole file, so N in
     // flight is N files resident in memory on both ends.
+    // Ask, then POST /api/fs/delete. The server refuses the root, home, the
+    // launch folder and any session's working folder (and anything above
+    // them) on its own; the message it gives is shown as is.
+    async deleteEntry(fullPath, kind) {
+      const name = fullPath.split('/').pop() || fullPath;
+      const question = kind === 'dir'
+        ? `Delete the folder "${name}" and everything inside it?\n\n${fullPath}\n\nThis cannot be undone.`
+        : `Delete "${name}"?\n\n${fullPath}\n\nThis cannot be undone.`;
+      if (!window.confirm(question)) return;
+      const dir = this.currentPath;
+      try {
+        const headers = Object.assign({ 'Content-Type': 'application/json' },
+          (window.authManager && window.authManager.getAuthHeaders) ? window.authManager.getAuthHeaders() : {});
+        const res = await fetch('/api/fs/delete', { method: 'POST', headers, body: JSON.stringify({ path: fullPath }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(data.message || data.error || `Delete failed (HTTP ${res.status})`, true); return; }
+        toast(`Deleted ${name}`);
+      } catch (_) {
+        toast('Delete failed', true);
+        return;
+      }
+      if (dir === this.currentPath) await this.load(dir);
+    }
+
     showCreateFolder(show) {
       this.el('explorerCreateBar').style.display = show ? 'flex' : 'none';
       const input = this.el('explorerNewFolderInput');

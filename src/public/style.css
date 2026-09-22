@@ -3365,3 +3365,47 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 #fileExplorerModal .folder-name-input { min-width: 0; }
 #fileExplorerModal .folder-path-bar > .btn-icon,
 #fileExplorerModal .folder-create-bar > .btn { flex-shrink: 0; }
+
+/* ---------------------------------------------------------------------------
+   Explorer row delete (.row-delete)
+
+   Self-contained, like the other late blocks: the shared .row-download /
+   .row-insert rule list is left alone. Same touch target as its neighbours;
+   red, per theme (the light red is darker so it reads on white). On a hovered
+   row the whole row turns accent blue, where red would sink — so the button
+   keeps its own dark tile there.
+   --------------------------------------------------------------------------- */
+.row-delete {
+    flex-shrink: 0;
+    margin-left: 8px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #f85149;
+    cursor: pointer;
+    padding: 0;
+}
+.row-delete .dl-icon { width: 16px; height: 16px; }
+.row-delete:hover,
+.folder-item:hover .row-delete {
+    background-color: var(--bg-secondary);
+    border-color: #f85149;
+}
+[data-theme="light"] .row-delete { color: #cf222e; }
+[data-theme="light"] .row-delete:hover,
+[data-theme="light"] .folder-item:hover .row-delete { border-color: #cf222e; }
+@media (max-width: 768px) {
+    .row-delete { width: 44px; height: 44px; margin-left: 4px; }
+    .row-delete .dl-icon { width: 18px; height: 18px; }
+}
+/* A phone row now carries three 44px buttons (insert, download, delete), which
+   left a file's name 43px — "a-fai…". The size column gives way below 480px so
+   the name gets that room back; the size is still shown on wider screens. */
+@media (max-width: 480px) {
+    #fileExplorerModal .folder-size { display: none; }
+}

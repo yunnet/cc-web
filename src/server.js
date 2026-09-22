@@ -688,6 +688,10 @@ class ClaudeCodeWebServer {
       express.raw({ type: '*/*', limit: '50mb' }),
       (req, res) => this.uploadFile(req, res));
 
+    // Delete one file or folder (a folder with everything in it) from the
+    // explorer. Header auth, like upload. See deleteEntry for what it refuses.
+    this.app.post('/api/fs/delete', ClaudeCodeWebServer.asyncRoute((req, res) => this.deleteEntry(req, res)));
+
     // Current branch of every git repository one level under a directory — the
     // "many sub-projects in one big directory" layout. Read-only, header auth,
     // and NOT on a timer: it runs only when the panel is opened or refreshed.
@@ -1911,6 +1915,72 @@ class ClaudeCodeWebServer {
     }
 
     return res.json({ path: target, name, size: req.body.length });
+  }
+
+  // POST /api/fs/delete {path} — delete one file, symlink or folder (recursively)
+  // from the explorer. The client asks for confirmation first; this is the part
+  // that must hold even if it did not.
+  //
+  // Refused, whatever the browser sends:
+  //  • `/`, the home directory and the directory the server was launched from,
+  //    and anything ABOVE them (deleting /home takes the home directory along);
+  //  • a directory any session is working in, and anything above one — the
+  //    project a running Claude is editing must not vanish under it.
+  // Compared on real paths (the parent resolved, the name kept), so a symlinked
+  // alias of a protected directory is caught too. A symlink itself is deleted as
+  // a link: its target is never touched. Async (fs.promises.rm): a large tree
+  // would otherwise block this single-threaded server — and every session on it
+  // — for as long as the delete takes.
+  // The protected directory that deleting `target` (a real path) would take
+  // with it, or null. Separate from deleteEntry so the refusals can be tested
+  // on `/` and the home directory without ever calling a delete on them.
+  protectedDirHit(target) {
+    const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+    const within = (inner, outer) => inner === outer || inner.startsWith(outer.endsWith(path.sep) ? outer : outer + path.sep);
+    const protectedDirs = [path.parse(target).root, require('os').homedir(), this.baseFolder]
+      .concat([...this.claudeSessions.values()].map(s => s && s.workingDir))
+      .filter(Boolean).map(real);
+    return protectedDirs.find(dir => within(dir, target)) || null;
+  }
+
+  async deleteEntry(req, res) {
+    const raw = req.body && req.body.path;
+    if (typeof raw !== 'string' || !raw || raw.indexOf('\0') !== -1) {
+      return res.status(400).json({ error: 'Invalid path', message: 'A path is required' });
+    }
+    const validation = this.validatePath(raw);
+    if (!validation.valid) return res.status(403).json({ error: validation.error, message: 'Deleting here is not allowed' });
+
+    let target;
+    let stat;
+    try {
+      target = path.join(fs.realpathSync(path.dirname(validation.path)), path.basename(validation.path));
+      stat = fs.lstatSync(target);
+    } catch (error) {
+      return res.status(404).json({ error: 'Not found', message: 'It no longer exists' });
+    }
+
+    // A symlink only removes the link, so it cannot take a protected directory
+    // with it — but a real directory at or above one would.
+    if (!stat.isSymbolicLink()) {
+      const hit = this.protectedDirHit(target);
+      if (hit) {
+        return res.status(403).json({
+          error: 'Protected directory',
+          message: hit === target
+            ? 'This folder is protected (the root, your home, the launch folder, or a session\'s working folder)'
+            : `This folder contains ${hit}, which is protected`
+        });
+      }
+    }
+
+    try {
+      await fs.promises.rm(target, { recursive: stat.isDirectory() && !stat.isSymbolicLink(), force: false });
+    } catch (error) {
+      const status = error && (error.code === 'EACCES' || error.code === 'EPERM') ? 403 : 500;
+      return res.status(status).json({ error: 'Delete failed', message: error.message });
+    }
+    return res.json({ deleted: target, type: stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'dir' : 'file' });
   }
 
   // GET /api/fs/file/:token/:file — serve a file's bytes so the explorer can open
