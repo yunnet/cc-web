@@ -152,6 +152,16 @@ describe('ClaudeBridge', function() {
       assert.strictEqual(group.hooks[0].command, s.hooks.PreToolUse[0].hooks[0].command, 'the same relay');
     });
 
+    it('should hear when a turn ends', function() {
+      const s = bridge.buildInjectedSettings('sess-abc', {
+        hookScript: '/opt/app/bin/cc-hook.js', hookPort: 32353, hookToken: 'tok-xyz'
+      });
+      assert.strictEqual(s.hooks.Stop.length, 1);
+      assert.strictEqual(s.hooks.Stop[0].hooks[0].command, s.hooks.PreToolUse[0].hooks[0].command, 'the same relay');
+      // The hooks that were there stay.
+      assert.deepStrictEqual(Object.keys(s.hooks).sort(), ['Notification', 'PreToolUse', 'SessionStart', 'Stop']);
+    });
+
     it('should single-quote-escape argv to avoid shell injection', function() {
       const s = bridge.buildInjectedSettings("a'b; rm -rf /", {
         hookScript: '/bin/cc-hook.js', hookPort: 1, hookToken: 't'

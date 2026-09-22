@@ -1576,6 +1576,11 @@ class ClaudeCodeWebServer {
       message.notification_type = event.notification_type;
       message.message = event.message;
     }
+    if (event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string') {
+      // Every turn ends with one; only the opening is needed (a notification
+      // body), so a long answer is not broadcast whole.
+      message.last_assistant_message = event.last_assistant_message.slice(0, 300);
+    }
     if (event.hook_event_name === 'SessionStart') {
       // Only persist when it actually moved: Claude fires SessionStart on every
       // start, and the common case reports back the id we asked for.

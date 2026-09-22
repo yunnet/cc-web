@@ -548,6 +548,15 @@ class ClaudeBridge {
         // notification_type: "permission_prompt"}.
         Notification: [
           { matcher: 'permission_prompt', hooks: [{ type: 'command', command }] }
+        ],
+        // The turn is over — Claude finished answering. Measured on 2.1.278: it
+        // fires the moment the title turns ✳ on a real answer, and NOT while
+        // waiting for a permission, a question (AskUserQuestion) or a plan
+        // approval (those send permission_prompt instead). So unlike the title,
+        // it tells "finished" from "waiting" without a grace period. It carries
+        // `last_assistant_message`, Claude's final reply.
+        Stop: [
+          { hooks: [{ type: 'command', command }] }
         ]
       };
     }

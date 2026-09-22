@@ -75,6 +75,16 @@ describe('hook event endpoint (handleHookEvent)', function() {
     });
   });
 
+  it('relays the end of a turn with the opening of the last reply', function() {
+    const body = { session_id: 'x', hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'hi there' + 'x'.repeat(400) };
+    const res = mockRes();
+    server.handleHookEvent(mockReq({ sessionId: 'sid', auth: 'Bearer htok', body }), res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(broadcasts[0].event, 'Stop');
+    assert.strictEqual(broadcasts[0].last_assistant_message.length, 300);
+    assert.ok(broadcasts[0].last_assistant_message.startsWith('hi there'));
+  });
+
   it('rejects a non-loopback caller with 403 and no broadcast', function() {
     const res = mockRes();
     server.handleHookEvent(mockReq({ sessionId: 'sid', remote: '10.0.0.5', auth: 'Bearer htok', body: PAYLOAD }), res);

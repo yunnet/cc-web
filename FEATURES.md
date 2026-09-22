@@ -241,7 +241,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-06 | 注入设置：通知走终端响铃（terminal_bell），强制经典渲染器以保留滚动历史 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` `test/claude-bridge.test.js` |
 | CLA-07 | Claude 主题跟随 UI 的深浅色，使用 cc-web 自带的高对比主题 | `file:src/utils/claude-theme.js` | `test/claude-theme.test.js` |
 | CLA-08 | 子进程环境：彩色终端（TERM、FORCE_COLOR、COLORTERM）、同步输出减少闪烁、强制保存对话以便恢复 | `env:TERM` `env:FORCE_COLOR` `env:COLORTERM` `env:CLAUDE_CODE_FORCE_SYNC_OUTPUT` `env:CLAUDE_CODE_FORCE_SESSION_PERSISTENCE` | `test/claude-bridge.test.js` |
-| CLA-09 | Hook：ExitPlanMode 计划弹窗、SessionStart 跟踪 /clear 后的新对话、Notification 权限请求触发「待批准」；由 `bin/cc-hook.js` 转发，任何失败都不阻塞 Claude | `hook:PreToolUse` `hook:SessionStart` `hook:Notification` `bin:cc-hook.js` `route:POST /api/hooks/:sessionId` | `test/hook-endpoint.test.js` `test/session-start-hook.test.js` |
+| CLA-09 | Hook：ExitPlanMode 计划弹窗、SessionStart 跟踪 /clear 后的新对话、Notification 权限请求触发「待批准」、Stop 报告一轮回答结束（带最后一句回复的前 300 字）；由 `bin/cc-hook.js` 转发，任何失败都不阻塞 Claude | `hook:PreToolUse` `hook:SessionStart` `hook:Notification` `hook:Stop` `bin:cc-hook.js` `route:POST /api/hooks/:sessionId` | `test/hook-endpoint.test.js` `test/session-start-hook.test.js` |
 | CLA-10 | Hook 端点只接受本机回环地址，并校验每个会话单独的令牌；令牌经环境变量传递，不出现在命令行 | `env:CCWEB_HOOK_TOKEN` | `test/hook-endpoint.test.js` |
 
 ## 服务端、安全与持久化
