@@ -3436,34 +3436,51 @@ body.overlay-open .settings-modal       { z-index: 5004; }
    Self-contained. Claude marks its terminal title with a half-filled circle
    (◐/◑, alternating) while it works — the "spinning ball" a terminal like Warp
    shows on its tab — and claude-title.js reads it. The status dot becomes that
-   ball: a round outline whose solid half flips over the line between the
-   halves — solid left, edge-on, solid right, edge-on — once a second, so the
-   two halves read as taking turns (the user's call, 2026-09-23; it used to
-   turn in the plane). In the tab's own text colour so it reads on the active
-   tab's accent fill and on a plain tab in either theme. It overrides every
-   status colour, the unread one included (which is !important), and their
-   pulses, so two animations never stack.
+   ball: a sphere, one half solid and one half hollow, turning about the line
+   between the halves (the user's call, 2026-09-23). Seen from the front that
+   runs like the phases of the moon — solid left, all solid, solid right, all
+   light — so the two sides take turns, and the boundary sweeps across as
+   a half-ellipse whose width follows the sine of the angle, which is what
+   makes it read as round rather than as a flat card flipping (the version
+   before this one, which showed an empty ring twice a turn). Solid is the
+   tab's text colour and the light side is the tab's own background tinted
+   with it, so it reads on
+   a plain, a hovered and the accent-filled active tab in either theme. It
+   overrides every status colour, the unread one included (!important), and
+   their pulses, so two animations never stack.
    --------------------------------------------------------------------------- */
 .session-tab[data-working] .tab-status {
+    /* The light side: the tab's background with a little of its text colour
+       mixed in, so an all-light moment still reads as a ball, not as an
+       empty ring. */
+    --ball-hollow: color-mix(in srgb, currentColor 30%, var(--bg-tertiary));
     width: 10px;
     height: 10px;
     box-sizing: border-box;
     border: 1.5px solid currentColor;
-    background-color: transparent !important;
+    background-color: var(--ball-hollow) !important;
     background-image: none !important;
     box-shadow: none;
     opacity: 1;
+    overflow: hidden;
     /* The dot's own `transition: all .3s` would morph the dot into the ball
        over a third of a second — size, border and fill all mid-way. */
     transition: none;
-    /* The outline stays still; only the half inside turns. */
+    /* The outline stays still; the two layers inside do the turning. */
     animation: none !important;
-    perspective: 24px;
 }
 
-/* The solid half: the left half-disc inside the outline, hinged on the
-   dividing line and turned about it. Seen from behind at 180° it is the right
-   half, so the solid side swaps each half turn. */
+.session-tab[data-working]:hover .tab-status {
+    --ball-hollow: color-mix(in srgb, currentColor 30%, var(--bg-primary));
+}
+
+.session-tab.active[data-working] .tab-status {
+    --ball-hollow: color-mix(in srgb, currentColor 30%, var(--accent));
+}
+
+/* The solid half: on the left for the first and last quarter of a turn, on
+   the right for the middle half. It moves only while the boundary layer
+   below covers the whole ball, so the jump never shows. */
 .session-tab[data-working] .tab-status::before {
     content: '';
     position: absolute;
@@ -3472,19 +3489,43 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     left: 0;
     width: 50%;
     background: currentColor;
-    border-radius: 100px 0 0 100px;
-    transform-origin: right center;
-    animation: tab-working-flip 1s linear infinite;
+    animation: tab-ball-half 1s linear infinite;
 }
 
-@keyframes tab-working-flip {
-    from { transform: rotateY(0deg); }
-    to { transform: rotateY(360deg); }
+/* The boundary: a centred ellipse, as tall as the ball, 0 → full → 0 wide
+   each half turn (sine-shaped). Solid while the solid side comes round,
+   hollow while it goes; it changes colour only when it is 0 wide. */
+.session-tab[data-working] .tab-status::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    animation: tab-ball-edge 1s infinite;
+}
+
+@keyframes tab-ball-half {
+    0%, 24.9% { left: 0; }
+    25%, 74.9% { left: 50%; }
+    75%, 100% { left: 0; }
+}
+
+@keyframes tab-ball-edge {
+    0% { width: 0; background: currentColor; animation-timing-function: cubic-bezier(0.61, 1, 0.88, 1); }
+    25% { width: 100%; background: currentColor; animation-timing-function: cubic-bezier(0.12, 0, 0.39, 0); }
+    49.9% { width: 0; background: currentColor; }
+    50% { width: 0; background: var(--ball-hollow); animation-timing-function: cubic-bezier(0.61, 1, 0.88, 1); }
+    75% { width: 100%; background: var(--ball-hollow); animation-timing-function: cubic-bezier(0.12, 0, 0.39, 0); }
+    100% { width: 0; background: var(--ball-hollow); }
 }
 
 /* Still the ball — solid left, hollow right — just not turning. */
 @media (prefers-reduced-motion: reduce) {
-    .session-tab[data-working] .tab-status::before { animation: none !important; }
+    .session-tab[data-working] .tab-status::before,
+    .session-tab[data-working] .tab-status::after { animation: none !important; }
 }
 
 /* ---------------------------------------------------------------------------

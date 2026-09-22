@@ -63,10 +63,14 @@ describe('tabs show Claude working', function () {
     assert.ok(/tab\.dataset\.working = ''/.test(MANAGER), 'data-working on the tab');
     assert.ok(/\.session-tab\[data-working\] \.tab-status \{/.test(CSS), 'styled off the attribute');
     assert.ok(/prefers-reduced-motion: reduce\)[\s\S]{0,120}data-working\][\s\S]{0,60}animation: none/.test(CSS), 'still ball, no spin, for reduced motion');
-    // The solid half flips over the dividing line (the user's call,
-    // 2026-09-23): a half-disc hinged on its straight edge, turned about Y.
-    assert.ok(/\.session-tab\[data-working\] \.tab-status::before \{[\s\S]*?transform-origin: right center;[\s\S]*?animation: tab-working-flip/.test(CSS), 'half-disc hinged on the dividing line');
-    assert.ok(/@keyframes tab-working-flip \{[\s\S]*?rotateY\(360deg\)/.test(CSS), 'turned about the vertical axis');
+    // A sphere turning about the line between its halves (the user's call,
+    // 2026-09-23): moon phases — solid left, all solid, solid right, all
+    // light — from a solid half and a sine-shaped boundary ellipse.
+    assert.ok(/\.session-tab\[data-working\] \.tab-status::before \{[\s\S]*?animation: tab-ball-half 1s/.test(CSS), 'the solid half');
+    assert.ok(/\.session-tab\[data-working\] \.tab-status::after \{[\s\S]*?border-radius: 50%;[\s\S]*?animation: tab-ball-edge 1s/.test(CSS), 'the boundary ellipse');
+    assert.ok(/@keyframes tab-ball-edge \{[\s\S]*?25% \{ width: 100%; background: currentColor;[\s\S]*?75% \{ width: 100%; background: var\(--ball-hollow\)/.test(CSS), 'solid then light, a full sweep each half turn');
+    // The light side is tinted, so an all-light moment is still a ball, not an empty ring.
+    assert.ok(/--ball-hollow: color-mix\(in srgb, currentColor 30%, var\(--bg-tertiary\)\)/.test(CSS));
   });
 
   it('loads the parser before the scripts that use it', function () {
