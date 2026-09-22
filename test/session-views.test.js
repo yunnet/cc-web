@@ -133,3 +133,38 @@ describe('detach_size on the server', function () {
     assert.deepStrictEqual(resizes.at(-1), [120, 30]);
   });
 });
+
+// A view lives as long as its tab — and must end with it. Nothing used to end
+// it: every closed tab left an xterm and a joined socket behind until reload,
+// and that socket was still in the session when the close deleted it, so the
+// server's session_deleted raised "Connection Error — Session has been deleted"
+// in the browser that had just closed the tab.
+describe('closing a tab ends its view', function () {
+  const APP = read('src', 'public', 'app.js');
+  const MANAGER = read('src', 'public', 'session-manager.js');
+  const SERVER = read('src', 'server.js');
+
+  it('disposes the view before asking the server to delete the session', function () {
+    const close = /    closeSession\(sessionId[^)]*\)\s*\{([\s\S]*?)\n    \}/.exec(MANAGER);
+    assert.ok(close, 'closeSession is gone');
+    const dispose = close[1].indexOf('disposeView(sessionId)');
+    const del = close[1].indexOf("method: 'DELETE'");
+    assert.ok(dispose > -1, 'closeSession must dispose the view');
+    assert.ok(del > -1 && dispose < del, 'the view must be gone before the delete goes out');
+  });
+
+  it('disposeView closes the socket, the terminal and the element', function () {
+    const fn = /    disposeView\(sessionId\)\s*\{([\s\S]*?)\n    \}/.exec(APP);
+    assert.ok(fn, 'disposeView is gone');
+    for (const part of ['this.views.delete(sessionId)', 'socket.close()', 'terminal.dispose()', 'el.remove()']) {
+      assert.ok(fn[1].includes(part), `disposeView must do ${part}`);
+    }
+  });
+
+  it('treats a session deleted elsewhere as news, not as a connection error', function () {
+    const handler = /case 'session_deleted':[\s\S]*?break;/.exec(APP);
+    assert.ok(handler, 'the session_deleted handler is gone');
+    assert.ok(!/showError\(/.test(handler[0]), 'no error overlay with a Retry that can only fail');
+    assert.ok(/type: 'session_deleted',\s*sessionId/.test(SERVER), 'the server must say which session was deleted');
+  });
+});

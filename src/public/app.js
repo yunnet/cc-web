@@ -493,6 +493,31 @@ class ClaudeCodeWebInterface {
         this.socket = view.socket;
     }
 
+    // Tear down a closed tab's view: its socket, its xterm, its element. A view
+    // lives as long as its tab (openViewSocket), and nothing ended it: every
+    // closed tab left an xterm and a joined socket behind until reload. That
+    // socket was still in the session when the close deleted it, so the server's
+    // session_deleted landed here and raised "Connection Error — Session has
+    // been deleted" in the very browser that had just closed the tab.
+    disposeView(sessionId) {
+        const view = this.views.get(sessionId);
+        if (!view) return;
+        this.views.delete(sessionId);
+        if (view.socket) {
+            view.socket.onmessage = view.socket.onclose = view.socket.onerror = null;
+            try { view.socket.close(); } catch (_) {}
+        }
+        if (this.activeView === view) {
+            // The tab manager switches to the next tab right after; until then
+            // (and for good, if this was the last tab) the idle view stands in.
+            this.idleView.el.classList.add('active');
+            this.adoptView(this.idleView);
+            this.currentClaudeSessionId = null;
+        }
+        try { view.terminal.dispose(); } catch (_) {}
+        view.el.remove();
+    }
+
     // The host that all view elements live inside. `#terminal` used to BE the
     // terminal; it is now the container holding one div per view.
     terminalHost() {
@@ -1637,16 +1662,22 @@ class ClaudeCodeWebInterface {
                 }
                 break;
                 
-            case 'session_deleted':
-                this.showError(message.message);
-                this.currentClaudeSessionId = null;
-                this.currentClaudeSessionName = null;
-                this.updateSessionButton('Sessions');
-                if (this.sessionTabManager && message.sessionId) {
-                    this.sessionTabManager.closeSession(message.sessionId, { skipServerRequest: true });
+            case 'session_deleted': {
+                // Only reaches a tab that is still open: closing a tab here
+                // disposes its view before the delete goes out. So this session
+                // was deleted somewhere else — another device or window. Close
+                // its tab and say so; the old error overlay (with a Retry that
+                // could only fail) is not what a deleted session calls for.
+                const id = message.sessionId || (view && view.sessionId);
+                if (id && this.sessionTabManager && this.sessionTabManager.tabs.has(id)) {
+                    this.sessionTabManager.closeSession(id, { skipServerRequest: true });
+                } else if (id) {
+                    this.disposeView(id);
                 }
+                this.showToast('This session was deleted in another window; its tab was closed', true, 5000);
                 this.loadSessions();
                 break;
+            }
                 
             case 'pong':
                 break;

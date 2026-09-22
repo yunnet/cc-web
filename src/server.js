@@ -517,8 +517,9 @@ class ClaudeCodeWebServer {
       session.connections.forEach(wsId => {
         const wsInfo = this.webSocketConnections.get(wsId);
         if (wsInfo && wsInfo.ws.readyState === WebSocket.OPEN) {
-          wsInfo.ws.send(JSON.stringify({ 
+          wsInfo.ws.send(JSON.stringify({
             type: 'session_deleted',
+            sessionId,
             message: 'Session has been deleted'
           }));
           wsInfo.ws.close();

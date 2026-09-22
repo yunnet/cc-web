@@ -868,6 +868,10 @@ class SessionTabManager {
         const orderedIds = this.getOrderedTabIds();
         const closedIndex = orderedIds.indexOf(sessionId);
 
+        // Its terminal and socket go with it — and before the delete below, so
+        // the server's session_deleted finds no socket of ours to land on.
+        if (this.claudeInterface && this.claudeInterface.disposeView) this.claudeInterface.disposeView(sessionId);
+
         // Remove tab
         tab.remove();
         this.tabs.delete(sessionId);
@@ -900,6 +904,10 @@ class SessionTabManager {
 
             if (fallbackId) {
                 this.switchToTab(fallbackId);
+            } else if (this.claudeInterface && this.claudeInterface.showOverlay) {
+                // Last tab gone: the Start prompt, whose button opens a new tab,
+                // rather than an empty terminal.
+                this.claudeInterface.showOverlay('startPrompt');
             }
         }
 
