@@ -356,14 +356,16 @@ body {
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 4px;
-    transition: all 0.2s;
     margin-left: auto;
     flex-shrink: 0;
 }
 
+/* Tab-bar icons: no box on hover — the icon itself takes the active tab's
+   accent colour, so "this is what you'd click" reads in the same colour as
+   "this is where you are". No fade, like every other hover here. The settings
+   gear (.hamburger-btn) follows the same rule. */
 .tab-settings:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
+    color: var(--accent);
 }
 
 /* File-explorer + split-layout toolbar buttons: a full 44x44 touch target with a
@@ -1888,8 +1890,7 @@ body {
 
 .hamburger-btn:hover,
 .hamburger-btn.active {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
+    color: var(--accent);
 }
 
 .mobile-menu {
