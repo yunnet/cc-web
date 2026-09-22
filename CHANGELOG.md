@@ -3,6 +3,19 @@
 ## [Unreleased]
 
 ### Added
+- **✓ the moment a background answer ends, and clickable links.** A new
+  `Stop` hook tells cc-web when Claude's turn is over, so a tab you are not
+  looking at gets its ✓ at once instead of 8 seconds later, and the
+  notification shows the first line of Claude's reply (its topic when there
+  is none). Stop does not fire while Claude waits for a permission, a
+  question or a plan approval (measured on 2.1.278) — those still get the
+  amber 待批准 mark. The 8-second rule stays as the fallback for a Claude
+  started before this version. Claude is also asked to print links as
+  terminal hyperlinks (`FORCE_HYPERLINK`): a web link opens in a new tab, a
+  plan file opens like its plain-text path does, any other local file opens
+  in the explorer's preview, other schemes are ignored, and xterm's
+  "dangerous link" prompt is gone. A markdown link now shows only its text,
+  not "text (url)".
 - **A background tab says when it has finished, or needs your approval.**
   When Claude finishes answering in a tab you are not looking at, the tab's
   dot becomes a ✓ that flashes a few times, the browser tab's title gets a ✓
