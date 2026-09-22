@@ -1100,6 +1100,16 @@ class ClaudeCodeWebInterface {
         // Mobile menu event listeners
         const hamburgerBtn = document.getElementById('hamburgerBtn');
         if (hamburgerBtn) hamburgerBtn.addEventListener('click', () => this.toggleMobileMenu());
+        // A press anywhere outside the open menu closes it. Capture phase, so a
+        // press on the terminal (xterm keeps its events to itself) still counts;
+        // the button is left out or its own click would close then reopen it.
+        // The press still does its job — a click on a tab also switches to it.
+        document.addEventListener('pointerdown', (e) => {
+            const menu = document.getElementById('mobileMenu');
+            if (!menu || !menu.classList.contains('active')) return;
+            if (menu.contains(e.target) || (hamburgerBtn && hamburgerBtn.contains(e.target))) return;
+            this.closeMobileMenu();
+        }, true);
         if (closeMenuBtn) closeMenuBtn.addEventListener('click', () => this.closeMobileMenu());
         if (settingsBtnMobile) {
             settingsBtnMobile.addEventListener('click', () => {

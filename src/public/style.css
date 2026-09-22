@@ -1859,7 +1859,6 @@ body {
     margin: 0;
     border-radius: 4px;
     -webkit-tap-highlight-color: transparent;
-    transition: background-color 0.2s ease;
 }
 
 /* Desktop: the session menu (Sessions / Close Session / Reconnect / Clear /
@@ -1872,29 +1871,24 @@ body {
     .tab-actions { order: 6; }
 }
 
-.hamburger-btn:hover {
-    background-color: var(--bg-tertiary);
+/* A gear now, not three lines: the menu it opens is where Settings lives.
+   Sized and coloured like the other tab-bar icons (#explorerBtn: 24px in a
+   44px target, secondary until hovered). Open = highlighted, the way the
+   three lines used to turn into an X. */
+.hamburger-btn {
+    color: var(--text-secondary);
 }
 
-.hamburger-line {
-    display: block;
+.hamburger-btn svg {
     width: 24px;
-    height: 2px;
-    background-color: var(--text-primary);
-    border-radius: 2px;
-    transition: all 0.3s ease;
+    height: 24px;
+    flex-shrink: 0;
 }
 
-.hamburger-btn.active .hamburger-line:nth-child(1) {
-    transform: translateY(6px) rotate(45deg);
-}
-
-.hamburger-btn.active .hamburger-line:nth-child(2) {
-    opacity: 0;
-}
-
-.hamburger-btn.active .hamburger-line:nth-child(3) {
-    transform: translateY(-6px) rotate(-45deg);
+.hamburger-btn:hover,
+.hamburger-btn.active {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
 }
 
 .mobile-menu {
