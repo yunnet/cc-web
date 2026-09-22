@@ -47,8 +47,8 @@ describe('feature surface scanner', function () {
   });
 
   it('reads terminal hooks, page controls, CLI flags, hooks, env, states', function () {
-    assert.deepStrictEqual(keys('xterm', 'term.parser.registerOscHandler( 52, f); term.onBell(() => 1); t.registerLinkProvider({})', 'src/public/app.js'),
-      ['app.js:registerOscHandler(52)', 'app.js:onBell', 'app.js:registerLinkProvider']);
+    assert.deepStrictEqual(keys('xterm', 'term.parser.registerOscHandler( 52, f); term.onBell(() => 1); t.registerLinkProvider({}); new T({ linkHandler: { activate } })', 'src/public/app.js'),
+      ['app.js:registerOscHandler(52)', 'app.js:onBell', 'app.js:registerLinkProvider', 'app.js:linkHandler']);
     assert.deepStrictEqual(keys('control', '<button class="x" id="a">\n<input type="checkbox" id="b"/><div id="c"></div><select\n id="d">', 'src/public/index.html'),
       ['a', 'b', 'd']);
     assert.deepStrictEqual(keys('cli', ".option('-p, --port <number>', 'x').option(\"--auth-file <path>\")", 'bin/cc-web.js'), ['--port', '--auth-file']);

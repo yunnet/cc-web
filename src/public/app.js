@@ -598,6 +598,13 @@ class ClaudeCodeWebInterface {
             // Disable focus tracking to prevent ^[[I and ^[[O sequences
             windowOptions: {
                 reportFocus: false
+            },
+            // Links Claude prints as OSC 8 hyperlinks (FORCE_HYPERLINK, see
+            // claude-bridge.js). Replaces xterm's default, which asks "This link
+            // could potentially be dangerous" and will not open file: at all.
+            linkHandler: {
+                allowNonHttpProtocols: true,
+                activate: (e, uri) => this.openTerminalLink(uri, view.sessionId || this.currentClaudeSessionId)
             }
         });
         view.terminal = term;
@@ -777,6 +784,18 @@ class ClaudeCodeWebInterface {
         });
 
         return view;
+    }
+
+    // A hyperlink Claude printed was clicked (terminal-links.js decides where
+    // it may go): a web page in a new tab, a plan file where its plain-text
+    // path would open it, any other file in the explorer's preview. Anything
+    // else is ignored.
+    openTerminalLink(uri, sessionId) {
+        const target = TerminalLinks.terminalLinkTarget(uri);
+        if (!target) return;
+        if (target.kind === 'web') window.open(target.url, '_blank', 'noopener');
+        else if (target.kind === 'plan') window.open(planUrl(target.path, sessionId), '_blank', 'noopener');
+        else if (window.fileExplorer) window.fileExplorer.openFile(target.path);
     }
 
     // Ring the terminal bell: a short WebAudio blip plus, when the tab is hidden,

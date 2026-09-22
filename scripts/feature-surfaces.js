@@ -87,7 +87,8 @@ const RULES = {
     return all(/case\s+['"]([a-z_]+)['"]\s*:/g, sw).map(m => `${path.basename(f)}:${m[1]}`);
   },
   xterm: (t, f) => all(/\.(registerLinkProvider|registerOscHandler\(\s*\d+|onBell|onTitleChange|attachCustomKeyEventHandler)\b/g, t)
-    .map(m => `${path.basename(f)}:${m[1].replace(/\(\s*/, '(') + (m[1].includes('(') ? ')' : '')}`),
+    .map(m => `${path.basename(f)}:${m[1].replace(/\(\s*/, '(') + (m[1].includes('(') ? ')' : '')}`)
+    .concat(/^src\/public\/.*\.js$/.test(f) && /\blinkHandler\s*:\s*\{/.test(t) ? [`${path.basename(f)}:linkHandler`] : []),
   cli: (t, f) => f.startsWith('bin/')
     ? all(/\.option\(\s*['"](?:-\w,\s*)?(--[a-z0-9-]+)/g, t).map(m => m[1])
     : [],

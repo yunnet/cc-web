@@ -152,6 +152,12 @@ describe('ClaudeBridge', function() {
       assert.strictEqual(group.hooks[0].command, s.hooks.PreToolUse[0].hooks[0].command, 'the same relay');
     });
 
+    it('should ask Claude for clickable links', function() {
+      // Without it Claude prints no OSC 8 hyperlinks in a PTY (2.1.278).
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'claude-bridge.js'), 'utf8');
+      assert.ok(/const childEnv = \{[\s\S]*?FORCE_HYPERLINK: '1'[\s\S]*?\};/.test(src));
+    });
+
     it('should hear when a turn ends', function() {
       const s = bridge.buildInjectedSettings('sess-abc', {
         hookScript: '/opt/app/bin/cc-hook.js', hookPort: 32353, hookToken: 'tok-xyz'

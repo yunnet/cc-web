@@ -52,7 +52,7 @@ describe('TERM-13 plan-file paths are clickable', function () {
       },
       encodeURIComponent
     });
-    vm.runInContext(`${lift(read('splits.js'), 'registerPlanLinks')}; this.f = registerPlanLinks;`, ctx);
+    vm.runInContext(`${lift(read('splits.js'), 'planUrl')}\n${lift(read('splits.js'), 'registerPlanLinks')}; this.f = registerPlanLinks;`, ctx);
     const term = {
       registerLinkProvider: (p) => { provider = p; },
       buffer: { active: { getLine: () => lineOf(text) } }

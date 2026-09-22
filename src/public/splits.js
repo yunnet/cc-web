@@ -92,6 +92,15 @@ function applyTerminalPalette(term) {
     term.options.minimumContrastRatio = getTerminalContrast();
 }
 
+// Where a plan file opens: GET /api/plan, scoped to the session whose terminal
+// it was clicked in. Shared by the plain-text plan links below and by a plan
+// file Claude prints as a hyperlink (app.openTerminalLink).
+function planUrl(planPath, sid) {
+    return (window.authManager && window.authManager.getPlanUrl)
+        ? window.authManager.getPlanUrl(planPath, sid)
+        : `/api/plan/-/${sid ? encodeURIComponent(sid) : '-'}/${encodeURIComponent(planPath)}`;
+}
+
 // Make development-plan paths (…/.claude/plans/*.md) in terminal output clickable.
 // Clicking opens the plan markdown in a new browser tab via GET /api/plan, so the
 // user can review it (e.g. with a browser markdown extension). Shared by the main
@@ -141,10 +150,7 @@ function registerPlanLinks(term, getSessionId) {
                     activate() {
                         try {
                             const sid = (typeof getSessionId === 'function') ? getSessionId() : null;
-                            const url = (window.authManager && window.authManager.getPlanUrl)
-                                ? window.authManager.getPlanUrl(matched, sid)
-                                : `/api/plan/-/${sid ? encodeURIComponent(sid) : '-'}/${encodeURIComponent(matched)}`;
-                            window.open(url, '_blank', 'noopener');
+                            window.open(planUrl(matched, sid), '_blank', 'noopener');
                         } catch (_) { /* ignore */ }
                     }
                 });
@@ -201,7 +207,12 @@ class Split {
             fastScrollModifier: 'shift',
             fastScrollSensitivity: 5,
             theme: this.app?.terminal?.options?.theme || getTerminalTheme(),
-            minimumContrastRatio: getTerminalContrast()
+            minimumContrastRatio: getTerminalContrast(),
+            // Links Claude prints (OSC 8) — the same handler as the main terminal.
+            linkHandler: {
+                allowNonHttpProtocols: true,
+                activate: (e, uri) => this.app && this.app.openTerminalLink(uri, this.sessionId)
+            }
         });
         
         this.fitAddon = new FitAddon.FitAddon();

@@ -142,7 +142,13 @@ class ClaudeBridge {
         // coalesces writes per frame.
         CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: '1',
         // Persist transcripts so --resume can restore the conversation.
-        CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1'
+        CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1',
+        // Print links as OSC 8 hyperlinks. Measured on 2.1.278: without this
+        // Claude emits none in a PTY; with it, file paths and URLs Claude
+        // links become clickable (file:///… and https://…), handled by
+        // app.openTerminalLink. The trade, agreed by the user 2026-09-22: a
+        // markdown link then shows only its text, not "text (url)".
+        FORCE_HYPERLINK: '1'
       };
       // Hook relay token: inherited by the ExitPlanMode hook (cc-hook.js) via the
       // environment instead of argv, so it doesn't leak through /proc/<pid>/cmdline.
