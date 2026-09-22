@@ -1777,7 +1777,8 @@ body {
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
-    transition: background-color 0.08s ease, color 0.08s ease, border-color 0.08s ease;
+    /* No transition: the icons turn white with the row as the pointer sweeps
+       down the list, and a fade left them a frame behind it. See .folder-item. */
 }
 .row-download .dl-icon,
 .row-insert .dl-icon { width: 16px; height: 16px; }
@@ -3370,10 +3371,13 @@ body.overlay-open .settings-modal       { z-index: 5004; }
    Explorer row delete (.row-delete)
 
    Self-contained, like the other late blocks: the shared .row-download /
-   .row-insert rule list is left alone. Same touch target as its neighbours;
-   red, per theme (the light red is darker so it reads on white). On a hovered
-   row the whole row turns accent blue, where red would sink — so the button
-   keeps its own dark tile there.
+   .row-insert rule list is left alone. It behaves exactly like its neighbours
+   — same target, same hover tile, white on a hovered (blue) row, no fade — and
+   differs only in being red when it is not on a blue row (red on the accent
+   blue would sink, which is why it turns white there like the others). An
+   earlier version gave it its own dark tile on a hovered row instead; sweeping
+   the list, that tile popped in on every row while the other buttons did not.
+   Red per theme: the light red is darker so it reads on white.
    --------------------------------------------------------------------------- */
 .row-delete {
     flex-shrink: 0;
@@ -3391,14 +3395,15 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     padding: 0;
 }
 .row-delete .dl-icon { width: 16px; height: 16px; }
-.row-delete:hover,
-.folder-item:hover .row-delete {
-    background-color: var(--bg-secondary);
-    border-color: #f85149;
+.row-delete:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border);
 }
-[data-theme="light"] .row-delete { color: #cf222e; }
-[data-theme="light"] .row-delete:hover,
-[data-theme="light"] .folder-item:hover .row-delete { border-color: #cf222e; }
+.folder-item:hover .row-delete { color: white; }
+.folder-item:hover .row-delete:hover { color: #f85149; }
+[data-theme="light"] .row-delete,
+[data-theme="light"] .folder-item:hover .row-delete:hover { color: #cf222e; }
+[data-theme="light"] .folder-item:hover .row-delete { color: white; }
 @media (max-width: 768px) {
     .row-delete { width: 44px; height: 44px; margin-left: 4px; }
     .row-delete .dl-icon { width: 18px; height: 18px; }
