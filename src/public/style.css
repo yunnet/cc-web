@@ -3506,3 +3506,46 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (prefers-reduced-motion: reduce) {
     .session-tab[data-done] .tab-status { animation: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Tab awaiting approval. Claude is waiting for a permission answer in a tab
+   nobody is looking at (session-manager.js permissionRequested). The dot turns
+   solid amber with a slow pulse, and a small 待批准 label follows the name —
+   after the name, never over it, and it does not shrink, so a long name gives
+   way to it. Outranks the ✓ and the ball (the tab is not marked with ✓ while
+   awaiting; working again takes this off). Self-contained like the blocks above.
+   --------------------------------------------------------------------------- */
+.session-tab[data-awaiting] .tab-status {
+    width: 9px;
+    height: 9px;
+    background-color: var(--warning) !important;
+    background-image: none !important;
+    border: none;
+    box-shadow: none;
+    transition: none;
+    animation: tab-awaiting-pulse 1.6s ease-in-out infinite !important;
+}
+
+.session-tab[data-awaiting] .tab-content::after {
+    content: '待批准';
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    background-color: var(--warning);
+    color: #0d1117;
+}
+
+[data-theme="light"] .session-tab[data-awaiting] .tab-content::after {
+    color: #fff;
+}
+
+@keyframes tab-awaiting-pulse {
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .session-tab[data-awaiting] .tab-status { animation: none !important; }
+}

@@ -394,6 +394,14 @@ class Split {
                 }
                 break;
                 
+            case 'hook_event':
+                // A session shown only in a pane has no main view to hear this.
+                if (msg.event === 'Notification' && msg.notification_type === 'permission_prompt' &&
+                    this.app && this.app.sessionTabManager) {
+                    this.app.sessionTabManager.permissionRequested(this.sessionId, msg.message);
+                }
+                break;
+
             case 'error':
                 this.terminal.write(`\r\n\x1b[31mError: ${msg.message}\x1b[0m\r\n`);
                 break;

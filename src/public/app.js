@@ -24,7 +24,10 @@ class ClaudeCodeWebInterface {
         this.sessionTabManager = null;
         // What the browser tab says, before any ✓ (updatePageTitle).
         this.pageTopic = document.title;
-        document.addEventListener('visibilitychange', () => this.updatePageTitle());
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && this.sessionTabManager) this.sessionTabManager.clearSeenMarks();
+            this.updatePageTitle();
+        });
         
         // Usage stats
         this.sessionStats = null;
@@ -1734,6 +1737,10 @@ class ClaudeCodeWebInterface {
                 if (message.tool_name === 'ExitPlanMode' &&
                     message.tool_input && message.tool_input.plan) {
                     this.showPlanModal({ content: message.tool_input.plan });
+                }
+                if (message.event === 'Notification' && message.notification_type === 'permission_prompt' &&
+                    this.sessionTabManager) {
+                    this.sessionTabManager.permissionRequested(message.sessionId, message.message);
                 }
                 break;
 

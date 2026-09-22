@@ -815,6 +815,7 @@ class SessionTabManager {
             if (session.unreadOutput) this.updateUnreadIndicator(sessionId, false);
         }
         this.setTabDone(sessionId, false);
+        this.setTabAwaiting(sessionId, false);
 
         if (!skipHistoryUpdate) {
             this.updateTabHistory(sessionId);
@@ -1071,6 +1072,7 @@ class SessionTabManager {
             if (working) {
                 tab.dataset.working = '';
                 this.setTabDone(sessionId, false);
+                this.setTabAwaiting(sessionId, false);
             } else {
                 delete tab.dataset.working;
                 // Only a title says Claude finished; the process stopping or
@@ -1118,6 +1120,41 @@ class SessionTabManager {
         if (done) tab.dataset.done = '';
         else delete tab.dataset.done;
         if (this.claudeInterface && this.claudeInterface.updatePageTitle) this.claudeInterface.updatePageTitle();
+    }
+
+    // Claude is waiting for a permission answer (the permission_prompt hook)
+    // in a tab nobody is looking at: mark it and say so. Whoever is looking
+    // sees the question on screen already.
+    permissionRequested(sessionId, message) {
+        // Whatever else, this is not "finished" (see scheduleTabDone).
+        this.setTabDone(sessionId, false);
+        if (!this.tabs.has(sessionId) || this.isSessionInView(sessionId)) return;
+        this.setTabAwaiting(sessionId, true);
+        const session = this.activeSessions.get(sessionId);
+        const name = (session && session.name) || 'Session';
+        this.sendNotification(`${name} 待批准`, message || '', sessionId);
+    }
+
+    // The yellow mark. It outranks ✓: a tab waiting for an answer has not
+    // finished.
+    setTabAwaiting(sessionId, awaiting) {
+        const tab = this.tabs.get(sessionId);
+        if (!tab || awaiting === tab.hasAttribute('data-awaiting')) return;
+        if (awaiting) {
+            tab.dataset.awaiting = '';
+            this.setTabDone(sessionId, false);
+        } else {
+            delete tab.dataset.awaiting;
+        }
+    }
+
+    // Coming back to the page: what is on screen now has been seen.
+    clearSeenMarks() {
+        for (const sessionId of this.tabs.keys()) {
+            if (!this.isSessionInView(sessionId)) continue;
+            this.setTabDone(sessionId, false);
+            this.setTabAwaiting(sessionId, false);
+        }
     }
 
     // Is someone looking at this session right now: the page is showing and it

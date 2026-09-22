@@ -176,7 +176,7 @@ describe('page title and bell, next to the ✓', function () {
 
   it('puts ✓ in front of the browser tab title only while the page is hidden', function () {
     assert.ok(/document\.hidden && document\.querySelector\('\.session-tab\[data-done\]'\)/.test(body('updatePageTitle')));
-    assert.ok(/addEventListener\('visibilitychange', \(\) => this\.updatePageTitle\(\)\)/.test(APP), 'coming back takes it off');
+    assert.ok(/addEventListener\('visibilitychange', \(\) => \{[\s\S]*?this\.updatePageTitle\(\);\s*\}\)/.test(APP), 'coming back takes it off');
     // One writer: the title handler goes through it rather than setting document.title itself.
     assert.ok(!/document\.title = topic/.test(APP));
   });
@@ -196,5 +196,86 @@ describe('mobile notification title flash', function () {
     const fn = /showMobileNotification\(title, body, sessionId\) \{([\s\S]*?)\n    \}\n/.exec(src)[1];
     assert.ok(!/originalTitle/.test(fn), 'a title saved before the flash goes stale');
     assert.ok(/clearInterval\(flashInterval\);\s*restore\(\);/.test(fn));
+  });
+});
+
+describe('tab awaiting approval', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'public', f), 'utf8');
+  const SRC = read('session-manager.js');
+
+  function setup({ hidden = false } = {}) {
+    const timers = [];
+    const notes = [];
+    const ctx = vm.createContext({
+      window: {}, document: { hidden }, console, navigator: {},
+      ClaudeTitle: { DONE_GRACE_MS: 8000 },
+      setTimeout: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; },
+      clearTimeout: (t) => { if (t) t.live = false; }
+    });
+    vm.runInContext(`${SRC}\nthis.M = SessionTabManager;`, ctx);
+    const m = Object.create(ctx.M.prototype);
+    Object.assign(m, { tabs: new Map(), activeSessions: new Map(), activeTabId: 'a', claudeInterface: null });
+    m.sendNotification = (title, body, id) => notes.push({ title, body, id });
+    for (const id of ['a', 'b']) {
+      m.tabs.set(id, { dataset: {}, hasAttribute(n) { return n.slice(5) in this.dataset; }, querySelector: () => null });
+      m.activeSessions.set(id, { name: id.toUpperCase() });
+    }
+    const fire = () => timers.filter(t => t.live).forEach(t => { t.live = false; t.fn(); });
+    const has = (id, a) => m.tabs.get(id).hasAttribute(`data-${a}`);
+    return { m, notes, fire, has, ctx };
+  }
+
+  it('marks a background tab and notifies, instead of calling it finished', function () {
+    // The real order: the title turns ✳, the request follows ~6s later.
+    const { m, notes, fire, has } = setup();
+    m.setTabWorking('b', true, 'Touch x'); m.setTabWorking('b', false, 'Touch x');
+    m.permissionRequested('b', 'Claude needs your permission');
+    fire();
+    assert.strictEqual(has('b', 'awaiting'), true);
+    assert.strictEqual(has('b', 'done'), false);
+    assert.deepStrictEqual(notes, [{ title: 'B 待批准', body: 'Claude needs your permission', id: 'b' }]);
+  });
+
+  it('does not mark the tab being looked at, nor let it turn into ✓ once the page is left', function () {
+    const s = setup();
+    s.m.setTabWorking('a', true, 'x'); s.m.setTabWorking('a', false, 'x');
+    s.m.permissionRequested('a', 'm');
+    s.ctx.document.hidden = true;   // the user walks away without answering
+    s.fire();
+    assert.strictEqual(s.has('a', 'awaiting'), false);
+    assert.strictEqual(s.has('a', 'done'), false);
+    assert.deepStrictEqual(s.notes, []);
+  });
+
+  it('comes off when the tab is opened, when Claude works again, or when the page is back', function () {
+    let s = setup();
+    s.m.permissionRequested('b', 'm');
+    s.m.setTabWorking('b', true, 'x');
+    assert.strictEqual(s.has('b', 'awaiting'), false, 'working again');
+
+    s = setup({ hidden: true });
+    s.m.permissionRequested('a', 'm');
+    assert.strictEqual(s.has('a', 'awaiting'), true, 'hidden page: even the active tab');
+    s.ctx.document.hidden = false;
+    s.m.clearSeenMarks();
+    assert.strictEqual(s.has('a', 'awaiting'), false, 'back on the page');
+
+    assert.ok(/async switchToTab\(sessionId[\s\S]*?this\.setTabAwaiting\(sessionId, false\)/.test(SRC), 'switchToTab');
+    assert.ok(/visibilitychange', \(\) => \{[\s\S]*?clearSeenMarks\(\)/.test(read('app.js')), 'visibilitychange');
+  });
+
+  it('hears the request from the main view and from a split pane', function () {
+    const cond = /event === 'Notification' && m\w*\.notification_type === 'permission_prompt'/;
+    assert.ok(cond.test(read('app.js')) && /permissionRequested\(message\.sessionId, message\.message\)/.test(read('app.js')));
+    assert.ok(cond.test(read('splits.js')) && /permissionRequested\(this\.sessionId, msg\.message\)/.test(read('splits.js')));
+  });
+
+  it('is styled off an attribute, with the label after the name', function () {
+    const CSS = read('style.css');
+    assert.ok(/\.session-tab\[data-awaiting\] \.tab-status \{/.test(CSS));
+    assert.ok(/\.session-tab\[data-awaiting\] \.tab-content::after \{[\s\S]*?content: '待批准';[\s\S]*?flex-shrink: 0;/.test(CSS));
   });
 });
