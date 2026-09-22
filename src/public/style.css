@@ -2301,14 +2301,14 @@ pre, code {
 }
 
 /* Desktop: ESC alone. Clicking it twice clears Claude's input box (Esc Esc),
-   which is otherwise a chord to remember; MODE and the line break stay
-   phone-only because Shift+Tab and Shift+Enter cover them on a keyboard. The
+   which is otherwise a chord to remember; MODE and the Right arrow stay
+   phone-only because Shift+Tab and the arrow key cover them on a keyboard. The
    query is the complement of the one above. */
 @media (min-width: 769px) and (hover: hover),
        (min-width: 1025px) {
     .mode-switcher { display: flex; }
     .mode-switcher .mode-switcher-btn,
-    .mode-switcher .newline-btn { display: none; }
+    .mode-switcher .right-btn { display: none; }
 }
 
 .mode-switcher-btn {
@@ -2414,16 +2414,17 @@ pre, code {
     }
 }
 
-/* Third key in the stack: insert a line break without sending. Same 56px cap and
+/* Third key in the stack: the Right arrow key. Same 56px cap and
    shadow as ESC and MODE — they are all keystroke buttons, and the ring colour
    is what tells them apart. Blue here, so it reads as neither "stop" (red ESC)
    nor "state change" (green MODE).
 
    This one is drawn, not worded, and that is not a break with the pair above it:
-   the objection to icons was that Esc and mode-cycling have no honest glyph. A
-   line break does — U+21B5 is the arrow printed on the Return key of every
-   keyboard, so it is a key cap, the same as the words are. */
-.newline-btn {
+   the objection to icons was that Esc and mode-cycling have no honest glyph. The
+   Right arrow key does — U+2192 is what its key cap shows, the same as the words
+   are. (It replaced a line-break key, U+21B5, at the user's request: their
+   phone keyboard's own arrow key is broken.) */
+.right-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2439,22 +2440,22 @@ pre, code {
     height: 56px;
 }
 
-.newline-btn:hover {
+.right-btn:hover {
     filter: brightness(1.08);
     border-color: var(--accent);
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(88, 166, 255, 0.2);
 }
 
-.newline-btn:active {
+.right-btn:active {
     transform: translateY(0);
 }
 
-.newline-btn.pressed {
-    animation: newlineBtnPress 0.2s ease;
+.right-btn.pressed {
+    animation: rightBtnPress 0.2s ease;
 }
 
-@keyframes newlineBtnPress {
+@keyframes rightBtnPress {
     0% {
         transform: scale(1);
     }

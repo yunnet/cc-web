@@ -5,32 +5,34 @@ const path = require('path');
 // The mobile floating keys are built in JS, so these are static source
 // assertions in the style of overlay-stacking.test.js — enough to catch the two
 // mistakes that would make the button either absent or actively wrong.
-describe('mobile newline key', function () {
+describe('mobile arrow key', function () {
   const APP = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'app.js'), 'utf8');
   const CSS = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'style.css'), 'utf8');
 
-  it('adds a third key to the floating stack', function () {
-    assert.ok(/id="newlineBtn"/.test(APP), 'the FAB stack needs a newline button');
-    assert.ok(/getElementById\('newlineBtn'\)\.addEventListener\('click'/.test(APP),
+  // The third floating key was a line break; it is the Right arrow now, for a
+  // phone whose soft keyboard's own arrow key is broken.
+  it('has a Right arrow as the third key', function () {
+    assert.ok(/id="rightBtn"/.test(APP), 'the FAB stack needs the arrow key');
+    assert.ok(/getElementById\('rightBtn'\)\.addEventListener\('click'/.test(APP),
       'the button must be wired to a click handler');
+    assert.ok(!/newlineBtn|sendNewline/.test(APP), 'the line-break key it replaced is gone');
   });
 
-  it('sends LF, not CR', function () {
-    // The whole failure mode in one assertion: CR is Enter, so a button labelled
-    // "line break" would submit the message instead. Claude Code documents LF
-    // (Ctrl+J) as the newline that works in every terminal with no setup.
-    const body = /sendNewline\(\)\s*\{[\s\S]*?\n    \}/.exec(APP);
-    assert.ok(body, 'sendNewline() should exist');
-    assert.ok(/data:\s*'\\n'/.test(body[0]), 'must send LF');
-    assert.ok(!/data:\s*'\\r'/.test(body[0]), 'must not send CR — that submits');
+  it('sends the arrow the way xterm does, per cursor-key mode', function () {
+    // ESC O C under application cursor keys (DECCKM), ESC [ C otherwise: a
+    // program in the other mode would not read it as an arrow at all.
+    const body = /sendRightArrow\(\)\s*\{[\s\S]*?\n    \}/.exec(APP);
+    assert.ok(body, 'sendRightArrow() should exist');
+    assert.ok(/applicationCursorKeysMode/.test(body[0]), 'must follow the cursor-key mode');
+    assert.ok(/'\\x1bOC'/.test(body[0]) && /'\\x1b\[C'/.test(body[0]), 'both forms of the arrow');
   });
 
   it('styles the third key like the other two', function () {
     // One treatment for the set: same 56px cap, so the stack reads as one group
     // and positionModeSwitcher's measured layout still holds.
-    assert.ok(/\.newline-btn\s*\{[\s\S]*?width:\s*56px[\s\S]*?height:\s*56px/.test(CSS),
-      '.newline-btn must match the 56px cap of ESC and MODE');
-    assert.ok(/\.newline-btn\.pressed/.test(CSS), 'needs the same press feedback');
+    assert.ok(/\.right-btn\s*\{[\s\S]*?width:\s*56px[\s\S]*?height:\s*56px/.test(CSS),
+      '.right-btn must match the 56px cap of ESC and MODE');
+    assert.ok(/\.right-btn\.pressed/.test(CSS), 'needs the same press feedback');
   });
 
   it('does not hard-code the stack height anywhere', function () {

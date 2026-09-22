@@ -86,8 +86,8 @@ class ClaudeCodeWebInterface {
         }
         
         // The floating keys. On a phone all three show; on a desktop only ESC
-        // does (style.css) — MODE and the line break have Shift+Tab and
-        // Shift+Enter there, but "clear the draft" is Esc twice, and two clicks
+        // does (style.css) — MODE and the Right arrow have Shift+Tab and a
+        // real arrow key there, but "clear the draft" is Esc twice, and two clicks
         // on a button is easier to find than a chord.
         this.showModeSwitcher();
         
@@ -211,10 +211,10 @@ class ClaudeCodeWebInterface {
                         title="Cycle permission mode (Shift+Tab)" aria-label="Cycle permission mode (Shift+Tab)">
                     <span class="fab-key">MODE</span>
                 </button>
-                <button id="newlineBtn" class="newline-btn" type="button"
-                        title="Insert a line break without sending"
-                        aria-label="Insert a line break without sending">
-                    <span class="fab-key fab-key-glyph">\u21b5</span>
+                <button id="rightBtn" class="right-btn" type="button"
+                        title="Send the Right arrow key"
+                        aria-label="Send the Right arrow key">
+                    <span class="fab-key fab-key-glyph">\u2192</span>
                 </button>
             `;
             document.body.appendChild(modeSwitcher);
@@ -234,8 +234,8 @@ class ClaudeCodeWebInterface {
             });
 
             // Add event listener for the newline button
-            document.getElementById('newlineBtn').addEventListener('click', () => {
-                this.sendNewline();
+            document.getElementById('rightBtn').addEventListener('click', () => {
+                this.sendRightArrow();
             });
         }
     }
@@ -341,7 +341,7 @@ class ClaudeCodeWebInterface {
             dragging = false;
             // No pointer capture yet. Capturing here sent the pointerup — and so
             // the click — to this container instead of the button under the
-            // pointer, so a plain press of ESC / MODE / line break never reached
+            // pointer, so a plain press of ESC / MODE / the arrow never reached
             // its handler (measured with a mouse: pointerdown on #escapeBtn, then
             // nothing). Capture starts with the drag, below.
         });
@@ -398,22 +398,19 @@ class ClaudeCodeWebInterface {
         sw.addEventListener('pointercancel', end);
     }
 
-    // Insert a line break WITHOUT submitting. Enter submits, and a phone's soft
-    // keyboard has no Shift+Enter or Alt+Enter to reach the newline binding
-    // above (see the keydown handler) — so on a phone there was simply no way to
-    // write a two-line prompt. LF (0x0a, i.e. Ctrl+J) is Claude Code's own
-    // documented answer: it inserts a newline in EVERY terminal with no setup.
-    // Verified against a real claude: "AAAA" + LF + "BBBB" leaves both in the
-    // input box on separate lines, unsent.
-    //
-    // It must be '\n' and not '\r'. CR is Enter — the same button would then
-    // send the message, which is the opposite of what it says on it.
-    sendNewline() {
+    // The Right arrow key, for phones whose soft keyboard's own arrow is broken
+    // (it took the place of the line-break key). Claude uses it to move the
+    // cursor and to take an autocomplete suggestion. Sent the way xterm itself
+    // sends it: ESC O C when the program has switched the terminal to
+    // application cursor keys (DECCKM), ESC [ C otherwise — a program in the
+    // other mode would not read it as an arrow.
+    sendRightArrow() {
+        const appKeys = !!(this.terminal && this.terminal.modes && this.terminal.modes.applicationCursorKeysMode);
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.send({ type: 'input', data: '\n' });
+            this.send({ type: 'input', data: appKeys ? '\x1bOC' : '\x1b[C' });
         }
 
-        const btn = document.getElementById('newlineBtn');
+        const btn = document.getElementById('rightBtn');
         if (btn) {
             btn.classList.add('pressed');
             setTimeout(() => {

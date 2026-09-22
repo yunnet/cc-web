@@ -145,7 +145,7 @@ describe('floating keys: a press reaches the button', function () {
   });
 
   it('shows ESC alone on a desktop', function () {
-    assert.ok(/@media \(min-width: 769px\) and \(hover: hover\),\s*\(min-width: 1025px\) \{\s*\.mode-switcher \{ display: flex; \}\s*\.mode-switcher \.mode-switcher-btn,\s*\.mode-switcher \.newline-btn \{ display: none; \}/.test(CSS));
+    assert.ok(/@media \(min-width: 769px\) and \(hover: hover\),\s*\(min-width: 1025px\) \{\s*\.mode-switcher \{ display: flex; \}\s*\.mode-switcher \.mode-switcher-btn,\s*\.mode-switcher \.right-btn \{ display: none; \}/.test(CSS));
     assert.ok(!/if \(this\.isMobile\) \{\s*this\.showModeSwitcher\(\);/.test(APP), 'the stack is built on every device now');
   });
 });
