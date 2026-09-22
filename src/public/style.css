@@ -3436,10 +3436,13 @@ body.overlay-open .settings-modal       { z-index: 5004; }
    Self-contained. Claude marks its terminal title with a half-filled circle
    (◐/◑, alternating) while it works — the "spinning ball" a terminal like Warp
    shows on its tab — and claude-title.js reads it. The status dot becomes that
-   ball: half solid, half hollow, turning once a second, in the tab's own text
-   colour so it reads on the active tab's accent fill and on a plain tab in
-   either theme. It overrides every status colour, the unread one included
-   (which is !important), and their pulses, so two animations never stack.
+   ball: a round outline whose solid half flips over the line between the
+   halves — solid left, edge-on, solid right, edge-on — once a second, so the
+   two halves read as taking turns (the user's call, 2026-09-23; it used to
+   turn in the plane). In the tab's own text colour so it reads on the active
+   tab's accent fill and on a plain tab in either theme. It overrides every
+   status colour, the unread one included (which is !important), and their
+   pulses, so two animations never stack.
    --------------------------------------------------------------------------- */
 .session-tab[data-working] .tab-status {
     width: 10px;
@@ -3447,27 +3450,41 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     box-sizing: border-box;
     border: 1.5px solid currentColor;
     background-color: transparent !important;
-    background-image: linear-gradient(90deg, currentColor 50%, transparent 50%) !important;
+    background-image: none !important;
     box-shadow: none;
     opacity: 1;
     /* The dot's own `transition: all .3s` would morph the dot into the ball
        over a third of a second — size, border and fill all mid-way. */
     transition: none;
-    /* Mirrored (the user's call, 2026-09-23): the solid half on the right and
-       the turn anticlockwise. The keyframes carry the mirror too, since an
-       animated transform replaces this one. */
-    transform: scaleX(-1);
-    animation: tab-working-spin 1s linear infinite !important;
+    /* The outline stays still; only the half inside turns. */
+    animation: none !important;
+    perspective: 24px;
 }
 
-@keyframes tab-working-spin {
-    from { transform: scaleX(-1) rotate(0deg); }
-    to { transform: scaleX(-1) rotate(360deg); }
+/* The solid half: the left half-disc inside the outline, hinged on the
+   dividing line and turned about it. Seen from behind at 180° it is the right
+   half, so the solid side swaps each half turn. */
+.session-tab[data-working] .tab-status::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 50%;
+    background: currentColor;
+    border-radius: 100px 0 0 100px;
+    transform-origin: right center;
+    animation: tab-working-flip 1s linear infinite;
 }
 
-/* Still the ball, just not turning. */
+@keyframes tab-working-flip {
+    from { transform: rotateY(0deg); }
+    to { transform: rotateY(360deg); }
+}
+
+/* Still the ball — solid left, hollow right — just not turning. */
 @media (prefers-reduced-motion: reduce) {
-    .session-tab[data-working] .tab-status { animation: none !important; }
+    .session-tab[data-working] .tab-status::before { animation: none !important; }
 }
 
 /* ---------------------------------------------------------------------------

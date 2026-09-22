@@ -63,6 +63,10 @@ describe('tabs show Claude working', function () {
     assert.ok(/tab\.dataset\.working = ''/.test(MANAGER), 'data-working on the tab');
     assert.ok(/\.session-tab\[data-working\] \.tab-status \{/.test(CSS), 'styled off the attribute');
     assert.ok(/prefers-reduced-motion: reduce\)[\s\S]{0,120}data-working\][\s\S]{0,60}animation: none/.test(CSS), 'still ball, no spin, for reduced motion');
+    // The solid half flips over the dividing line (the user's call,
+    // 2026-09-23): a half-disc hinged on its straight edge, turned about Y.
+    assert.ok(/\.session-tab\[data-working\] \.tab-status::before \{[\s\S]*?transform-origin: right center;[\s\S]*?animation: tab-working-flip/.test(CSS), 'half-disc hinged on the dividing line');
+    assert.ok(/@keyframes tab-working-flip \{[\s\S]*?rotateY\(360deg\)/.test(CSS), 'turned about the vertical axis');
   });
 
   it('loads the parser before the scripts that use it', function () {
