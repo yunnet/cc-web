@@ -1369,7 +1369,14 @@ class ClaudeCodeWebServer {
     if (!session.hookToken) session.hookToken = uuidv4();
 
     try {
+      // Only these four come from the browser, and they go FIRST: everything
+      // after is the server's. They used to be spread last (`...options`), so
+      // a client could replace workingDir (skipping validatePath) or hookScript
+      // (a file node would run as the hook). Values are whitelisted by the
+      // bridge (ClaudeBridge.launchArgs); this only decides which keys exist.
+      const { model, permissionMode, effort, dangerouslySkipPermissions } = options || {};
       await this.claudeBridge.startSession(sessionId, {
+        model, permissionMode, effort, dangerouslySkipPermissions: dangerouslySkipPermissions === true,
         workingDir: session.workingDir,
         // The browser terminal IS the background, so Claude's theme follows the
         // UI's light/dark setting rather than the user's global settings.json.
@@ -1432,8 +1439,7 @@ class ClaudeCodeWebServer {
             type: 'error',
             message: error.message
           });
-        },
-        ...options
+        }
       });
 
       session.active = true;

@@ -1654,8 +1654,10 @@ class ClaudeCodeWebInterface {
         const opts = {};
         const model = document.getElementById('claudeModelSelect')?.value || '';
         const permissionMode = document.getElementById('claudePermissionSelect')?.value || '';
+        const effort = document.getElementById('claudeEffortSelect')?.value || '';
         if (model) opts.model = model;
         if (permissionMode) opts.permissionMode = permissionMode;
+        if (effort) opts.effort = effort;
         return opts;
     }
 
@@ -2510,6 +2512,7 @@ class ClaudeCodeWebInterface {
         const opts = options || this.loadStored('cc-web-last-start-options', {});
         $('newTabModelSelect').value = opts.model || '';
         $('newTabPermissionSelect').value = opts.permissionMode || '';
+        $('newTabEffortSelect').value = opts.effort || '';
         // Always opens on "new" — continuing a conversation is a deliberate
         // act, not a state left over from the last time the dialog was used.
         this.setNewSessionMode('new');
@@ -2518,11 +2521,16 @@ class ClaudeCodeWebInterface {
         // Prevent body scroll on mobile when the dialog is open
         if (this.isMobile) document.body.style.overflow = 'hidden';
 
-        const dir = this.newTabRecentDirs().find(d => !this.nonProjectDirReason(d));
-        // No usable folder to offer: open the tree, that is what they need.
-        this.toggleNewTabBrowser(!dir);
-        const loaded = await this.loadFolders(dir || null);
-        if (!loaded && dir) await this.loadFolders();
+        // First recent folder that still opens; the ones that don't (deleted,
+        // or no longer allowed) stop being offered. None left: open the tree,
+        // that is what they need.
+        let loaded = false;
+        for (const dir of this.newTabRecentDirs().filter(d => !this.nonProjectDirReason(d))) {
+            if ((loaded = await this.loadFolders(dir))) break;
+            this.forgetRecentDir(dir);
+        }
+        this.toggleNewTabBrowser(!loaded);
+        if (!loaded) await this.loadFolders();
         this.setNewTabError(reason);
         // Enter starts. A Dangerous start that sent the user here keeps its
         // meaning: focus lands on the button that does the same.
@@ -2611,6 +2619,13 @@ class ClaudeCodeWebInterface {
         }
     }
 
+    forgetRecentDir(dir) {
+        try {
+            const recent = this.loadStored('cc-web-recent-dirs', []).filter(d => d !== dir);
+            localStorage.setItem('cc-web-recent-dirs', JSON.stringify(recent));
+        } catch (_) { /* storage blocked: it just stays offered */ }
+    }
+
     // What the next dialog prefills: this folder first among the recent ones,
     // and these launch options. Skipping permissions is never remembered — it
     // has to be asked for each time.
@@ -2620,7 +2635,8 @@ class ClaudeCodeWebInterface {
             localStorage.setItem('cc-web-recent-dirs', JSON.stringify(recent));
             localStorage.setItem('cc-web-last-start-options', JSON.stringify({
                 model: options.model || '',
-                permissionMode: options.permissionMode || ''
+                permissionMode: options.permissionMode || '',
+                effort: options.effort || ''
             }));
         } catch (_) { /* storage full or blocked: prefill just falls back */ }
     }
@@ -3166,8 +3182,10 @@ class ClaudeCodeWebInterface {
             const options = {};
             const model = document.getElementById('newTabModelSelect').value;
             const permissionMode = document.getElementById('newTabPermissionSelect').value;
+            const effort = document.getElementById('newTabEffortSelect').value;
             if (model) options.model = model;
             if (permissionMode) options.permissionMode = permissionMode;
+            if (effort) options.effort = effort;
             if (dangerous) options.dangerouslySkipPermissions = true;
 
             const created = await this.requestSession({ name, workingDir, resumeId });

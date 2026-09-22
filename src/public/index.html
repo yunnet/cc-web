@@ -200,14 +200,29 @@
                                 <option value="opus">Opus</option>
                                 <option value="sonnet">Sonnet</option>
                                 <option value="haiku">Haiku</option>
+                                <option value="fable">Fable</option>
                             </select>
                         </label>
                         <label class="start-option">
                             <span>Permission</span>
                             <select id="claudePermissionSelect">
                                 <option value="">Default</option>
+                                <option value="auto">Auto</option>
+                                <option value="manual">Ask each time</option>
                                 <option value="plan">Plan mode</option>
                                 <option value="acceptEdits">Accept edits</option>
+                                <option value="dontAsk">Don't ask (deny unapproved)</option>
+                            </select>
+                        </label>
+                        <label class="start-option">
+                            <span>Effort</span>
+                            <select id="claudeEffortSelect">
+                                <option value="">Default</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="xhigh">Extra high</option>
+                                <option value="max">Max</option>
                             </select>
                         </label>
                     </div>
@@ -433,6 +448,7 @@
                                 <option value="opus">Opus</option>
                                 <option value="sonnet">Sonnet</option>
                                 <option value="haiku">Haiku</option>
+                                <option value="fable">Fable</option>
                             </select>
                         </label>
                         <label class="start-option">
@@ -440,8 +456,23 @@
                             <!-- Same values as #claudePermissionSelect (`--permission-mode`). -->
                             <select id="newTabPermissionSelect">
                                 <option value="">默认</option>
+                                <option value="auto">自动（由分类器把关）</option>
+                                <option value="manual">逐项确认</option>
                                 <option value="plan">计划模式</option>
                                 <option value="acceptEdits">自动接受编辑</option>
+                                <option value="dontAsk">不询问（未预先允许的一律拒绝）</option>
+                            </select>
+                        </label>
+                        <label class="start-option">
+                            <span>思考强度</span>
+                            <!-- Same values as #claudeEffortSelect (`--effort`). -->
+                            <select id="newTabEffortSelect">
+                                <option value="">默认</option>
+                                <option value="low">低</option>
+                                <option value="medium">中</option>
+                                <option value="high">高</option>
+                                <option value="xhigh">很高</option>
+                                <option value="max">最高</option>
                             </select>
                         </label>
                     </div>

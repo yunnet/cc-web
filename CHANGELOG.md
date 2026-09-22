@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Security
+- **The browser could override server-owned launch fields.** `start_claude`
+  options were spread last over the bridge call, so a client could replace
+  `workingDir` (skipping the path check) or `hookScript` (a file node would run
+  as the hook). Only `model`, `permissionMode`, `effort` and
+  `dangerouslySkipPermissions` are taken from the browser now, and they cannot
+  shadow anything the server sets.
+
+### Added
+- **Launch options for Claude Code 2.1.278.** Model *Fable*; permission modes
+  *auto*, *manual* (ask each time) and *dontAsk*; and a new effort level
+  (`--effort` low … max). In the new tab dialog and the Start prompt; the
+  dialog remembers the last choice. A test reads the installed `claude --help`
+  so a renamed mode shows up as a failure, not as a tab that will not start.
+
+### Fixed
+- **Conversation titles in the history list.** Claude no longer writes
+  `summary` records; it writes `ai-title` and rewrites it as the conversation
+  goes. The list now shows that title — the latest one, read from the end of
+  the transcript — instead of the first prompt cut to length (measured: 41 of
+  50 conversations in one project had one going unused).
+- **A deleted folder stayed in the new tab dialog's recent list.** It is
+  dropped the first time it fails to open, and the dialog falls through to the
+  next recent folder instead of the launch directory.
+
 ### Changed
 - **One dialog to open a tab, not three.** Opening a tab used to walk through
   the folder browser, then Create New Session, then the Start Claude prompt.

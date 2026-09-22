@@ -54,6 +54,14 @@ describe('new tab dialog', function () {
     };
     assert.deepStrictEqual(values('newTabModelSelect'), values('claudeModelSelect'));
     assert.deepStrictEqual(values('newTabPermissionSelect'), values('claudePermissionSelect'));
+    assert.deepStrictEqual(values('newTabEffortSelect'), values('claudeEffortSelect'));
+    // And nothing on offer that the bridge would silently drop.
+    const Bridge = require('../src/claude-bridge');
+    const offered = (id) => values(id).map(v => v.slice(7, -1)).filter(Boolean);
+    for (const [id, list] of [['newTabModelSelect', Bridge.MODELS], ['newTabPermissionSelect', Bridge.PERMISSION_MODES],
+                              ['newTabEffortSelect', Bridge.EFFORTS]]) {
+      for (const v of offered(id)) assert.ok(list.includes(v), `#${id} offers "${v}", which the bridge drops`);
+    }
   });
 
   describe('starting', function () {

@@ -62,6 +62,7 @@ class ClaudeBridge {
       allowFreshFallback = true,
       model = '',
       permissionMode = '',
+      effort = '',
       onOutput = () => {},
       onExit = () => {},
       onError = () => {},
@@ -81,7 +82,7 @@ class ClaudeBridge {
     } = options;
 
     // Args shared by a fresh launch and a resume.
-    const baseArgs = dangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : [];
+    const baseArgs = ClaudeBridge.launchArgs({ dangerouslySkipPermissions, model, permissionMode, effort });
     // Route Claude's notification events (task finished / needs input /
     // permission prompt) to the terminal bell — the BEL travels PTY→WS→xterm and
     // the client's onBell turns it into a beep + notification. Injected via
@@ -90,17 +91,6 @@ class ClaudeBridge {
       this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme })
     ));
 
-    // Optional model / permission-mode chosen in the UI. Whitelisted so a bad
-    // value can't reach the CLI (spawn uses an argv array, so there is no shell
-    // injection risk either). --dangerously-skip-permissions wins over an
-    // explicit permission mode.
-    if (model && ['opus', 'sonnet', 'haiku'].includes(model)) {
-      baseArgs.push('--model', model);
-    }
-    if (!dangerouslySkipPermissions && permissionMode &&
-        ['plan', 'acceptEdits', 'default'].includes(permissionMode)) {
-      baseArgs.push('--permission-mode', permissionMode);
-    }
 
     // Spawn Claude bound to our stable session id. `--session-id <uuid>` starts a
     // brand-new conversation under that id; `--resume <uuid>` re-attaches to it
@@ -480,6 +470,24 @@ class ClaudeBridge {
   // through an ANSI slot that Claude also uses for something else. Falls back to
   // exactly the two built-ins described above when the files could not be
   // written — see src/utils/claude-theme.js.
+  // Launch options chosen in the UI, as CLI args. Whitelisted so a bad value
+  // can't reach the CLI (spawn uses an argv array, so there is no shell
+  // injection risk either); anything unknown is dropped, not an error.
+  // --dangerously-skip-permissions wins over an explicit permission mode, and
+  // `bypassPermissions` is left out on purpose: it is that same switch, and one
+  // road to it is enough. `default` is `manual` under its old name (2.1.278
+  // still takes it, just no longer lists it). Checked against `claude --help`
+  // in test/claude-bridge.test.js.
+  static launchArgs({ dangerouslySkipPermissions = false, model = '', permissionMode = '', effort = '' } = {}) {
+    const args = dangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : [];
+    if (ClaudeBridge.MODELS.includes(model)) args.push('--model', model);
+    if (!dangerouslySkipPermissions && ClaudeBridge.PERMISSION_MODES.includes(permissionMode)) {
+      args.push('--permission-mode', permissionMode);
+    }
+    if (ClaudeBridge.EFFORTS.includes(effort)) args.push('--effort', effort);
+    return args;
+  }
+
   static themeForUi(uiTheme) {
     return claudeTheme.themeForUi(uiTheme);
   }
@@ -623,5 +631,9 @@ class ClaudeBridge {
   }
 
 }
+
+ClaudeBridge.MODELS = ['opus', 'sonnet', 'haiku', 'fable'];
+ClaudeBridge.PERMISSION_MODES = ['plan', 'acceptEdits', 'auto', 'manual', 'dontAsk', 'default'];
+ClaudeBridge.EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 module.exports = ClaudeBridge;

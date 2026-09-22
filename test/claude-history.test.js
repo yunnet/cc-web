@@ -35,6 +35,18 @@ describe('claude-history', function() {
       assert.strictEqual(history.extractTitle(head), '修复浅色主题对比度');
     });
 
+    it("prefers Claude's own title, and its latest one", function() {
+      // 2.1.278 writes ai-title records and rewrites them as the chat moves on.
+      const head = transcript([
+        ...META,
+        { type: 'user', message: { content: 'a long first prompt that makes a poor title' } },
+        { type: 'ai-title', aiTitle: 'First guess', sessionId: 'x' },
+        { type: 'summary', summary: 'older format' },
+        { type: 'ai-title', aiTitle: 'Fix plan-link underline', sessionId: 'x' }
+      ]);
+      assert.strictEqual(history.extractTitle(head), 'Fix plan-link underline');
+    });
+
     it('prefers a summary line over the first prompt', function() {
       const head = transcript([
         { type: 'summary', summary: 'Plan mode via hooks' },
@@ -98,6 +110,23 @@ describe('claude-history', function() {
       assert.deepStrictEqual(list.map(c => c.title), ['newer chat', 'older chat']);
       assert.ok(list[0].sizeBytes > 0);
       assert.ok(!Number.isNaN(Date.parse(list[0].updatedAt)));
+    });
+
+    it("reads the latest ai-title from the tail of a transcript too big for one window", async function() {
+      // The head window alone would only see the first prompt; the newest
+      // title is written near the end.
+      const proj = path.join(root, history.projectDirName(dir));
+      const filler = { type: 'attachment', data: 'x'.repeat(1000) };
+      fs.writeFileSync(path.join(proj, `${B}.jsonl`), transcript([
+        { type: 'user', message: { content: 'first prompt' } },
+        { type: 'ai-title', aiTitle: 'Early title', sessionId: B },
+        ...Array(300).fill(filler),
+        { type: 'ai-title', aiTitle: 'Late title', sessionId: B },
+        { type: 'last-prompt', sessionId: B }
+      ]));
+      assert.ok(fs.statSync(path.join(proj, `${B}.jsonl`)).size > 128 * 1024, 'fixture must exceed the head window');
+      const list = await history.listConversations(dir, { root });
+      assert.strictEqual(list.find(c => c.id === B).title, 'Late title');
     });
 
     it('honours the limit and returns [] for a directory Claude has never seen', async function() {

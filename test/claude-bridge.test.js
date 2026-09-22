@@ -53,6 +53,49 @@ describe('ClaudeBridge', function() {
     });
   });
 
+  describe('launchArgs', function() {
+    const args = (o) => ClaudeBridge.launchArgs(o);
+
+    it('passes every whitelisted value through as its flag', function() {
+      assert.deepStrictEqual(args({ model: 'fable', permissionMode: 'auto', effort: 'xhigh' }),
+        ['--model', 'fable', '--permission-mode', 'auto', '--effort', 'xhigh']);
+      assert.deepStrictEqual(args({}), []);
+    });
+
+    it('drops unknown values instead of handing them to the CLI', function() {
+      assert.deepStrictEqual(args({ model: 'gpt', permissionMode: 'bypassPermissions', effort: 'ludicrous' }), []);
+      assert.deepStrictEqual(args({ model: '--help' }), []);
+    });
+
+    it('lets skipping permissions win over a permission mode', function() {
+      assert.deepStrictEqual(args({ dangerouslySkipPermissions: true, permissionMode: 'plan', effort: 'low' }),
+        ['--dangerously-skip-permissions', '--effort', 'low']);
+    });
+
+    it('offers nothing the installed claude would reject', function() {
+      // The whitelists are ours; the choices are Claude's. Read them off the
+      // real CLI so an upgrade that renames a mode fails here, not in a tab.
+      // ponytail: the one deliberate exception to "no real CLI calls" — `--help`
+      // is offline and local, and skips where claude is not installed.
+      let help;
+      try {
+        help = require('child_process').execFileSync('claude', ['--help'], { encoding: 'utf8', timeout: 20000 });
+      } catch (_) {
+        this.skip(); // no claude on this machine
+      }
+      const flat = help.replace(/\s+/g, ' ');
+      const choices = /--permission-mode <mode>.*?\(choices: ([^)]*)\)/.exec(flat);
+      assert.ok(choices, '--permission-mode choices not found in claude --help');
+      const modes = choices[1].match(/"([^"]+)"/g).map(q => q.slice(1, -1));
+      for (const m of ClaudeBridge.PERMISSION_MODES.filter(m => m !== 'default')) {
+        assert.ok(modes.includes(m), `claude no longer accepts --permission-mode ${m}`);
+      }
+      const efforts = /--effort <level>.*?\(([^)]*)\)/.exec(flat);
+      assert.ok(efforts, '--effort levels not found in claude --help');
+      for (const e of ClaudeBridge.EFFORTS) assert.ok(efforts[1].split(/,\s*/).includes(e), `claude no longer accepts --effort ${e}`);
+    });
+  });
+
   describe('buildInjectedSettings', function() {
     it('should always route notifications to the terminal bell', function() {
       const s = bridge.buildInjectedSettings('sess-1', {});
