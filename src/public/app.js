@@ -2213,7 +2213,7 @@ class ClaudeCodeWebInterface {
         // Make it clear these settings apply to the ACTIVE session.
         const title = document.getElementById('settingsTitle');
         if (title) {
-            const name = this.currentClaudeSessionId ? (this.currentClaudeSessionName || 'this session') : null;
+            const name = this.activeSessionName();
             title.textContent = name ? `Settings — ${name}` : 'Settings';
         }
 
@@ -3212,6 +3212,16 @@ class ClaudeCodeWebInterface {
         }
     }
     
+    // The active tab's name as the tab bar has it now. currentClaudeSessionName
+    // is only written when a session is joined, so switching to a tab that was
+    // already open, or renaming one, left it naming another session (GAP-09).
+    activeSessionName() {
+        const id = this.currentClaudeSessionId;
+        if (!id) return null;
+        const session = this.sessionTabManager && this.sessionTabManager.activeSessions.get(id);
+        return (session && session.name) || this.currentClaudeSessionName || 'this session';
+    }
+
     updateSessionButton(text) {
         // Session button removed with header - using tabs instead
         console.log('Session:', text);

@@ -146,3 +146,35 @@ describe('SRV-02 REST routes need the Authorization header', function () {
     assert.strictEqual(await get('/api/health', { Authorization: 'Bearer tok-guard' }), 200);
   });
 });
+
+describe('SET-04 the settings title names the active tab', function () {
+  // GAP-09: switching to an already-open tab left the title on the last
+  // session joined. The name now comes from the tab bar.
+  function nameFor(app) {
+    const obj = vm.runInNewContext(`({ ${lift(read('app.js'), 'activeSessionName', { method: true })} })`, {});
+    return obj.activeSessionName.call(app);
+  }
+  const tabs = (entries) => ({ activeSessions: new Map(entries) });
+
+  it('follows the active tab, not the last one joined', function () {
+    const app = { currentClaudeSessionId: 'a', currentClaudeSessionName: 'C', sessionTabManager: tabs([['a', { name: 'A' }], ['c', { name: 'C' }]]) };
+    assert.strictEqual(nameFor(app), 'A');
+  });
+
+  it('follows a rename', function () {
+    const s = tabs([['a', { name: 'A' }]]);
+    const app = { currentClaudeSessionId: 'a', currentClaudeSessionName: 'A', sessionTabManager: s };
+    s.activeSessions.get('a').name = 'Renamed';
+    assert.strictEqual(nameFor(app), 'Renamed');
+  });
+
+  it('has nothing to name without a session, and falls back when the tab bar does not know it', function () {
+    assert.strictEqual(nameFor({ currentClaudeSessionId: null }), null);
+    assert.strictEqual(nameFor({ currentClaudeSessionId: 'x', currentClaudeSessionName: 'X', sessionTabManager: tabs([]) }), 'X');
+    assert.strictEqual(nameFor({ currentClaudeSessionId: 'x', sessionTabManager: tabs([]) }), 'this session');
+  });
+
+  it('is what the settings title uses', function () {
+    assert.ok(/const name = this\.activeSessionName\(\);\s*title\.textContent = name \? `Settings — \$\{name\}` : 'Settings';/.test(read('app.js')));
+  });
+});

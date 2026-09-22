@@ -191,7 +191,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-01 | 工具栏齿轮按钮打开侧滑菜单（打开时齿轮高亮）；点菜单外任意处关闭，那一下点击照常生效；× 关闭 | `control:hamburgerBtn` `control:closeMenuBtn` | — |
 | SET-02 | 菜单里「Settings」打开设置（唯一入口），「Sessions」打开会话弹窗 | `control:settingsBtnMobile` | — |
 | SET-03 | 菜单底部显示「v版本 · :端口 · 构建号」，区分 dev 和 stable | `route:GET /api/config` | — |
-| SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms，按会话分别保存，新会话继承最近保存的设置；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` |
+| SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms，按会话分别保存，新会话继承最近保存的设置；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` `test/feature-guards.test.js` |
 | SET-05 | 显示 Claude Code 已安装版本、最新版、稳定版，以及是否有更新 | `route:GET /api/version` | `test/version-info.test.js` |
 | SET-06 | 历史保留量（MB，0.25–16，默认 2），服务器端设置对所有会话生效；超出范围时提示实际生效值 | `control:scrollbackChunks` `route:GET /api/settings/scrollback` `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
 | SET-07 | 计划目录：列出本会话的额外目录（可 × 删除）和全局目录（只读）；输入后 Add 或回车提交，被拒绝的目录弹出原因 | `control:planDirInput` `control:planDirAddBtn` `js-control:app.js:Remove` `route:GET /api/plan-dirs` `route:POST /api/plan-dirs` | `test/plan-dirs.test.js` |
@@ -291,7 +291,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GAP-06 | CLAUDE.md 的 WebSocket 协议里列了 `close_session`，但代码里没有这个消息（文档与代码不符，不影响使用） | 手工 | — |
 | GAP-07 | 设置弹窗不支持 Esc 关闭 | 手工 | — |
 | GAP-08 | 分屏窗格没有响铃声和通知，也不做写入合并和限流 | 手工 | — |
-| GAP-09 | 切换标签后，设置弹窗标题仍显示上一个会话的名字（`showSession` 更新了会话 id 但没更新名字；冒烟 S16 发现：当前是 A，标题是「Settings — C」） | 手工 | — |
+| GAP-09 | **已修复（2026-09-23）**：原来切换标签后，设置弹窗标题仍显示上一个会话的名字；现在标题取自标签栏里当前会话的名字，切换和重命名后都正确 | 手工 | `test/feature-guards.test.js` |
 | GAP-10 | 计划弹窗的提示音加载失败，从来不响（内嵌的 wav 数据报 "no supported source"；冒烟 S19 发现） | 手工 | — |
 
 ## 建清单的比对记录
