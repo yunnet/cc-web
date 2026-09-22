@@ -3453,11 +3453,16 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     /* The dot's own `transition: all .3s` would morph the dot into the ball
        over a third of a second — size, border and fill all mid-way. */
     transition: none;
+    /* Mirrored (the user's call, 2026-09-23): the solid half on the right and
+       the turn anticlockwise. The keyframes carry the mirror too, since an
+       animated transform replaces this one. */
+    transform: scaleX(-1);
     animation: tab-working-spin 1s linear infinite !important;
 }
 
 @keyframes tab-working-spin {
-    to { transform: rotate(360deg); }
+    from { transform: scaleX(-1) rotate(0deg); }
+    to { transform: scaleX(-1) rotate(360deg); }
 }
 
 /* Still the ball, just not turning. */
