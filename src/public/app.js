@@ -812,12 +812,14 @@ class ClaudeCodeWebInterface {
 
         try {
             // Claude rings together with its permission_prompt and idle_prompt
-            // notifications (measured on 2.1.278). A tab marked finished or
-            // awaiting approval has already said so: ring, but do not notify
-            // twice. The tag lets a later notification for the same session
-            // replace this one rather than stack.
+            // notifications (measured on 2.1.278). A tab awaiting approval has
+            // just said so with its own notification at the same moment: ring,
+            // but do not notify twice. A finished (✓) tab still gets this one —
+            // the idle_prompt bell a minute after the answer is a reminder, not
+            // a duplicate. The tag lets a later notification for the same
+            // session replace this one rather than stack.
             const tab = this.sessionTabManager && this.sessionTabManager.tabs.get(sessionId);
-            const told = tab && (tab.hasAttribute('data-done') || tab.hasAttribute('data-awaiting'));
+            const told = tab && tab.hasAttribute('data-awaiting');
             if (document.hidden && !told && 'Notification' in window) {
                 if (Notification.permission === 'granted') {
                     new Notification(`${this.getAlias()} needs your attention`, { tag: sessionId });

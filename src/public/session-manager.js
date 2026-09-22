@@ -1236,13 +1236,23 @@ class SessionTabManager {
                     // Claude has been idle for 90 seconds - likely finished working
                     this.updateTabStatus(sessionId, 'idle');
                     
-                    // Mark as unread if Claude was previously active and this
-                    // is a background tab (blue indicator). The "finished"
-                    // notification comes from Claude's own title now
-                    // (scheduleTabDone), not from 90 quiet seconds.
-                    if (wasActive && sessionId !== this.activeTabId) {
-                        currentSession.unreadOutput = true;
-                        this.updateUnreadIndicator(sessionId, true);
+                    // Only notify and mark as unread if Claude was previously active
+                    if (wasActive) {
+                        const sessionName = currentSession.name || 'Session';
+                        const duration = Date.now() - previousActivity;
+                        
+                        // Mark as unread if this is a background tab (blue indicator)
+                        if (sessionId !== this.activeTabId) {
+                            currentSession.unreadOutput = true;
+                            this.updateUnreadIndicator(sessionId, true);
+                            
+                            // Send notification that Claude appears to have finished
+                            this.sendNotification(
+                                `${sessionName} — ${this.getAlias()} appears finished`,
+                                `No output for 90 seconds (worked for ${Math.round(duration / 1000)}s)`,
+                                sessionId
+                            );
+                        }
                     }
                 }
             }, 90000); // 90 seconds

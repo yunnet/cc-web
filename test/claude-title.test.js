@@ -181,12 +181,19 @@ describe('page title and bell, next to the ✓', function () {
     assert.ok(!/document\.title = topic/.test(APP));
   });
 
-  it('rings but does not notify again for a tab that already said so', function () {
+  it('rings but does not notify twice for a tab awaiting approval', function () {
     assert.ok(/term\.onBell\(\(\) => this\.handleBell\(view\.sessionId\)\)/.test(APP));
     const src = body('handleBell');
-    assert.ok(/hasAttribute\('data-done'\) \|\| tab\.hasAttribute\('data-awaiting'\)/.test(src));
+    assert.ok(/const told = tab && tab\.hasAttribute\('data-awaiting'\);/.test(src));
     assert.ok(/document\.hidden && !told/.test(src));
     assert.ok(/\{ tag: sessionId \}/.test(src), 'same tag as sendNotification, so one replaces the other');
+  });
+
+  it('still reminds a finished tab when Claude rings a minute later', function () {
+    // The user asked for this back (2026-09-22): v4.11.9 had dropped the
+    // idle_prompt bell's notification for a tab already showing ✓.
+    const src = body('handleBell');
+    assert.ok(!/data-done/.test(src), 'a ✓ must not silence the reminder');
   });
 });
 
@@ -277,5 +284,40 @@ describe('tab awaiting approval', function () {
     const CSS = read('style.css');
     assert.ok(/\.session-tab\[data-awaiting\] \.tab-status \{/.test(CSS));
     assert.ok(/\.session-tab\[data-awaiting\] \.tab-content::after \{[\s\S]*?content: '待批准';[\s\S]*?flex-shrink: 0;/.test(CSS));
+  });
+});
+
+// The 90-second fallback: a background tab whose output went quiet after
+// working says so. v4.11.9 removed it as a duplicate of ✓; the user asked for
+// it back (2026-09-22). Runs the real markSessionActivity with fake timers.
+describe('90-second "appears finished" notification', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'session-manager.js'), 'utf8');
+
+  it('notifies a background tab that worked and then went quiet for 90s', function () {
+    const timers = [];
+    const notes = [];
+    const ctx = vm.createContext({
+      window: {}, document: { hidden: false }, console, navigator: {}, ClaudeTitle: { DONE_GRACE_MS: 8000 },
+      setTimeout: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; },
+      clearTimeout: (t) => { if (t) t.live = false; }
+    });
+    vm.runInContext(`${SRC}\nthis.M = SessionTabManager;`, ctx);
+    const m = Object.create(ctx.M.prototype);
+    Object.assign(m, { tabs: new Map(), activeSessions: new Map([['b', { name: 'B' }]]), activeTabId: 'a', claudeInterface: null });
+    m.updateTabStatus = (id, status) => { m.activeSessions.get(id).status = status; };
+    m.updateUnreadIndicator = () => {};
+    m.sendNotification = (title, body, id) => notes.push({ title, body, id });
+    m.markSessionActivity('b', true);   // becomes active
+    m.markSessionActivity('b', true);   // still active: this is the one whose quiet counts
+    const t = timers.filter(x => x.live && x.ms === 90000).pop();
+    assert.ok(t, 'the 90s timer is gone');
+    t.fn();
+    assert.strictEqual(notes.length, 1);
+    assert.strictEqual(notes[0].title, 'B — Claude appears finished');
+    assert.ok(/^No output for 90 seconds \(worked for \d+s\)$/.test(notes[0].body), notes[0].body);
+    assert.strictEqual(notes[0].id, 'b');
   });
 });
