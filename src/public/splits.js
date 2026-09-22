@@ -504,6 +504,17 @@ class SplitContainer {
         this.splitContainerEl.className = 'split-container';
         this.splitContainerEl.style.display = 'none';
 
+        // Refit the panes whenever the container changes size — the window,
+        // the browser's side panel, full screen. Nothing did: the panes kept the
+        // size they were split at, so shrinking the window left each xterm
+        // hundreds of pixels wider and taller than its pane (measured: 776x846
+        // drawn in a 497x605 pane) and Claude still laying out for the old
+        // size — the status line and the bottom rows cut off at the pane edge.
+        // A hidden container reports 0x0 and is skipped by the pane fit anyway.
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(() => this.scheduleRefit()).observe(this.splitContainerEl);
+        }
+
         // Create left split
         const leftSplit = document.createElement('div');
         leftSplit.className = 'split-pane split-left';
@@ -606,7 +617,13 @@ class SplitContainer {
 
     // Re-fit + resize each pane's PTY after the grid layout and renderer settle.
     scheduleRefit() {
-        const run = () => this.splits.forEach(s => s.syncSize());
+        // Coalesced: a window drag fires the observer on every frame.
+        if (this._refitPending) return;
+        this._refitPending = true;
+        const run = () => {
+            this._refitPending = false;
+            this.splits.forEach(s => s.syncSize());
+        };
         if (typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(() => requestAnimationFrame(run));
         } else {

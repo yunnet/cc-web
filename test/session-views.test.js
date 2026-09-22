@@ -168,3 +168,22 @@ describe('closing a tab ends its view', function () {
     assert.ok(/type: 'session_deleted',\s*sessionId/.test(SERVER), 'the server must say which session was deleted');
   });
 });
+
+// Split panes must follow their container's size. They kept the size they were
+// split at: shrinking the window left each xterm drawn at 776x846 inside a
+// 497x605 pane, with Claude still laying out for the old size — the status
+// line and the bottom rows cut off at the pane's edge.
+describe('split panes follow the window', function () {
+  const SPLITS = read('src', 'public', 'splits.js');
+
+  it('refits the panes when the split container changes size', function () {
+    assert.ok(/new ResizeObserver\(\(\) => this\.scheduleRefit\(\)\)\.observe\(this\.splitContainerEl\)/.test(SPLITS),
+      'the split container must be observed and refit on resize');
+  });
+
+  it('coalesces refits, so a window drag is not a resize per frame per pane', function () {
+    const fn = /    scheduleRefit\(\)\s*\{([\s\S]*?)\n    \}/.exec(SPLITS);
+    assert.ok(fn, 'scheduleRefit is gone');
+    assert.ok(/if \(this\._refitPending\) return;/.test(fn[1]), 'refits must be coalesced');
+  });
+});
