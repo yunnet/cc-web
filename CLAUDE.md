@@ -63,6 +63,16 @@ Claude presents a plan by calling the `ExitPlanMode` tool, which fires a `PreToo
 
 The same relay carries a `Notification` hook, matcher `permission_prompt` (not `idle_prompt`, which fires a minute after every answer); `handleHookEvent` passes `notification_type` and `message` through. It drives the tab marks, which are attributes on `.session-tab` (not classes — `updateTabStatus` rewrites the dot's className): `data-working` (spinning ball, from the ◐/◑ title via `claude-title.js`), `data-done` (✓, `scheduleTabDone`) and `data-awaiting` (amber 待批准, `permissionRequested`). Measured on 2.1.278: waiting for a permission answer turns the title to ✳ exactly like finishing, and the permission hook — with the bell — arrives ~6s later, so ✓ is held for `ClaudeTitle.DONE_GRACE_MS` (8s) and a permission request calls it off. Marks go only on tabs nobody is looking at (`isSessionInView`: page visible and the active tab or a visible split pane) and come off on switching to the tab, on ◐, or on the page becoming visible (`clearSeenMarks`). The browser tab title has one writer, `app.updatePageTitle` (✓ prefix while hidden).
 
+## Feature list — nothing existing is removed without the user's consent
+
+`FEATURES.md` lists every user-visible feature (ID, what the user sees, entry points, guard tests). The user's rule: **no existing feature is removed or weakened without their explicit consent**, quoted verbatim with a date in the plan. Three things hold it:
+
+- `test/features.test.js` checks FEATURES.md against the code both ways, using `scripts/feature-surfaces.js` (routes, WebSocket messages, terminal hooks, CLI flags, page controls, controls built in JS, keys, settings, Claude hooks and env, tab states, `register*` wiring calls, bin scripts — plus every source file must hold a listed feature). A new entry point must be listed **in the same commit**; a listed one that disappears fails with "this removes a feature". Never make the test pass by deleting rows.
+- `test/feature-guards.test.js` and the other guard tests cover behaviour that can break while the entry point stays; `test/SMOKE.md` lists quantified browser checks run on a throwaway instance (`CCW_DATA_DIR` in a temp dir, port 32354).
+- `ts/deploy-32352.sh` runs `ts/features-gate.sh`: a feature ID present on stable but missing from the release aborts the deploy unless `--allow-removal <IDs>` names exactly those IDs; reworded descriptions are printed.
+
+Before changing a file: `node scripts/feature-surfaces.js --file <path>` and search FEATURES.md for what hangs on it; before changing a function: `~/.local/bin/codegraph callees|impact <fn>` (cc-web has its own index in `.codegraph/`). Known defects found while building the list are the `GAP-*` rows — listed, not fixed, for the user to decide.
+
 ## Conventions
 
 - **Style**: 2-space indent, semicolons, single quotes. kebab-case filenames, PascalCase classes, camelCase functions/vars. No linter/formatter configured — match surrounding code and keep diffs minimal.
