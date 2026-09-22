@@ -183,3 +183,11 @@ describe('FEATURES.md matches the code', function () {
     assert.deepStrictEqual(bare, [], bare.map(f => `${f} holds no listed feature — list what it does`).join('\n'));
   });
 });
+
+describe('feature surface scanner: blocks', function () {
+  const { blockAt } = require('../scripts/feature-surfaces');
+  it('is not thrown off by quotes, braces or backticks inside a regex literal', function () {
+    const src = "function f() { const RE = /[^\\s\"'`()]+\\.md/g; const o = { a: 1 }; return x / 2; }\nafter();";
+    assert.strictEqual(blockAt(src, 0).trim(), "const RE = /[^\\s\"'`()]+\\.md/g; const o = { a: 1 }; return x / 2;");
+  });
+});

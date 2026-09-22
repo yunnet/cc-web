@@ -48,6 +48,18 @@ function blockAt(src, from) {
       for (i++; i < src.length && src[i] !== c; i++) if (src[i] === '\\') i++;
       continue;
     }
+    // A regex literal: a `/` where an operand is expected. Its quotes and
+    // braces are not code (registerPlanLinks' pattern holds " ' ` and ( ).
+    if (c === '/' && /[(,=:[!&|?{};+\-*%<>~^]$|^$/.test(src.slice(0, i).trimEnd().slice(-1))) {
+      let inClass = false;
+      for (i++; i < src.length && src[i] !== '\n'; i++) {
+        if (src[i] === '\\') { i++; continue; }
+        if (src[i] === '[') inClass = true;
+        else if (src[i] === ']') inClass = false;
+        else if (src[i] === '/' && !inClass) break;
+      }
+      continue;
+    }
     if (c === '{') depth++;
     else if (c === '}' && --depth === 0) return src.slice(open + 1, i);
   }

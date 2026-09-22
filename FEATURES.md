@@ -21,12 +21,12 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-05 | Ctrl+Enter 发送 Ctrl+X Ctrl+S，即 Claude 的「立即发送」 | `xterm:app.js:attachCustomKeyEventHandler` | `test/mobile-keys.test.js` |
 | TERM-06 | 有选中文本时 Ctrl/Cmd+C 复制并取消选区；没有选区时 Ctrl+C 照常作为中断发给程序 | `xterm:app.js:attachCustomKeyEventHandler` | — |
 | TERM-07 | Mac 的 Option 键当作 Meta，Claude 的 Option 快捷键（如 Option+P 切换模型）可用 | 手工 | — |
-| TERM-08 | 程序通过 OSC 52 写剪贴板时真正写入浏览器剪贴板，支持中文；查询请求和格式错误的内容被静默忽略 | `xterm:app.js:registerOscHandler(52)` | — |
+| TERM-08 | 程序通过 OSC 52 写剪贴板时真正写入浏览器剪贴板，支持中文；查询请求和格式错误的内容被静默忽略 | `xterm:app.js:registerOscHandler(52)` | `test/feature-guards.test.js` |
 | TERM-09 | 普通 HTTP 下或剪贴板 API 被拒时，退回 execCommand 复制，局域网 HTTP 下复制照样能用 | 手工 | — |
 | TERM-10 | 在终端粘贴或拖入图片（可多张），上传后把绝对路径加空格插入输入框，不自动回车；图片存到工作目录的 `.ccw-uploads`，并自动写入 `.gitignore` | `route:POST /api/upload-image` | — |
 | TERM-11 | 图片粘贴的提示：未启动会话时「Start Claude before pasting an image」，失败显示错误，成功显示「Image inserted」；类型不支持、过大、为空分别有明确报错 | `route:POST /api/upload-image` | — |
 | TERM-12 | 输出里的 http(s) 网址可以点击，点了在新标签页打开 | 手工 | — |
-| TERM-13 | 输出里 `.claude/plans/*.md` 形式的计划文件路径可以点击，在新浏览器标签打开（URL 以 .md 结尾，方便 Markdown 插件渲染）；中文、emoji、路径前面紧贴文字时，下划线也对得准；按该终端所属的会话解析 | `wire:app.js:registerPlanLinks` `wire:splits.js:registerPlanLinks` `xterm:splits.js:registerLinkProvider` | — |
+| TERM-13 | 输出里 `.claude/plans/*.md` 形式的计划文件路径可以点击，在新浏览器标签打开（URL 以 .md 结尾，方便 Markdown 插件渲染）；中文、emoji、路径前面紧贴文字时，下划线也对得准；按该终端所属的会话解析 | `wire:app.js:registerPlanLinks` `wire:splits.js:registerPlanLinks` `xterm:splits.js:registerLinkProvider` | `test/feature-guards.test.js` |
 | TERM-14 | 每个终端在本地保留 5 万行滚动历史 | 手工 | — |
 | TERM-15 | 桌面鼠标滚轮平滑滚动；按住 Shift 滚轮时 5 倍速 | `setting:smoothScrollDuration` | — |
 | TERM-16 | 光标像原生终端一样闪烁；字体为本地托管的 JetBrains Mono，默认字号桌面 14、手机 12 | `setting:fontSize` | — |
@@ -249,7 +249,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | SRV-01 | 首页和静态资源无需认证即可加载 | `route:GET /` | — |
-| SRV-02 | 认证默认开启：REST 只认 Authorization 请求头，WebSocket 用 URL 里的令牌；`/auth-status` 查询是否需要令牌，`/auth-verify` 校验令牌 | `route:GET /auth-status` `route:POST /auth-verify` | — |
+| SRV-02 | 认证默认开启：REST 只认 Authorization 请求头，WebSocket 用 URL 里的令牌；`/auth-status` 查询是否需要令牌，`/auth-verify` 校验令牌 | `route:GET /auth-status` `route:POST /auth-verify` | `test/feature-guards.test.js` |
 | SRV-03 | 登录框：密码型输入框，空值、验证中、令牌无效都有提示；成功后刷新；令牌只存在当前浏览器标签；`?token=` 链接登录后立即从地址栏去掉；任何接口 401 时清除令牌并弹出登录框 | `file:src/public/auth.js` | — |
 | SRV-04 | 异步路由出错返回 500，不会让服务崩溃带走所有终端 | 手工 | `test/async-route-safety.test.js` |
 | SRV-05 | 会话按每个一个文件保存，每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
