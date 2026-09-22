@@ -139,6 +139,22 @@ describe('claude-history', function() {
       assert.strictEqual(list.find(c => c.id === B).title, 'Late title');
     });
 
+    it('lets a name from the head beat a newer Claude title in the tail', async function () {
+      // /rename or --name early on, then Claude titles later: the person's
+      // name must still win, wherever in the file each one sits.
+      const proj = path.join(root, history.projectDirName(dir));
+      const filler = { type: 'attachment', data: 'x'.repeat(1000) };
+      fs.writeFileSync(path.join(proj, `${B}.jsonl`), transcript([
+        { type: 'user', message: { content: 'first prompt' } },
+        { type: 'custom-title', customTitle: '发布前检查', sessionId: B },
+        ...Array(300).fill(filler),
+        { type: 'ai-title', aiTitle: 'Claude later title', sessionId: B }
+      ]));
+      assert.ok(fs.statSync(path.join(proj, `${B}.jsonl`)).size > 128 * 1024, 'fixture must exceed the head window');
+      const list = await history.listConversations(dir, { root });
+      assert.strictEqual(list.find(c => c.id === B).title, '发布前检查');
+    });
+
     it('honours the limit and returns [] for a directory Claude has never seen', async function() {
       assert.strictEqual((await history.listConversations(dir, { root, limit: 1 })).length, 1);
       assert.deepStrictEqual(await history.listConversations('/data/work/unknown', { root }), []);

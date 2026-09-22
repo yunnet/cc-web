@@ -2591,10 +2591,16 @@ class ClaudeCodeWebInterface {
         let loaded = false;
         for (const dir of this.newTabRecentDirs().filter(d => !this.nonProjectDirReason(d))) {
             if ((loaded = await this.loadFolders(dir))) break;
-            this.forgetRecentDir(dir);
+            // Forget it only when the server says it cannot be opened (403/404:
+            // gone, or not allowed). Signed out, offline or a restarting
+            // server says nothing about the folder — stop, and keep the list.
+            if (this._lastFolderStatus === 403 || this._lastFolderStatus === 404) this.forgetRecentDir(dir);
+            else break;
         }
         this.toggleNewTabBrowser(!loaded);
-        if (!loaded) await this.loadFolders();
+        // Signed out: the login prompt is already up; asking again only
+        // raises it a second time.
+        if (!loaded && this._lastFolderStatus !== 401) await this.loadFolders();
         this.setNewTabError(reason);
         // Enter starts. A Dangerous start that sent the user here keeps its
         // meaning: focus lands on the button that does the same.
@@ -2712,8 +2718,10 @@ class ClaudeCodeWebInterface {
         if (path) params.append('path', path);
         if (showHidden) params.append('showHidden', 'true');
         
+        this._lastFolderStatus = 0; // 0 = no answer (network)
         try {
             const response = await this.authFetch(`/api/folders?${params}`);
+            this._lastFolderStatus = response.status;
             if (!response.ok) {
                 // Handle 401 specifically - show auth prompt
                 if (response.status === 401) {
@@ -3248,7 +3256,10 @@ class ClaudeCodeWebInterface {
             if (effort) options.effort = effort;
             if (dangerous) options.dangerouslySkipPermissions = true;
 
-            const customName = document.getElementById('sessionName').dataset.userEdited === 'true';
+            // Typed, and still there: a box typed into and then emptied falls
+            // back to the folder name above, which is not a name anyone gave.
+            const nameBox = document.getElementById('sessionName');
+            const customName = nameBox.dataset.userEdited === 'true' && nameBox.value.trim() !== '';
             const created = await this.requestSession({ name, workingDir, resumeId, customName });
             if (!created) {
                 // Refused (already open elsewhere, or gone). The list is stale, so

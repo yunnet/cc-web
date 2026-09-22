@@ -93,7 +93,8 @@ describe('new tab dialog', function () {
     it('tells the server only when the name was typed', function () {
       // A typed name goes to `claude --name`; a derived one must not (it would
       // freeze the conversation's title) — see test/start-options.test.js.
-      assert.ok(/customName = document\.getElementById\('sessionName'\)\.dataset\.userEdited === 'true'/.test(fn()));
+      // Typed and then emptied is not typed: the folder name fills in.
+      assert.ok(/customName = nameBox\.dataset\.userEdited === 'true' && nameBox\.value\.trim\(\) !== ''/.test(fn()));
       assert.ok(/customName/.test(body('requestSession')), 'requestSession must send customName');
     });
 
@@ -119,6 +120,13 @@ describe('new tab dialog', function () {
     for (const gone of ['showFolderBrowser', 'showNewSessionModal', 'selectCurrentFolder', 'isCreatingNewSession']) {
       assert.ok(!APP.includes(gone) && !TABS.includes(gone), `${gone} belongs to the old three-dialog chain`);
     }
+  });
+
+  it('forgets a recent folder only when the server says it cannot be opened', function () {
+    // A 401, a network error or a restarting server says nothing about the
+    // folder; forgetting on those wiped every recent folder in one press of +.
+    const src = body('openNewTabDialog');
+    assert.ok(/_lastFolderStatus === 403 \|\| this\._lastFolderStatus === 404\) this\.forgetRecentDir\(dir\);\s*else break;/.test(src));
   });
 
   it('leaves a way forward when cancelled with no tab open', function () {

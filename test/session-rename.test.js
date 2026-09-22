@@ -44,6 +44,15 @@ describe('session rename', function () {
     assert.strictEqual(saved, 1, 'persisted, not just held in memory');
   });
 
+  it('marks the name as typed only when it actually changed', function () {
+    // The rename box PATCHes on every blur and on Escape. An untouched folder
+    // name marked as typed would reach `claude --name` and freeze the title.
+    call('s1', { name: 'old name' });
+    assert.ok(!server.claudeSessions.get('s1').nameIsCustom, 'an unchanged name is not a name someone gave');
+    call('s1', { name: '发布前检查' });
+    assert.strictEqual(server.claudeSessions.get('s1').nameIsCustom, true);
+  });
+
   it('404s for a session that is not there', function () {
     assert.strictEqual(call('nope', { name: 'x' }).statusCode, 404);
     assert.strictEqual(saved, 0);

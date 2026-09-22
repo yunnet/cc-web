@@ -493,8 +493,11 @@ class ClaudeCodeWebServer {
       if (name.length > 200) {
         return res.status(400).json({ error: 'name must be at most 200 characters' });
       }
+      // Renamed by hand — but only if it actually changed: the tab's rename box
+      // PATCHes on every blur and on Escape, and marking an untouched folder
+      // name as typed would pass it to `claude --name` and freeze the title.
+      if (name !== session.name) session.nameIsCustom = true;
       session.name = name;
-      session.nameIsCustom = true; // renamed by hand; takes effect on the next start
       this.saveSessionsToDisk();
       res.json({ success: true, id: session.id, name: session.name });
     });
