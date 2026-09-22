@@ -3464,3 +3464,45 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (prefers-reduced-motion: reduce) {
     .session-tab[data-working] .tab-status { animation: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Tab finished (✓). Claude finished answering in a tab nobody was looking at
+   (session-manager.js scheduleTabDone). The dot becomes a ✓ that flashes a
+   few times when it appears and stays until the tab is opened or Claude starts
+   working again. Self-contained, like the working ball above; it overrides the
+   status colours (unread's is !important) and their pulses the same way.
+   --------------------------------------------------------------------------- */
+.session-tab[data-done] .tab-status {
+    width: 10px;
+    height: 10px;
+    background-color: transparent !important;
+    box-shadow: none;
+    color: var(--success);
+    transition: none;
+    animation: tab-done-flash 0.4s ease-in-out 3 !important;
+}
+
+.session-tab[data-done] .tab-status::after {
+    content: '✓';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* On the accent-filled active tab (the page was hidden) green would not read. */
+.session-tab.active[data-done] .tab-status {
+    color: inherit;
+}
+
+@keyframes tab-done-flash {
+    50% { opacity: 0.15; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .session-tab[data-done] .tab-status { animation: none !important; }
+}

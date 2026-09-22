@@ -22,7 +22,12 @@ var ClaudeTitle = (function () {
     };
   }
 
-  return { claudeTitleState: claudeTitleState };
+  // Waiting for a permission answer also turns the title to ✳, and the
+  // permission_prompt Notification hook (and its BEL) follows about 6s later —
+  // measured on 2.1.278. Hold "finished" a little longer than that.
+  var DONE_GRACE_MS = 8000;
+
+  return { claudeTitleState: claudeTitleState, DONE_GRACE_MS: DONE_GRACE_MS };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = ClaudeTitle;

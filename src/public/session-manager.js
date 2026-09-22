@@ -119,10 +119,15 @@ class SessionTabManager {
             animation: slideDown 0.3s ease-out;
         `;
         
-        toast.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 4px;">${title}</div>
-            <div style="font-size: 14px; opacity: 0.9;">${body}</div>
-        `;
+        // textContent, never markup: the body can be Claude's topic, which is
+        // text from the terminal title, not markup.
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'font-weight: bold; margin-bottom: 4px;';
+        titleEl.textContent = title;
+        const bodyEl = document.createElement('div');
+        bodyEl.style.cssText = 'font-size: 14px; opacity: 0.9;';
+        bodyEl.textContent = body;
+        toast.append(titleEl, bodyEl);
         
         // Add CSS animation
         if (!document.querySelector('#mobileNotificationStyles')) {
@@ -805,6 +810,7 @@ class SessionTabManager {
             session.lastAccessed = Date.now();
             if (session.unreadOutput) this.updateUnreadIndicator(sessionId, false);
         }
+        this.setTabDone(sessionId, false);
 
         if (!skipHistoryUpdate) {
             this.updateTabHistory(sessionId);
@@ -1058,8 +1064,15 @@ class SessionTabManager {
         // The title changes about once a second while Claude works; touch the
         // DOM only when something actually changed.
         if (working !== tab.hasAttribute('data-working')) {
-            if (working) tab.dataset.working = '';
-            else delete tab.dataset.working;
+            if (working) {
+                tab.dataset.working = '';
+                this.setTabDone(sessionId, false);
+            } else {
+                delete tab.dataset.working;
+                // Only a title says Claude finished; the process stopping or
+                // exiting (called without a topic) is not an answer.
+                if (topic !== undefined) this.scheduleTabDone(sessionId, topic);
+            }
         }
         const nameEl = tab.querySelector('.tab-name');
         if (!nameEl || topic === undefined) return;
@@ -1067,6 +1080,49 @@ class SessionTabManager {
         const base = nameEl.dataset.baseTitle;
         const next = topic && topic !== 'Claude Code' ? (base ? `${base} · ${topic}` : topic) : base;
         if (nameEl.title !== next) nameEl.title = next;
+    }
+
+    // Claude stopped working (◐ → ✳). That is not yet "finished": waiting for
+    // a permission answer turns the title to ✳ too, and the permission_prompt
+    // hook only arrives about 6s later (measured on 2.1.278). So wait a little
+    // longer than that; new work, a permission request or opening the tab in
+    // the meantime calls it off (setTabDone(…, false) clears the timer).
+    scheduleTabDone(sessionId, topic) {
+        this.setTabDone(sessionId, false);
+        this._doneTimers = this._doneTimers || new Map();
+        this._doneTimers.set(sessionId, setTimeout(() => {
+            this._doneTimers.delete(sessionId);
+            const tab = this.tabs.get(sessionId);
+            if (!tab || tab.hasAttribute('data-working') || tab.hasAttribute('data-awaiting')) return;
+            if (this.isSessionInView(sessionId)) return;
+            this.setTabDone(sessionId, true);
+            const session = this.activeSessions.get(sessionId);
+            const name = (session && session.name) || 'Session';
+            this.sendNotification(`${name} 答完了`, topic && topic !== 'Claude Code' ? topic : '', sessionId);
+        }, ClaudeTitle.DONE_GRACE_MS));
+    }
+
+    // The ✓ on a tab whose answer arrived while nobody was looking. Clearing
+    // it also calls off an answer still inside its grace period.
+    setTabDone(sessionId, done) {
+        if (!done && this._doneTimers && this._doneTimers.has(sessionId)) {
+            clearTimeout(this._doneTimers.get(sessionId));
+            this._doneTimers.delete(sessionId);
+        }
+        const tab = this.tabs.get(sessionId);
+        if (!tab || done === tab.hasAttribute('data-done')) return;
+        if (done) tab.dataset.done = '';
+        else delete tab.dataset.done;
+        if (this.claudeInterface && this.claudeInterface.updatePageTitle) this.claudeInterface.updatePageTitle();
+    }
+
+    // Is someone looking at this session right now: the page is showing and it
+    // is the active tab, or one of the visible split panes.
+    isSessionInView(sessionId) {
+        if (document.hidden) return false;
+        if (sessionId === this.activeTabId) return true;
+        const split = this.claudeInterface && this.claudeInterface.splitContainer;
+        return !!(split && split.enabled && split.splits.some(s => s.sessionId === sessionId));
     }
 
     updateTabStatus(sessionId, status) {

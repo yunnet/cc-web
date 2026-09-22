@@ -70,3 +70,96 @@ describe('tabs show Claude working', function () {
     assert.ok(at('claude-title.js') > -1 && at('claude-title.js') < at('splits.js') && at('claude-title.js') < at('app.js'));
   });
 });
+
+// "Finished" is held back: waiting for a permission answer turns the title to
+// ✳ as well, and the permission_prompt hook follows ~6s later (measured on
+// 2.1.278). Runs the real SessionTabManager methods against stub tabs, with
+// fake timers.
+describe('tab finished (✓)', function () {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'session-manager.js'), 'utf8');
+
+  function setup({ hidden = false } = {}) {
+    const timers = [];
+    const notes = [];
+    const doc = { hidden };
+    const ctx = vm.createContext({
+      window: {}, document: doc, console, navigator: {},
+      ClaudeTitle: { DONE_GRACE_MS: 8000 },
+      setTimeout: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return t; },
+      clearTimeout: (t) => { if (t) t.live = false; }
+    });
+    vm.runInContext(`${SRC}\nthis.M = SessionTabManager;`, ctx);
+    const m = Object.create(ctx.M.prototype);
+    Object.assign(m, { tabs: new Map(), activeSessions: new Map(), activeTabId: 'a', claudeInterface: null });
+    m.sendNotification = (title, body, id) => notes.push({ title, body, id });
+    const tab = () => ({ dataset: {}, hasAttribute(n) { return n.slice(5) in this.dataset; }, querySelector: () => null });
+    for (const id of ['a', 'b']) {
+      m.tabs.set(id, tab());
+      m.activeSessions.set(id, { name: id.toUpperCase() });
+    }
+    const fire = () => timers.filter(t => t.live).forEach(t => { t.live = false; t.fn(); });
+    return { m, doc, timers, notes, fire, done: (id) => m.tabs.get(id).hasAttribute('data-done') };
+  }
+
+  it('marks a background tab and notifies with the topic, after the grace period', function () {
+    const { m, notes, fire, done, timers } = setup();
+    m.setTabWorking('b', true, 'Fix bug');
+    m.setTabWorking('b', false, 'Fix bug');
+    assert.strictEqual(done('b'), false, 'not before the grace period');
+    assert.strictEqual(timers.find(t => t.live).ms, 8000);
+    fire();
+    assert.strictEqual(done('b'), true);
+    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Fix bug', id: 'b' }]);
+  });
+
+  it('leaves the tab being looked at alone, but not when the page is hidden', function () {
+    let s = setup();
+    s.m.setTabWorking('a', true, 'x'); s.m.setTabWorking('a', false, 'x'); s.fire();
+    assert.strictEqual(s.done('a'), false);
+    s = setup({ hidden: true });
+    s.m.setTabWorking('a', true, 'x'); s.m.setTabWorking('a', false, 'x'); s.fire();
+    assert.strictEqual(s.done('a'), true);
+  });
+
+  it('is called off by new work, a permission request or opening the tab', function () {
+    for (const interrupt of [
+      (m) => m.setTabWorking('b', true, 'x'),
+      (m) => { m.tabs.get('b').dataset.awaiting = ''; },
+      (m) => m.setTabDone('b', false)
+    ]) {
+      const { m, notes, fire, done } = setup();
+      m.setTabWorking('b', true, 'x'); m.setTabWorking('b', false, 'x');
+      interrupt(m);
+      fire();
+      assert.strictEqual(done('b'), false);
+      assert.deepStrictEqual(notes, []);
+    }
+  });
+
+  it('does not call a stopped or exited process an answer', function () {
+    const { m, fire, done } = setup();
+    m.setTabWorking('b', true, 'x');
+    m.setTabWorking('b', false);
+    fire();
+    assert.strictEqual(done('b'), false);
+  });
+
+  it('clears when the tab is opened and when Claude works again', function () {
+    const MANAGER = SRC;
+    assert.ok(/async switchToTab\(sessionId[\s\S]*?this\.setTabDone\(sessionId, false\)/.test(MANAGER), 'switchToTab');
+    const { m, fire, done } = setup();
+    m.setTabWorking('b', true, 'x'); m.setTabWorking('b', false, 'x'); fire();
+    m.setTabWorking('b', true, 'y');
+    assert.strictEqual(done('b'), false);
+  });
+
+  it('never puts the topic into markup', function () {
+    // The mobile fallback shows the notification body; the topic is terminal text.
+    const fn = /showMobileNotification\(title, body, sessionId\) \{([\s\S]*?)\n    \}\n/.exec(SRC);
+    assert.ok(fn, 'showMobileNotification is gone');
+    assert.ok(!/innerHTML/.test(fn[1]), 'title/body must go in as textContent');
+  });
+});
