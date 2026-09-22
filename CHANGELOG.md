@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Added
+- **A background tab says when it has finished, or needs your approval.**
+  When Claude finishes answering in a tab you are not looking at, the tab's
+  dot becomes a ✓ that flashes a few times, the browser tab's title gets a ✓
+  in front while the page is hidden, and a notification carries Claude's
+  topic. It waits 8 seconds first: waiting for a permission answer also looks
+  like finishing, and Claude's permission request only arrives about 6 seconds
+  later (measured on 2.1.278). That request — a new `Notification` hook with
+  matcher `permission_prompt` — turns the tab's dot amber with a small 待批准
+  label and sends its own notification. Both come off when you open the tab,
+  when Claude works again, or when you return to the page with the tab on
+  screen. The bell still rings, but no longer notifies a second time for a tab
+  already marked; the 90-second "appears finished" guess is gone.
 - **Tabs show when Claude is working.** While Claude answers, its tab's status
   dot turns into a spinning half-filled ball, like the one Warp shows, and goes
   back to the dot when it is done — on background tabs and split panes too, so
