@@ -494,6 +494,7 @@ class ClaudeCodeWebServer {
         return res.status(400).json({ error: 'name must be at most 200 characters' });
       }
       session.name = name;
+      session.nameIsCustom = true; // renamed by hand; takes effect on the next start
       this.saveSessionsToDisk();
       res.json({ success: true, id: session.id, name: session.name });
     });
@@ -1057,7 +1058,7 @@ class ClaudeCodeWebServer {
   // first start resumes it, every later start (a restart included) resumes it
   // again, and everything said from now on is appended to that transcript.
   async createSession(req, res) {
-    const { name, workingDir, resumeId } = req.body || {};
+    const { name, workingDir, resumeId, customName } = req.body || {};
 
     let validWorkingDir = this.baseFolder;
     if (workingDir) {
@@ -1105,6 +1106,9 @@ class ClaudeCodeWebServer {
     const session = {
       id: sessionId,
       name: name || `Session ${new Date().toLocaleString()}`,
+      // A name a person typed, as opposed to one we derived (folder name,
+      // a conversation's clipped title). Only those reach `claude --name`.
+      nameIsCustom: customName === true && !!name,
       created: new Date(),
       lastActivity: new Date(),
       active: false,
@@ -1377,6 +1381,7 @@ class ClaudeCodeWebServer {
       const { model, permissionMode, effort, dangerouslySkipPermissions } = options || {};
       await this.claudeBridge.startSession(sessionId, {
         model, permissionMode, effort, dangerouslySkipPermissions: dangerouslySkipPermissions === true,
+        name: session.nameIsCustom ? session.name : '',
         workingDir: session.workingDir,
         // The browser terminal IS the background, so Claude's theme follows the
         // UI's light/dark setting rather than the user's global settings.json.

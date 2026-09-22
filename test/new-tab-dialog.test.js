@@ -90,6 +90,13 @@ describe('new tab dialog', function () {
       assert.ok(arm < attach, 'pendingStart must be set before attachSessionTab');
     });
 
+    it('tells the server only when the name was typed', function () {
+      // A typed name goes to `claude --name`; a derived one must not (it would
+      // freeze the conversation's title) — see test/start-options.test.js.
+      assert.ok(/customName = document\.getElementById\('sessionName'\)\.dataset\.userEdited === 'true'/.test(fn()));
+      assert.ok(/customName/.test(body('requestSession')), 'requestSession must send customName');
+    });
+
     it('never remembers skipping permissions', function () {
       const src = body('rememberNewTab');
       assert.ok(!/dangerouslySkipPermissions/.test(src), 'dangerous mode must be asked for every time');

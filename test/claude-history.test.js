@@ -47,6 +47,16 @@ describe('claude-history', function() {
       assert.strictEqual(history.extractTitle(head), 'Fix plan-link underline');
     });
 
+    it('lets a title a person gave (/rename, --name) beat Claude\'s own', function() {
+      const head = transcript([
+        { type: 'user', message: { content: 'first prompt' } },
+        { type: 'ai-title', aiTitle: 'Claude title', sessionId: 'x' },
+        { type: 'custom-title', customTitle: '发布前检查', sessionId: 'x' },
+        { type: 'ai-title', aiTitle: 'Later Claude title', sessionId: 'x' }
+      ]);
+      assert.strictEqual(history.extractTitle(head), '发布前检查');
+    });
+
     it('prefers a summary line over the first prompt', function() {
       const head = transcript([
         { type: 'summary', summary: 'Plan mode via hooks' },

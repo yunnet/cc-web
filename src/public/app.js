@@ -636,6 +636,15 @@ class ClaudeCodeWebInterface {
                 this.sendOn(view, { type: 'input', data: '\n' });
                 return false; // handled — do not let xterm send \r (submit)
             }
+            // Ctrl+Enter → "send now" (Claude Code 2.1.275+): interrupt the turn
+            // and send the queued messages. xterm sends plain \r for it, so it
+            // would just submit; Ctrl+X Ctrl+S is the same action in every
+            // terminal (measured on 2.1.278 in a real pty).
+            if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                this.sendOn(view, { type: 'input', data: '\x18\x13' });
+                return false;
+            }
 
             const key = (e.key || '').toLowerCase();
             if (key === 'c' && (e.ctrlKey || e.metaKey)) {
@@ -3188,7 +3197,8 @@ class ClaudeCodeWebInterface {
             if (effort) options.effort = effort;
             if (dangerous) options.dangerouslySkipPermissions = true;
 
-            const created = await this.requestSession({ name, workingDir, resumeId });
+            const customName = document.getElementById('sessionName').dataset.userEdited === 'true';
+            const created = await this.requestSession({ name, workingDir, resumeId, customName });
             if (!created) {
                 // Refused (already open elsewhere, or gone). The list is stale, so
                 // redraw it rather than leaving the dead row selected.
@@ -3215,12 +3225,12 @@ class ClaudeCodeWebInterface {
 
     // POST /api/sessions/create, with the resume-specific failures spelled out.
     // Returns the created session, or null if the server refused.
-    async requestSession({ name, workingDir, resumeId }) {
+    async requestSession({ name, workingDir, resumeId, customName = false }) {
         try {
             const response = await this.authFetch('/api/sessions/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, workingDir, resumeId })
+                body: JSON.stringify({ name, workingDir, resumeId, customName })
             });
 
             if (response.status === 409) {

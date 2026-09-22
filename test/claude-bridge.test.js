@@ -72,6 +72,16 @@ describe('ClaudeBridge', function() {
         ['--dangerously-skip-permissions', '--effort', 'low']);
     });
 
+    it('passes a name as one --name=value argument, cleaned', function() {
+      assert.deepStrictEqual(args({ name: '  发布前检查 ' }), ['--name=发布前检查']);
+      // A leading dash stays a value because it is glued to the flag.
+      assert.deepStrictEqual(args({ name: '--help' }), ['--name=--help']);
+      assert.deepStrictEqual(args({ name: 'a\x1b]0;evil\x07b\r\n' }), ['--name=a]0;evilb']);
+      assert.strictEqual(args({ name: 'x'.repeat(200) })[0].length, '--name='.length + 80);
+      assert.deepStrictEqual(args({ name: '' }), []);
+      assert.deepStrictEqual(args({ name: '\x07\x1b' }), []);
+    });
+
     it('offers nothing the installed claude would reject', function() {
       // The whitelists are ours; the choices are Claude's. Read them off the
       // real CLI so an upgrade that renames a mode fails here, not in a tab.

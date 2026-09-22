@@ -255,6 +255,14 @@ class Split {
                 }
                 return false;
             }
+            // Ctrl+Enter → "send now" as Ctrl+X Ctrl+S. See app.js.
+            if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                    this.socket.send(JSON.stringify({ type: 'input', data: '\x18\x13' }));
+                }
+                return false;
+            }
 
             const key = (e.key || '').toLowerCase();
             if (key === 'c' && (e.ctrlKey || e.metaKey)) {

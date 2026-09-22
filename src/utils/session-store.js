@@ -132,6 +132,8 @@ class SessionStore {
             // Persisted so a restart still refuses to fall back to a fresh
             // launch under that id — see server.startClaude.
             resumedConversation: !!session.resumedConversation,
+            // The name was typed by a person, so it is passed to `claude --name`.
+            nameIsCustom: !!session.nameIsCustom,
             // Trimmed by BYTES, not by chunk count. A chunk is whatever one
             // read off the pty returned and is mostly Claude's redraw escapes —
             // measured on a live session, 500 chunks were 50 KB and replayed

@@ -50,6 +50,22 @@ describe('start_claude options', function () {
     assert.strictEqual(typeof seen.onOutput, 'function');
   });
 
+  it('passes the tab name to claude only when a person typed it', async function () {
+    // Measured on 2.1.278: with --name set Claude writes no ai-title, so a
+    // derived name (folder, clipped conversation title) must not be passed —
+    // it would freeze the conversation's title at that.
+    const session = server.claudeSessions.get(SESSION_ID);
+    session.name = 'cc-web';
+    await server.startClaude('ws1', {}, 80, 24);
+    assert.strictEqual(seen.name, '');
+
+    session.active = false;
+    session.name = '发布前检查';
+    session.nameIsCustom = true;
+    await server.startClaude('ws1', {}, 80, 24);
+    assert.strictEqual(seen.name, '发布前检查');
+  });
+
   it('still passes the four launch options through', async function () {
     await server.startClaude('ws1', {
       model: 'fable', permissionMode: 'auto', effort: 'high', dangerouslySkipPermissions: true

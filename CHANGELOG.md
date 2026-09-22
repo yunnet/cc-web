@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+- **Ctrl+Enter sends now.** Claude Code 2.1.275 added "send now": interrupt the
+  turn and send the queued messages at once. Its Ctrl+Enter never reached
+  Claude through xterm (every Enter chord is `\r`), so cc-web maps it to Ctrl+X
+  Ctrl+S, the same action in any terminal — measured on 2.1.278 to interrupt
+  the turn and deliver the queue, with a control run showing nothing happens
+  without it. Main terminal and split panes.
+- **A tab you name keeps that name in Claude.** A name typed in the new tab
+  dialog, or a tab renamed later, is passed as `claude --name`: it shows on the
+  prompt box and in the terminal title, and `/resume` and the history list show
+  it. Only typed names — with `--name` set Claude stops writing its own title,
+  so a folder name or a clipped conversation title is never passed. A rename
+  applies from the next start.
+
 ### Security
 - **The browser could override server-owned launch fields.** `start_claude`
   options were spread last over the bridge call, so a client could replace

@@ -41,3 +41,22 @@ describe('mobile newline key', function () {
       'FAB geometry must be measured, not assumed');
   });
 });
+
+// The keyboard side of the same idea: xterm sends \r for every Enter chord, so
+// each chord that means something else is mapped by hand, in both the main
+// terminal and split panes (two handlers, kept alike).
+describe('Enter chords in the terminal', function () {
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'public', f), 'utf8');
+
+  for (const file of ['app.js', 'splits.js']) {
+    it(`${file}: Shift/Alt+Enter is a newline, Ctrl+Enter is "send now"`, function () {
+      const src = read(file);
+      assert.ok(/e\.key === 'Enter' && \(e\.shiftKey \|\| e\.altKey\) && !e\.ctrlKey[\s\S]*?'\\n'/.test(src),
+        'Shift/Alt+Enter must send LF');
+      // Ctrl+X Ctrl+S: Claude Code's send-now chord that works without the kitty
+      // protocol — measured to interrupt the turn and send the queue (2.1.278).
+      assert.ok(/e\.key === 'Enter' && e\.ctrlKey && !e\.shiftKey[\s\S]*?'\\x18\\x13'/.test(src),
+        'Ctrl+Enter must send Ctrl+X Ctrl+S');
+    });
+  }
+});

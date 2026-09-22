@@ -63,6 +63,7 @@ class ClaudeBridge {
       model = '',
       permissionMode = '',
       effort = '',
+      name = '',
       onOutput = () => {},
       onExit = () => {},
       onError = () => {},
@@ -82,7 +83,7 @@ class ClaudeBridge {
     } = options;
 
     // Args shared by a fresh launch and a resume.
-    const baseArgs = ClaudeBridge.launchArgs({ dangerouslySkipPermissions, model, permissionMode, effort });
+    const baseArgs = ClaudeBridge.launchArgs({ dangerouslySkipPermissions, model, permissionMode, effort, name });
     // Route Claude's notification events (task finished / needs input /
     // permission prompt) to the terminal bell — the BEL travels PTY→WS→xterm and
     // the client's onBell turns it into a beep + notification. Injected via
@@ -478,13 +479,21 @@ class ClaudeBridge {
   // road to it is enough. `default` is `manual` under its old name (2.1.278
   // still takes it, just no longer lists it). Checked against `claude --help`
   // in test/claude-bridge.test.js.
-  static launchArgs({ dangerouslySkipPermissions = false, model = '', permissionMode = '', effort = '' } = {}) {
+  //
+  // `name` becomes `--name`: shown on the prompt box, set as the terminal
+  // title, and recorded as the conversation's custom-title (what /resume
+  // lists). Measured on 2.1.278: with it set Claude writes no ai-title, so the
+  // server passes only names a person typed — see session.nameIsCustom. One
+  // `--name=value` argument, so a name starting with "-" is still a value.
+  static launchArgs({ dangerouslySkipPermissions = false, model = '', permissionMode = '', effort = '', name = '' } = {}) {
     const args = dangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : [];
     if (ClaudeBridge.MODELS.includes(model)) args.push('--model', model);
     if (!dangerouslySkipPermissions && ClaudeBridge.PERMISSION_MODES.includes(permissionMode)) {
       args.push('--permission-mode', permissionMode);
     }
     if (ClaudeBridge.EFFORTS.includes(effort)) args.push('--effort', effort);
+    const cleanName = String(name || '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 80);
+    if (cleanName) args.push(`--name=${cleanName}`);
     return args;
   }
 
