@@ -28,6 +28,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-12 | 输出里的 http(s) 网址可以点击，点了在新标签页打开 | 手工 | — |
 | TERM-13 | 输出里 `.claude/plans/*.md` 形式的计划文件路径可以点击，在新浏览器标签打开（URL 以 .md 结尾，方便 Markdown 插件渲染）；中文、emoji、路径前面紧贴文字时，下划线也对得准；按该终端所属的会话解析 | `wire:app.js:registerPlanLinks` `wire:splits.js:registerPlanLinks` `xterm:splits.js:registerLinkProvider` | `test/feature-guards.test.js` |
 | TERM-14 | 每个终端在本地保留 5 万行滚动历史 | 手工 | — |
+| TERM-33 | 终端向上翻看历史时，右下角出现一个圆形按钮，点一下回到最新一屏并把键盘焦点还给终端；回到底部后按钮自动消失。主终端和分屏窗格都有，按钮作用于当前在看的那个终端；手机上按钮更大并让开右边的悬浮按钮 | `control:scrollBottomBtn` | `test/feature-guards.test.js` |
 | TERM-32 | Claude 输出的超链接（OSC 8）可以点击：网址在新标签页打开，计划文件按计划链接打开，其他本机文件用文件浏览器预览；`javascript:`、`data:`、外部主机的 `file:` 等一律不响应；不弹 xterm 的「危险链接」确认框。Markdown 链接只显示链接文字、不再显示「(url)」（用户 2026-09-22 同意：「链接也同意」） | `env:FORCE_HYPERLINK` `xterm:app.js:linkHandler` `xterm:splits.js:linkHandler` `file:src/public/terminal-links.js` | `test/terminal-links.test.js` `test/claude-bridge.test.js` |
 | TERM-15 | 桌面鼠标滚轮平滑滚动；按住 Shift 滚轮时 5 倍速 | `setting:smoothScrollDuration` | — |
 | TERM-16 | 光标像原生终端一样闪烁；字体为本地托管的 JetBrains Mono，默认字号桌面 14、手机 12 | `setting:fontSize` | — |

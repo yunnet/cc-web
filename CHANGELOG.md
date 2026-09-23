@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- **Back to the newest screen.** Scroll up into the history and a round button
+  appears at the bottom right of the terminal; one press returns to the bottom
+  and gives the terminal the keyboard back. It hides itself once you are at the
+  bottom, follows the terminal you are looking at (a split pane included), and
+  steps aside for the floating ESC/MODE/→ keys and the PWA install button.
 - **✓ the moment a background answer ends, and clickable links.** A new
   `Stop` hook tells cc-web when Claude's turn is over, so a tab you are not
   looking at gets its ✓ at once instead of 8 seconds later, and the

@@ -731,6 +731,13 @@ class ClaudeCodeWebInterface {
             if (filteredData) this.sendOn(view, { type: 'input', data: filteredData });
         });
 
+        // Scrolled away from the newest output? The jump button says so and
+        // brings you back. onScroll covers scrolling; onRender covers new
+        // output arriving while you read further up (the distance to the
+        // bottom grows without the viewport moving).
+        term.onScroll(() => this.updateScrollBottom(term));
+        term.onRender(() => this.updateScrollBottom(term));
+
         // The input box moves as content reflows, so re-park the mobile buttons
         // on render — coalesced to one measurement per frame. Only the visible
         // view drives it; a background render must not move the buttons.
@@ -798,6 +805,61 @@ class ClaudeCodeWebInterface {
         else if (window.fileExplorer) window.fileExplorer.openFile(target.path);
     }
 
+    // The terminal the jump button acts on: the focused split pane, else the
+    // visible view's terminal.
+    currentTerminal() {
+        const split = this.splitContainer;
+        if (split && split.enabled) {
+            const pane = split.splits.find(s => s.isActive) || split.splits[0];
+            if (pane && pane.terminal) return pane.terminal;
+        }
+        return this.activeView && this.activeView.terminal;
+    }
+
+    // Show the jump button while `term` (when it is the one on screen) is
+    // scrolled up, hide it at the bottom. Called on every scroll and render,
+    // so it only touches the DOM when the answer changes.
+    updateScrollBottom(term) {
+        const btn = document.getElementById('scrollBottomBtn');
+        if (!btn || term !== this.currentTerminal()) return;
+        const buf = term.buffer && term.buffer.active;
+        const away = !!buf && buf.baseY - buf.viewportY > 0;
+        const shown = !btn.hasAttribute('hidden');
+        if (away === shown) return;            // already right, leave the DOM alone
+        if (away) this.keepScrollBottomClear(btn);
+        btn.toggleAttribute('hidden', !away);
+    }
+
+    // The PWA "Install App" button owns the same corner while the browser
+    // offers it (measured: 129x43 at right/bottom 20). Sit above it when it is
+    // there, and back in the corner when it is not.
+    keepScrollBottomClear(btn) {
+        // Not offsetParent: it is null for every fixed-position element, which
+        // the install button is — the check has to be its actual size.
+        const install = document.getElementById('installBtn');
+        const box = install ? install.getBoundingClientRect() : null;
+        const up = box && box.height > 0 && box.width > 0;
+        btn.style.bottom = up ? `${Math.round(window.innerHeight - box.top + 12)}px` : '';
+    }
+
+    // The terminal on screen changed (tab switch, split focus, split closed):
+    // ask the new one where it is.
+    refreshScrollBottom() {
+        const term = this.currentTerminal();
+        const btn = document.getElementById('scrollBottomBtn');
+        if (!term) { if (btn) btn.toggleAttribute('hidden', true); return; }
+        this.updateScrollBottom(term);
+    }
+
+    // Back to the newest screen, and give the terminal the keyboard again.
+    scrollToLatest() {
+        const term = this.currentTerminal();
+        if (!term) return;
+        try { term.scrollToBottom(); } catch (_) { /* disposed — ignore */ }
+        try { term.focus(); } catch (_) {}
+        this.updateScrollBottom(term);
+    }
+
     // Ring the terminal bell: a short WebAudio blip plus, when the tab is hidden,
     // a browser notification. Best-effort — silently ignores unsupported browsers
     // or denied permissions.
@@ -860,6 +922,9 @@ class ClaudeCodeWebInterface {
     // Works in plain-HTTP contexts because it reads the DOM paste/drop events
     // (clipboardData / dataTransfer), not navigator.clipboard.
     setupImagePaste() {
+        const jump = document.getElementById('scrollBottomBtn');
+        if (jump) jump.addEventListener('click', () => this.scrollToLatest());
+
         const termEl = document.getElementById('terminal');
         const containerEl = document.getElementById('terminalContainer');
         if (!termEl) return;
@@ -1472,6 +1537,7 @@ class ClaudeCodeWebInterface {
         view.el.classList.add('active');
         this.adoptView(view);
         this.currentClaudeSessionId = sessionId;
+        this.refreshScrollBottom();
 
         if (isNew) {
             // First time on this tab: connect its own socket and join. This is the

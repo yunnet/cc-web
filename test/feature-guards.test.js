@@ -212,3 +212,94 @@ describe('TERM-23 / UI-04 sounds: the bell and the plan chime', function () {
     assert.doesNotThrow(() => obj.playBeep(660));
   });
 });
+
+describe('TERM-33 back to the newest screen', function () {
+  // The button appears only while the terminal on screen is scrolled up, and
+  // touches the DOM only when that answer changes (it runs on every render).
+  function app(extra = {}, install = null) {
+    const src = ['currentTerminal', 'updateScrollBottom', 'keepScrollBottomClear', 'scrollToLatest', 'refreshScrollBottom']
+      .map(n => lift(read('app.js'), n, { method: true })).join(',\n');
+    const btn = { attrs: { hidden: true }, writes: 0, style: {},
+      hasAttribute(n) { return n in this.attrs; },
+      toggleAttribute(n, on) { this.writes++; if (on) this.attrs[n] = true; else delete this.attrs[n]; } };
+    const obj = vm.runInNewContext(`({ ${src} })`, {
+      window: { innerHeight: 800 },
+      document: { getElementById: (id) => (id === 'scrollBottomBtn' ? btn : id === 'installBtn' ? install : null) }
+    });
+    Object.assign(obj, extra);
+    return { obj, btn };
+  }
+  const term = (viewportY, baseY) => ({ buffer: { active: { viewportY, baseY } }, scrolled: 0, focused: 0, scrollToBottom() { this.scrolled++; this.buffer.active.viewportY = this.buffer.active.baseY; }, focus() { this.focused++; } });
+
+  it('shows while scrolled up, hides at the bottom', function () {
+    const t = term(50, 200);
+    const { obj, btn } = app({ activeView: { terminal: t }, splitContainer: null });
+    obj.updateScrollBottom(t);
+    assert.strictEqual(btn.hasAttribute('hidden'), false, 'scrolled up → shown');
+    t.buffer.active.viewportY = 200;
+    obj.updateScrollBottom(t);
+    assert.strictEqual(btn.hasAttribute('hidden'), true, 'at the bottom → hidden');
+  });
+
+  it('does not touch the DOM when nothing changed', function () {
+    const t = term(50, 200);
+    const { obj, btn } = app({ activeView: { terminal: t }, splitContainer: null });
+    obj.updateScrollBottom(t);
+    const after = btn.writes;
+    for (let i = 0; i < 20; i++) obj.updateScrollBottom(t);   // as onRender would
+    assert.strictEqual(btn.writes, after, 'one write, then quiet');
+  });
+
+  it('ignores a terminal that is not the one on screen', function () {
+    const shown = term(200, 200);
+    const other = term(0, 500);
+    const { obj, btn } = app({ activeView: { terminal: shown }, splitContainer: null });
+    obj.updateScrollBottom(other);
+    assert.strictEqual(btn.hasAttribute('hidden'), true, 'a background tab must not raise it');
+  });
+
+  it('answers for the focused split pane when split', function () {
+    const pane = term(10, 90);
+    const main = term(90, 90);
+    const { obj } = app({ activeView: { terminal: main }, splitContainer: { enabled: true, splits: [{ isActive: false, terminal: term(90, 90) }, { isActive: true, terminal: pane }] } });
+    assert.strictEqual(obj.currentTerminal(), pane);
+  });
+
+  it('scrolls to the bottom and hands the keyboard back', function () {
+    const t = term(50, 200);
+    const { obj, btn } = app({ activeView: { terminal: t }, splitContainer: null });
+    obj.updateScrollBottom(t);
+    obj.scrollToLatest();
+    assert.strictEqual(t.scrolled, 1);
+    assert.strictEqual(t.focused, 1);
+    assert.strictEqual(btn.hasAttribute('hidden'), true, 'and hides itself');
+  });
+
+  it('steps aside for the PWA install button, and back when it goes', function () {
+    // Measured in the browser: install is 129x43 at right/bottom 20, same corner.
+    // A fixed-position element always has offsetParent null, so size is the test.
+    const installShown = { offsetParent: null, getBoundingClientRect: () => ({ top: 737, height: 43, width: 129 }) };
+    let t = term(50, 200);
+    let a = app({ activeView: { terminal: t }, splitContainer: null }, installShown);
+    a.obj.updateScrollBottom(t);
+    assert.strictEqual(a.btn.style.bottom, '75px', 'above the install button');
+    t = term(50, 200);
+    a = app({ activeView: { terminal: t }, splitContainer: null }, { getBoundingClientRect: () => ({ top: 0, height: 0, width: 0 }) });
+    a.obj.updateScrollBottom(t);
+    assert.strictEqual(a.btn.style.bottom, '', 'install hidden → back to the corner (CSS decides)');
+  });
+
+  it('is wired to every terminal and to the button', function () {
+    const a = read('app.js');
+    assert.ok(/term\.onScroll\(\(\) => this\.updateScrollBottom\(term\)\)/.test(a), 'main terminal, on scroll');
+    assert.ok(/term\.onRender\(\(\) => this\.updateScrollBottom\(term\)\)/.test(a), 'main terminal, on new output');
+    assert.ok(/getElementById\('scrollBottomBtn'\)[\s\S]{0,120}addEventListener\('click', \(\) => this\.scrollToLatest\(\)\)/.test(a), 'the click');
+    assert.ok(/this\.refreshScrollBottom\(\);/.test(a) && /adoptView\(view\)[\s\S]{0,120}refreshScrollBottom/.test(a), 'refreshed on tab switch');
+    const s = read('splits.js');
+    assert.ok(/this\.terminal\.onScroll\(\(\) => this\.app\.updateScrollBottom\(this\.terminal\)\)/.test(s), 'split pane, on scroll');
+    assert.ok(/focusSplit[\s\S]{0,600}refreshScrollBottom/.test(s), 'refreshed when a pane takes focus');
+    const css = fs.readFileSync(path.join(PUB, 'style.css'), 'utf8');
+    assert.ok(/\.scroll-bottom-btn \{[\s\S]*?position: fixed;[\s\S]*?right: 84px;[\s\S]*?bottom: 24px;/.test(css), 'bottom-right, left of the floating key column');
+    assert.ok(/\.scroll-bottom-btn\[hidden\] \{\s*display: none;/.test(css));
+  });
+});

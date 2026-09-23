@@ -3616,3 +3616,53 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (prefers-reduced-motion: reduce) {
     .session-tab[data-awaiting] .tab-status { animation: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Back to the newest screen. While the terminal is scrolled up in its history
+   a round button sits in the bottom-right corner of the terminal area; one
+   press returns to the bottom and gives the terminal the keyboard back
+   (app.js updateScrollBottom / scrollToLatest). It hides itself at the
+   bottom, so it is only there when it has something to do. Self-contained,
+   like the tab-ball block above; on a phone it steps aside for the floating
+   ESC/MODE/→ stack, which lives on the right edge too.
+   --------------------------------------------------------------------------- */
+.scroll-bottom-btn {
+    position: fixed;
+    /* The floating ESC/MODE/→ stack owns the right edge (56px wide at right
+       20px, measured), so sit just left of that column. The PWA install
+       button owns the corner below; app.js lifts this button above it while
+       the browser offers the install. */
+    right: 84px;
+    bottom: 24px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    cursor: pointer;
+    z-index: 900;              /* over the terminal, under modals (2000) and the FAB (1000) */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    padding: 0;
+}
+
+.scroll-bottom-btn[hidden] {
+    display: none;
+}
+
+.scroll-bottom-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Bigger touch target on a phone, clear of the home indicator. */
+@media (max-width: 1024px) and (hover: none) and (pointer: coarse), (max-width: 768px) {
+    .scroll-bottom-btn {
+        width: 44px;
+        height: 44px;
+        bottom: calc(16px + var(--safe-bottom, 0px));
+    }
+}

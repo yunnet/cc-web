@@ -36,6 +36,7 @@
 | S21 | MOB-11 | 390 宽、标签 ≥ 3 个时 | `#tabOverflowBtn` 可见，只显示 2 个标签 |
 | S22 | MOB-12、SET-01 | 390 宽时 | `#hamburgerBtn` 位于标签栏最左侧（它的 left 小于第一个标签的 left） |
 | S23 | UI-02 | 调用 `applyTheme('light')` | `dataset.theme === 'light'`，终端 `options.theme.background` 从 `#0d1117` 变为 `#ffffff` |
+| S24 | TERM-33 | 让终端有足够多的历史，向上滚一屏 | `#scrollBottomBtn` 从 hidden 变为可见，位置在终端区右下角，命中测试命中自己；点它后终端回到底部（`buffer.baseY === buffer.viewportY`）且按钮重新隐藏；手机尺寸（390 宽）下按钮 ≥44px，且与 `.mode-switcher` 不重叠 |
 
 ## 基线结果
 

@@ -179,6 +179,13 @@
                     <div id="terminal"></div>
                 </div>
             </div>
+            <!-- Scrolled up in the history: one press back to the newest screen. -->
+            <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button" title="回到最新" aria-label="回到最新" hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="12" y1="4" x2="12" y2="17"></line>
+                    <polyline points="6 11 12 17 18 11"></polyline>
+                </svg>
+            </button>
         </main>
 
         <!-- App-wide overlay (moved out of terminal container to avoid width issues) -->

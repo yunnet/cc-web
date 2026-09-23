@@ -231,6 +231,12 @@ class Split {
             console.warn('Unicode11 addon unavailable (split):', e);
         }
 
+        // Same jump-to-latest button as the main terminal, for this pane.
+        if (this.app) {
+            this.terminal.onScroll(() => this.app.updateScrollBottom(this.terminal));
+            this.terminal.onRender(() => this.app.updateScrollBottom(this.terminal));
+        }
+
         this.terminal.open(terminalDiv);
 
         // Split panes need the same touch scrolling the main terminal gets —
@@ -799,6 +805,8 @@ class SplitContainer {
         console.log(`[SplitContainer] Created split with sessions: ${currentSessionId} | ${sessionId}`);
     }
 
+    // NOTE: closeSplit hands the screen back to the main terminal, so the jump
+    // button has to ask it where it is (see the end of this method).
     closeSplit() {
         if (!this.enabled) return;
 
@@ -856,6 +864,7 @@ class SplitContainer {
         this.saveState();
 
         console.log('[SplitContainer] Closed split, back to single pane');
+        if (this.app && this.app.refreshScrollBottom) this.app.refreshScrollBottom();
     }
 
     // Panes in DOM order (left→right / top→bottom). swapPanes only moves the DOM
@@ -886,6 +895,8 @@ class SplitContainer {
         });
 
         this.activeSplitIndex = index;
+        // The jump-to-latest button now answers for this pane.
+        if (this.app && this.app.refreshScrollBottom) this.app.refreshScrollBottom();
 
         // Focus the terminal in this split
         const split = this.splits[index];
