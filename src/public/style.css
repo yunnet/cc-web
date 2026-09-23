@@ -3478,6 +3478,10 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     --ball-hollow: color-mix(in srgb, currentColor 30%, var(--accent));
 }
 
+/* A turn takes 1.6s: 1s read as too fast (the user's call, 2026-09-23).
+   Both layers must keep the same duration or the solid half and the boundary
+   fall out of step. */
+
 /* The solid half: on the left for the first and last quarter of a turn, on
    the right for the middle half. It moves only while the boundary layer
    below covers the whole ball, so the jump never shows. */
@@ -3489,7 +3493,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     left: 0;
     width: 50%;
     background: currentColor;
-    animation: tab-ball-half 1s linear infinite;
+    animation: tab-ball-half 1.6s linear infinite;
 }
 
 /* The boundary: a centred ellipse, as tall as the ball, 0 → full → 0 wide
@@ -3504,7 +3508,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     width: 0;
     transform: translateX(-50%);
     border-radius: 50%;
-    animation: tab-ball-edge 1s infinite;
+    animation: tab-ball-edge 1.6s infinite;
 }
 
 @keyframes tab-ball-half {

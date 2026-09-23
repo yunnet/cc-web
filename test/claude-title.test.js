@@ -66,8 +66,13 @@ describe('tabs show Claude working', function () {
     // A sphere turning about the line between its halves (the user's call,
     // 2026-09-23): moon phases — solid left, all solid, solid right, all
     // light — from a solid half and a sine-shaped boundary ellipse.
-    assert.ok(/\.session-tab\[data-working\] \.tab-status::before \{[\s\S]*?animation: tab-ball-half 1s/.test(CSS), 'the solid half');
-    assert.ok(/\.session-tab\[data-working\] \.tab-status::after \{[\s\S]*?border-radius: 50%;[\s\S]*?animation: tab-ball-edge 1s/.test(CSS), 'the boundary ellipse');
+    const half = /\.session-tab\[data-working\] \.tab-status::before \{[\s\S]*?animation: tab-ball-half ([\d.]+)s/.exec(CSS);
+    const edge = /\.session-tab\[data-working\] \.tab-status::after \{[\s\S]*?border-radius: 50%;[\s\S]*?animation: tab-ball-edge ([\d.]+)s/.exec(CSS);
+    assert.ok(half, 'the solid half');
+    assert.ok(edge, 'the boundary ellipse');
+    // The pace is tunable, but the two layers must share it: different
+    // durations put the solid half and the boundary out of step.
+    assert.strictEqual(half[1], edge[1], 'both layers turn at the same pace');
     assert.ok(/@keyframes tab-ball-edge \{[\s\S]*?25% \{ width: 100%; background: currentColor;[\s\S]*?75% \{ width: 100%; background: var\(--ball-hollow\)/.test(CSS), 'solid then light, a full sweep each half turn');
     // The light side is tinted, so an all-light moment is still a ball, not an empty ring.
     assert.ok(/--ball-hollow: color-mix\(in srgb, currentColor 30%, var\(--bg-tertiary\)\)/.test(CSS));
