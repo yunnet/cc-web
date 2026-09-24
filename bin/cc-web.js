@@ -25,7 +25,7 @@ program
   .option('--claude-alias <name>', 'display alias for Claude (default: env CLAUDE_ALIAS or "Claude")')
   .option('--ngrok-auth-token <token>', 'ngrok auth token to open a public tunnel')
   .option('--ngrok-domain <domain>', 'ngrok reserved domain to use for the tunnel')
-  .option('--plans-dir <paths>', 'comma-separated plan directories for /api/plan links; when set, only these dirs are served (overrides the default project .claude/plans auto-discovery). Env: CCW_PLANS_DIR')
+  .option('--plans-dir <paths>', 'comma-separated extra plan directories for /api/plan links, in addition to the project .claude/plans auto-discovery. Env: CCW_PLANS_DIR')
   .parse();
 
 const options = program.opts();

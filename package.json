@@ -39,9 +39,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vultuk/claude-code-web.git"
+    "url": "git+https://github.com/yunnet/cc-web.git"
   },
-  "homepage": "https://github.com/vultuk/claude-code-web#readme",
+  "homepage": "https://github.com/yunnet/cc-web#readme",
   "devDependencies": {
     "mocha": "^11.7.1"
   }
