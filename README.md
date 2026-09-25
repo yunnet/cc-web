@@ -46,6 +46,7 @@ Use `--disable-auth` to turn it off (local development only).
 - 🌿 **Git branch panel** — current branch per repository, with a fast-forward-only pull button
 - 📱 **Mobile support** — responsive layout, ESC/MODE/→ helper bar, PWA install, on-screen tab overflow menu
 - 🎛️ **Per-session settings** — font size, theme, scroll animation and plan directories are scoped to the session
+- 🧩 **Skills** — see what Claude can already do and install more: the plugins installed, the skills each one brings, the two `.claude/skills` directories, and a searchable marketplace catalogue with recommendations for the current project
 - 📜 **Scrollback** — kept in bytes (2 MB default, up to 16 MB), configurable in Settings
 
 The exhaustive, ID-by-ID inventory lives in [`FEATURES.md`](FEATURES.md); the tests in
@@ -233,6 +234,37 @@ It is removed on a clean shutdown, and a record left behind by `kill -9` is prun
 by the next instance to start. Writing it is best-effort: if it fails the server
 still starts, it just says so.
 
+## Skills
+
+The Skills panel (hamburger menu → *Skills*, or Settings → *Manage skills*) shows
+what Claude can already do, and what it could:
+
+- **Installed** — every plugin `claude plugin` knows about, with its version, scope,
+  on/off state and the skills it brings, followed by the skills sitting in
+  `~/.claude/skills` and the current project's `.claude/skills`. Click a row to read
+  its `SKILL.md`.
+- **Discover** — the marketplace catalogue (299 entries here), searchable, sorted by
+  install count, with up to eight recommendations for the folder the session is in —
+  each one stating its reason ("your project has a package.json", "70k installs").
+- **Marketplaces** — the catalogues wired up, plus a box to add one by `owner/repo`
+  or https URL.
+
+A **plugin is the unit that gets installed**, because that is the unit the CLI knows.
+Three things this panel deliberately does not do:
+
+- It never passes `-y`. When a plugin installs by running a command its marketplace
+  declared, the command and its sha256 are shown verbatim and only a click sends them
+  back as `--accept-command`.
+- It never offers an uninstall button for something this server cannot delete — a
+  skill directory owned by another user is marked read-only, with the reason.
+- It never restarts a session. Installing changes what the *next* Claude sees; the
+  running one keeps the skills it started with, and the panel says so.
+
+Every write goes through one route behind one mutex: a second install while the first
+is running is refused with a 409 rather than queued, and a CLI that hangs is killed
+with everything it spawned (90s for an install, 30s otherwise — measured, an install
+of a non-existent id produced nothing for 90 seconds).
+
 ## Pulling from the branch panel
 
 Each repository in the branch panel has a pull button. It runs
@@ -301,6 +333,10 @@ WebSocket authenticates with a query token for the same reason.
 | `GET /api/plan`, `GET /api/plan/:token/:file`, `GET /api/plan/:token/:session/:file` | Serve a plan markdown file for terminal plan links |
 | `GET /api/plan-dirs`, `POST /api/plan-dirs` | Per-session plan directories |
 | `GET /api/settings/scrollback`, `POST /api/settings/scrollback` | Scrollback budget in bytes |
+| `GET /api/skills` | Installed plugins (with the skills each brings) and the two skills directories |
+| `GET /api/skills/catalog` | The installable catalogue, searchable, with recommendations |
+| `GET /api/skills/file` | One SKILL.md, to read before installing |
+| `POST /api/skills/action` | Install / uninstall / enable / disable, and the marketplace commands |
 | `POST /api/hooks/:sessionId` | Claude Code hook relay — loopback only, per-session token |
 
 ### WebSocket

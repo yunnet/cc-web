@@ -67,6 +67,35 @@ A `Stop` hook (every turn's end, with `last_assistant_message`; the server forwa
 
 Links: Claude runs with `FORCE_HYPERLINK=1` and prints OSC 8 hyperlinks (none without it). Both terminals set `linkHandler` → `app.openTerminalLink`, gated by `src/public/terminal-links.js` (http(s) → new tab; `file:` on this host → a plan file via `planUrl`, shared with `registerPlanLinks`, else `fileExplorer.openFile`; anything else ignored). This replaces xterm's default handler, which prompts and refuses `file:`.
 
+### Skills panel
+`src/skills.js` (server) + `src/public/skills.js` (panel, `#skillsModal`), opened from
+the hamburger menu (`#skillsBtnMobile`) and from Settings (`#skillsOpenBtn`) — one
+panel, two entry points, like the Sessions panel. A skill reaches Claude three ways
+and they are not one mechanism: a **plugin** (`~/.claude/plugins/cache/...`, installed
+by `claude plugin`, listed by a marketplace), a **user skill** (`~/.claude/skills/<name>/SKILL.md`)
+and a **project skill** (`<workingDir>/.claude/skills/...`). Only the first has a
+catalogue, an installer and an on/off switch, so the plugin is the unit installed; each
+row names the skills it carries (read from `installPath/skills/*/SKILL.md`, first 4 KB only).
+
+Data comes from the CLI: `plugin list --json` and `plugin list --available --json`
+(measured on 2.1.280: 0.34s and 0.44s / 180 KB / 299 installable), cached 30s, dropped
+after any successful write. `src/skills.js` is split so the parsing half is pure and
+pinned to fixtures of real CLI output (`test/fixtures/plugin-cli.json`,
+`test/skills-cli.test.js`) — a CLI upgrade that renames a field fails a test instead of
+blanking the panel. Four routes, three reads and one write (`POST /api/skills/action`),
+so the whitelist, the mutex and the audit line exist once.
+
+Measured facts the code is written against: `--json` prints the machine-readable line
+*and* a human line, so the parser scans for the first line that parses; `install` against
+an id that does not exist produced nothing for 90s, so every run is timed by hand and
+killed with `killTree` (shared with git-branches); `--available` leaves out what is
+already installed, so searching for a plugin you have would look like "not found" —
+the panel lists those under 已经装了 instead. `-y` is never passed: a marketplace-declared
+command comes back to the browser with its sha256 and returns as `--accept-command` only
+after a person agrees. Three skill directories on this machine are owned by root, so
+`isWritable` marks them read-only rather than offering a button that always fails.
+Nothing is restarted: installs apply to the next Claude a session starts.
+
 ## Feature list — nothing existing is removed without the user's consent
 
 `FEATURES.md` lists every user-visible feature (ID, what the user sees, entry points, guard tests). The user's rule: **no existing feature is removed or weakened without their explicit consent**, quoted verbatim with a date in the plan. Three things hold it:

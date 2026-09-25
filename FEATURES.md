@@ -264,6 +264,37 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-14 | 被拒绝的计划目录以右上角卡片提示，3 秒后自动滑走；点「Reset button position」后弹出确认提示 | 手工 | `test/fab-position.test.js` |
 | SET-15 | 拖动字号、滚动动画滑块时旁边数字实时变化，但要按「Save Settings」才真正生效 | `control:fontSize` `control:smoothScroll` | — |
 | SET-16 | 菜单底部的版本行可以选中复制，悬停提示解释「build id 相同 = 两个实例代码相同」 | 手工 | — |
+## 技能管理
+
+> 技能有三种来源，只有插件有目录、安装器和开关，所以**安装的单位是插件**，面板把每个插件带的技能名列出来。
+> 2026-09-26 在 Claude Code 2.1.280 实测：`plugin list --json` 0.34s，`list --available --json` 0.44s / 180KB / 299 个可装项。
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| SKILL-01 | 菜单里的「Skills」和设置里的「Manage skills」打开同一个技能面板（和 Sessions 的双入口同理，两处渲染同一份列表，不会互相矛盾） | `control:skillsBtnMobile` `control:skillsOpenBtn` | `test/skills-panel.test.js` |
+| SKILL-02 | 面板分三页：已安装、发现、市场；页签高 44px，同一时刻只显示一页 | `control:skillsTabInstalled` `control:skillsTabDiscover` `control:skillsTabMarkets` | `test/skills-panel.test.js` |
+| SKILL-03 | 「已安装」列出插件（版本、范围、启用状态、它带的技能名）和两个技能目录（个人 `~/.claude/skills`、本项目 `.claude/skills`） | `route:GET /api/skills` `file:src/skills.js` | `test/skills-read.test.js` `test/skills-routes.test.js` |
+| SKILL-04 | 点任意一行展开它的 SKILL.md 正文（只读、按纯文本渲染，最大 256KB） | `route:GET /api/skills/file` | `test/skills-routes.test.js` |
+| SKILL-05 | 插件可以「停用 / 启用」和「卸载」，都带二次确认，卸载说明「它带的技能会一起消失，已记录的对话不受影响」 | `route:POST /api/skills/action` | `test/skills-write.test.js` |
+| SKILL-06 | 本进程删不掉的技能目录（属主是别的用户）显示「只读」且卸载按钮禁用，悬停说明是哪个目录 | `file:src/skills.js` | `test/skills-read.test.js` |
+| SKILL-07 | 「发现」列出市场里可安装的插件，按安装量排序，带描述和来源（git 地址 + 固定 sha） | `route:GET /api/skills/catalog` | `test/skills-routes.test.js` |
+| SKILL-08 | 搜索框按名字和描述过滤（防抖 250ms，一个词只发一次请求） | `control:skillsSearchInput` | `test/skills-read.test.js` |
+| SKILL-09 | 搜到的若是已经装好的插件，单独分组「你已经装了」并给「去管理」——因为 CLI 的可装列表本就不含已装项，否则会像「搜不到」 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
+| SKILL-10 | 「推荐给你」最多 8 条，每条写明理由：命中当前项目里的文件（package.json、go.mod、.git…）或安装量；已装的不推荐 | `route:GET /api/skills/catalog` | `test/skills-routes.test.js` |
+| SKILL-11 | 安装前二次确认，列出来源，并提示「安装第三方技能等于把别人写的指令交给 Claude 去读」 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
+| SKILL-12 | 插件若要求先运行市场声明的命令，**绝不替用户同意**：把命令原文和 sha256 原样弹给用户看，确认后才以 `--accept-command` 重跑 | `file:src/skills.js` | `test/skills-write.test.js` |
+| SKILL-13 | 「市场」列出已接入的市场（来源、可更新、可移除），底部可按 `owner/repo` 或 https 网址添加 | `control:skillsMarketInput` `control:skillsMarketAddBtn` | `test/skills-write.test.js` |
+| SKILL-14 | 同一时刻只允许一个写操作，第二个直接拒绝（409「另一个技能操作正在进行」），不排队 | `route:POST /api/skills/action` | `test/skills-write.test.js` `test/skills-routes.test.js` |
+| SKILL-15 | 成功后提示「已在运行的 Claude 不受影响，下次启动会话时生效」——面板不自动重启任何会话 | `file:src/public/skills.js` | `test/skills-write.test.js` |
+| SKILL-16 | 面板底部一行状态：正在安装 / 失败原因 / 「找不到 claude 命令，插件部分无法读取（技能目录仍然正常）」；常见失败码译成中文 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
+| SKILL-17 | 刷新按钮丢掉缓存重新读取；× 、「关闭」、点背景都能关闭面板 | `control:skillsRefreshBtn` `control:skillsDoneBtn` `control:closeSkillsBtn` | `test/skills-panel.test.js` |
+| SKILL-18 | 插件 id、市场地址、sha256、安装范围都先过白名单再交给 CLI；不合法的直接 400，一个进程都不会启动 | `file:src/skills.js` | `test/skills-write.test.js` `test/skills-routes.test.js` |
+| SKILL-19 | CLI 卡住时按时限结束它**和它启动的全部子进程**（安装 90s，其余 30s）——实测 `install` 一个不存在的 id 会挂满 90 秒 | `file:src/skills.js` | `test/skills-read.test.js` |
+| SKILL-20 | SKILL.md 只能从三个技能根目录下读取，走 realpath 所以符号链接跳不出去；文件名必须是 SKILL.md | `route:GET /api/skills/file` | `test/skills-routes.test.js` |
+| SKILL-21 | 可装列表缓存 30 秒（双击不会启动两个 CLI），失败不缓存；写操作成功后立刻作废缓存 | `file:src/skills.js` | `test/skills-read.test.js` `test/skills-write.test.js` |
+| SKILL-22 | 面板是固定高度的一列：页签和底部按钮不动，只有列表滚动，手机 390 宽下不横向溢出、添加按钮 44px 高 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
+| SKILL-23 | 读取文件头部时只读前 4KB，所以超大的 SKILL.md 和正常的一样快 | `file:src/utils/read-prefix.js` | `test/skills-read.test.js` |
+
 ## 界面、主题与 PWA
 
 | ID | 功能 | 入口 | 守卫 |

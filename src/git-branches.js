@@ -15,6 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+// Shared with src/skills.js, which reads a SKILL.md frontmatter the same way.
+const { readPrefix } = require('./utils/read-prefix');
 
 // Bounds the per-entry cost so a directory with thousands of children can't
 // stall the shared single-threaded server.
@@ -35,21 +37,6 @@ const STATUS_MAX_BUFFER = 8 * 1024 * 1024;
 // identical remote, helper and credential file, and a 3.5 MB .git. Slow is not
 // the same as broken, and a 15s ceiling would report it as broken.
 const PULL_TIMEOUT_MS = 60000;
-
-// Read at most `max` bytes from a file, without caring how big it really is.
-function readPrefix(file, max) {
-  let fd;
-  try {
-    fd = fs.openSync(file, 'r');
-    const buf = Buffer.alloc(max);
-    const n = fs.readSync(fd, buf, 0, max, 0);
-    return buf.slice(0, n).toString('utf8');
-  } catch (_) {
-    return null;
-  } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch (_) {} }
-  }
-}
 
 // Resolve a repo's git directory. Normally `.git` is a directory, but for a
 // worktree or a submodule it is a FILE holding `gitdir: <path>` — miss that and

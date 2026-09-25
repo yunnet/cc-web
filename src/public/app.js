@@ -1278,6 +1278,16 @@ class ClaudeCodeWebInterface {
             });
         }
         
+        // Skills. Same panel from the menu and from Settings, like Sessions:
+        // two entry points that render one list can never disagree.
+        const skillsBtnMobile = document.getElementById('skillsBtnMobile');
+        if (skillsBtnMobile) {
+            skillsBtnMobile.addEventListener('click', () => {
+                this.openSkillsPanel();
+                this.closeMobileMenu();
+            });
+        }
+
         // Mobile sessions button
         const sessionsBtnMobile = document.getElementById('sessionsBtnMobile');
         if (sessionsBtnMobile) {
@@ -1301,6 +1311,12 @@ class ClaudeCodeWebInterface {
         if (fabReset) fabReset.addEventListener('click', () => {
             this.resetFabPosition();
             this.showToast('Button position reset');
+        });
+
+        const skillsOpen = document.getElementById('skillsOpenBtn');
+        if (skillsOpen) skillsOpen.addEventListener('click', () => {
+            this.hideSettings();
+            this.openSkillsPanel();
         });
 
         const saveBtn = document.getElementById('saveSettingsBtn');
@@ -2272,6 +2288,12 @@ class ClaudeCodeWebInterface {
     showError(message) {
         document.getElementById('errorText').textContent = message;
         this.showOverlay('errorMessage');
+    }
+
+    // The skills panel lives in skills.js; both entry points come through here
+    // so there is one place that knows how it is opened.
+    openSkillsPanel(pane) {
+        if (window.skillsPanel) window.skillsPanel.open(pane);
     }
 
     showSettings() {

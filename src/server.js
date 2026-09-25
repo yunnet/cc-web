@@ -14,6 +14,8 @@ const claudeTheme = require('./utils/claude-theme');
 const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
+const skills = require('./skills');
+const os = require('os');
 
 // What the chunk-counted setting defaulted to, so an untouched old setting can
 // be told apart from a deliberate one on upgrade.
@@ -554,7 +556,7 @@ class ClaudeCodeWebServer {
         folderMode: this.folderMode,
         selectedWorkingDir: this.selectedWorkingDir,
         baseFolder: this.baseFolder,
-        homeDir: require('os').homedir(),
+        homeDir: os.homedir(),
         aliases: this.aliases,
         version: require('../package.json').version,
         port: this.port,
@@ -715,6 +717,15 @@ class ClaudeCodeWebServer {
     // after validating each entry is a real existing directory, and persists it.
     this.app.get('/api/plan-dirs', (req, res) => this.getPlanDirs(req, res));
     this.app.post('/api/plan-dirs', (req, res) => this.setPlanDirs(req, res));
+
+    // Skills — what Claude can already do, and what it could. Three reads and
+    // ONE write: keeping every mutation behind a single route means the
+    // whitelist, the mutex and the audit line each exist in exactly one place.
+    // See src/skills.js for why a plugin is the unit that gets installed.
+    this.app.get('/api/skills', ClaudeCodeWebServer.asyncRoute((req, res) => this.getSkills(req, res)));
+    this.app.get('/api/skills/catalog', ClaudeCodeWebServer.asyncRoute((req, res) => this.getSkillsCatalog(req, res)));
+    this.app.get('/api/skills/file', ClaudeCodeWebServer.asyncRoute((req, res) => this.getSkillFile(req, res)));
+    this.app.post('/api/skills/action', ClaudeCodeWebServer.asyncRoute((req, res) => this.postSkillAction(req, res)));
 
     // How many chunks of terminal scrollback are kept: persisted, replayed on
     // reconnect, and held in memory. Global rather than per session — it is a
@@ -1659,7 +1670,7 @@ class ClaudeCodeWebServer {
     // to an absolute path here; otherwise it's treated as relative and joined
     // under the roots as `<root>/~/...`, which never exists (404).
     if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~' + path.sep)) {
-      raw = path.join(require('os').homedir(), raw.slice(1));
+      raw = path.join(os.homedir(), raw.slice(1));
     }
 
     // Allowed roots are the UNION of two sets (additive, not override):
@@ -1950,7 +1961,7 @@ class ClaudeCodeWebServer {
   protectedDirHit(target) {
     const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
     const within = (inner, outer) => inner === outer || inner.startsWith(outer.endsWith(path.sep) ? outer : outer + path.sep);
-    const protectedDirs = [path.parse(target).root, require('os').homedir(), this.baseFolder]
+    const protectedDirs = [path.parse(target).root, os.homedir(), this.baseFolder]
       .concat([...this.claudeSessions.values()].map(s => s && s.workingDir))
       .filter(Boolean).map(real);
     return protectedDirs.find(dir => within(dir, target)) || null;
@@ -2428,6 +2439,11 @@ class ClaudeCodeWebServer {
   // distinct, and replaying the lot reconstructed 39 lines. Counted that way the
   // setting could not express "keep a few megabytes" at all — 2 MB would have
   // been twenty thousand chunks, four times the old maximum.
+  // A SKILL.md is instructions for a model to read; the biggest on this box is
+  // a few KB. The cap is what keeps the panel from trying to render a file that
+  // only happens to be named SKILL.md.
+  static SKILL_FILE_MAX = 256 * 1024;          // 256 KB
+
   static SCROLLBACK_MIN = 256 * 1024;          // 256 KB
   static SCROLLBACK_MAX = 16 * 1024 * 1024;    // 16 MB
   static SCROLLBACK_DEFAULT = 2 * 1024 * 1024; // 2 MB
@@ -2571,6 +2587,99 @@ class ClaudeCodeWebServer {
   // GET /api/plan-dirs?sessionId= — that session's own plan dirs, plus the global
   // dirs (shared base, read-only in the UI) and the session's working dir (already
   // auto-covered). Per-session so each tab configures its own extra directories.
+  // ── Skills ────────────────────────────────────────────────────────────────
+
+  // The working directory the CLI should run in. A plugin's scope can be
+  // "project", and which project that is depends entirely on cwd.
+  skillsContext(sessionId) {
+    const session = sessionId ? this.claudeSessions.get(sessionId) : null;
+    return {
+      claudeCommand: this.claudeBridge ? this.claudeBridge.claudeCommand : 'claude',
+      workingDir: (session && session.workingDir) || this.baseFolder || process.cwd()
+    };
+  }
+
+  // GET /api/skills?sessionId= — installed plugins (with the skills each one
+  // carries) plus the user and project skills directories.
+  async getSkills(req, res) {
+    const sid = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
+    if (!sid.ok) return res.status(400).json({ error: 'sessionId must be a single value' });
+    const out = await skills.listInstalled(this.skillsContext(sid.value));
+    res.json(out);
+  }
+
+  // GET /api/skills/catalog?q=&limit= — what could be installed.
+  async getSkillsCatalog(req, res) {
+    const sid = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
+    const q = ClaudeCodeWebServer.singleQueryValue(req.query.q);
+    const limit = ClaudeCodeWebServer.singleQueryValue(req.query.limit);
+    if (!sid.ok || !q.ok || !limit.ok) return res.status(400).json({ error: 'each query parameter takes a single value' });
+    const ctx = this.skillsContext(sid.value);
+    const cat = await skills.catalog(ctx);
+    const installed = new Set(cat.installed.map((p) => p.id));
+    const rows = skills.filterCatalog(cat.available, q.value, limit.value || 200);
+    res.json({
+      rows: rows.map((r) => ({ ...r, installed: installed.has(r.id) })),
+      total: cat.available.length,
+      problem: cat.problem,
+      marketplaces: await skills.listMarketplaces(ctx),
+      recommended: skills.recommend(cat.available, { workingDir: ctx.workingDir, installed })
+    });
+  }
+
+  // GET /api/skills/file?path= — one SKILL.md, so a person can read what they
+  // are about to install (or already did).
+  //
+  // The path must realpath INTO one of the three roots skills live under. That
+  // is the whole check: this is not a general file reader, and it is not the
+  // explorer's "anything the user can read" scope, because the panel hands it
+  // paths that came from a listing rather than from a person.
+  async getSkillFile(req, res) {
+    const p = ClaudeCodeWebServer.singleQueryValue(req.query.path);
+    if (!p.ok || !p.value) return res.status(400).json({ error: 'path is required, once' });
+    const sid = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
+    const ctx = this.skillsContext(sid.ok ? sid.value : undefined);
+
+    let real;
+    try { real = fs.realpathSync(p.value); } catch (_) { return res.status(404).json({ error: 'no such file' }); }
+    if (path.basename(real).toLowerCase() !== 'skill.md') return res.status(400).json({ error: 'not a SKILL.md' });
+
+    const roots = [
+      skills.userSkillsDir(),
+      skills.projectSkillsDir(ctx.workingDir),
+      path.join(os.homedir(), '.claude', 'plugins')
+    ].filter(Boolean).map((r) => { try { return fs.realpathSync(r); } catch (_) { return null; } }).filter(Boolean);
+    if (!roots.some((root) => real === root || real.startsWith(root + path.sep))) {
+      return res.status(403).json({ error: 'that file is not a skill' });
+    }
+
+    let stat;
+    try { stat = fs.statSync(real); } catch (_) { return res.status(404).json({ error: 'no such file' }); }
+    if (!stat.isFile()) return res.status(400).json({ error: 'not a file' });
+    if (stat.size > ClaudeCodeWebServer.SKILL_FILE_MAX) return res.status(413).json({ error: 'that SKILL.md is too large to show' });
+
+    res.json({ path: real, text: fs.readFileSync(real, 'utf8') });
+  }
+
+  // POST /api/skills/action { action, target, scope, acceptSha, sessionId }
+  //
+  // Install, uninstall, enable, disable, and the marketplace commands. Never
+  // passes -y: when the CLI wants a marketplace-declared command confirmed, the
+  // command and its sha come back to the browser and only a click sends them on
+  // as --accept-command.
+  async postSkillAction(req, res) {
+    const body = req.body || {};
+    const result = await skills.runAction(body.action, {
+      target: body.target,
+      scope: body.scope,
+      acceptSha: body.acceptSha,
+      ...this.skillsContext(body.sessionId)
+    });
+    if (result.failureCode === 'busy') return res.status(409).json(result);
+    if (result.failureCode && result.failureCode.startsWith('bad-')) return res.status(400).json(result);
+    res.json(result);
+  }
+
   getPlanDirs(req, res) {
     const session = this.claudeSessions.get(req.query.sessionId);
     if (!session) return res.status(400).json({ error: 'unknown or missing sessionId' });

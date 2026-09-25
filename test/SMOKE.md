@@ -37,7 +37,15 @@
 | S22 | MOB-12、SET-01 | 390 宽时 | `#hamburgerBtn` 位于标签栏最左侧（它的 left 小于第一个标签的 left） |
 | S23 | UI-02 | 调用 `applyTheme('light')` | `dataset.theme === 'light'`，终端 `options.theme.background` 从 `#0d1117` 变为 `#ffffff` |
 | S24 | TERM-33 | 让终端有足够多的历史，向上滚一屏 | `#scrollBottomBtn` 从 hidden 变为可见，位置在终端区右下角，命中测试命中自己；点它后终端回到底部（`buffer.baseY === buffer.viewportY`）且按钮重新隐藏；手机尺寸（390 宽）下按钮 ≥44px，且与 `.mode-switcher` 不重叠 |
+| S25 | SKILL-01、SKILL-02 | 菜单点「Skills」（或设置里「Manage skills」） | `#skillsModal` 带 `.active`；三个页签各高 44px，命中测试命中自己；同一时刻只有一个 `.skills-pane` 的 `display` 不是 `none` |
+| S26 | SKILL-03、SKILL-06 | 打开面板等两次请求回来 | 「插件（N）」「技能目录（M）」两个分组都在；属主不是当前用户的技能行上，按钮文字为「只读」且 `disabled === true`，`title` 里带该目录路径 |
+| S27 | SKILL-07、SKILL-10 | 切到「发现」 | 出现「推荐给你」分组；每条推荐的 `.conv-meta` 以「你的项目里有 <文件>」或「已有 N 人安装」开头；整页没有 `[object` |
+| S28 | SKILL-09 | 在搜索框输入一个**已安装**插件的名字 | 出现「你已经装了（N）」分组，该行带「已安装」徽章——CLI 的可装列表本就不含已装项，没有这一组会显示成「搜索结果（0）」 |
+| S29 | SKILL-22 | 切到「市场」，量添加行 | `#skillsMarketAddBtn` 和 `#skillsMarketInput` 的底边都在 `.modal-content` 内，且命中测试命中自己；390 宽时按钮高 ≥ 44px，`document.documentElement.scrollWidth <= innerWidth` |
+| S30 | SKILL-04 | 点一行技能展开 | 出现 `pre.skills-detail`，内容以 `---` 开头（SKILL.md 的 frontmatter），长度 > 100 |
 
 ## 基线结果
 
 2026-09-22 首次全套运行的结果，记在 `ts/.claude/plans/2026-09-22-防止遗漏现有功能.md` 的「实测记录」一节。
+
+S25–S30（技能面板）于 2026-09-26 在一次性实例（32354）上跑过一遍：19 行（15 插件 + 4 技能目录）、3 个市场、299 个可装项；三个只读技能正确禁用卸载；390 宽无横向溢出。过程记在 `ts/.claude/plans/2026-09-26-技能管理.md`。

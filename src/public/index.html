@@ -168,6 +168,7 @@
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
                 <button id="reconnectBtnMobile" class="mobile-menu-btn" disabled>Reconnect</button>
                 <button id="clearBtnMobile" class="mobile-menu-btn">Clear Terminal</button>
+                <button id="skillsBtnMobile" class="mobile-menu-btn">Skills</button>
                 <button id="settingsBtnMobile" class="mobile-menu-btn">Settings</button>
             </div>
             <div class="mobile-menu-footer" id="menuVersion" title="version · port · build id (same build id = same code on both instances)">—</div>
@@ -291,6 +292,11 @@
                         </div>
                     </div>
                     <div class="setting-group setting-group-block">
+                        <label>Skills:</label>
+                        <p class="setting-hint">What Claude can already do, and what it could: installed plugins and the skills they bring, the two <code>.claude/skills</code> directories, and the marketplace catalogue to install from. Changes apply the next time a session starts Claude.</p>
+                        <button class="btn btn-secondary btn-small" id="skillsOpenBtn" type="button">Manage skills</button>
+                    </div>
+                    <div class="setting-group setting-group-block">
                         <label>Plan directories:</label>
                         <p class="setting-hint" id="planDirsHint">The current project's <code>.claude/plans</code> is always available. Add extra directories to serve plans from other projects.</p>
                         <div class="plan-dirs-list" id="planDirsList"></div>
@@ -370,6 +376,50 @@
                 <div class="modal-footer">
                     <button class="btn btn-secondary" id="conversationsDoneBtn">Close</button>
                     <button class="btn btn-primary" id="conversationsNewBtn">New Session</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Skills: what Claude can already do, and what it could. Three views
+             behind one modal (installed / discover / marketplaces) because they
+             are three questions about one thing. A plugin is the unit that gets
+             installed — that is the unit `claude plugin` knows — and each row
+             names the skills it brings. See src/public/skills.js. -->
+        <div class="session-modal" id="skillsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>技能</h2>
+                    <button class="close-btn" id="closeSkillsBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="skills-tabs" role="tablist">
+                        <button class="skills-tab active" id="skillsTabInstalled" type="button">已安装</button>
+                        <button class="skills-tab" id="skillsTabDiscover" type="button">发现</button>
+                        <button class="skills-tab" id="skillsTabMarkets" type="button">市场</button>
+                    </div>
+
+                    <div class="skills-pane" id="skillsPaneInstalled">
+                        <div class="conv-list" id="skillsInstalledList"></div>
+                    </div>
+
+                    <div class="skills-pane" id="skillsPaneDiscover" hidden>
+                        <input type="text" class="skills-search" id="skillsSearchInput" placeholder="搜索可安装的技能…" spellcheck="false" autocomplete="off">
+                        <div class="conv-list" id="skillsDiscoverList"></div>
+                    </div>
+
+                    <div class="skills-pane" id="skillsPaneMarkets" hidden>
+                        <div class="conv-list" id="skillsMarketList"></div>
+                        <div class="skills-add-market">
+                            <input type="text" id="skillsMarketInput" placeholder="owner/repo 或 https://…" spellcheck="false" autocomplete="off">
+                            <button class="btn btn-secondary btn-small" id="skillsMarketAddBtn" type="button">添加市场</button>
+                        </div>
+                    </div>
+
+                    <div class="skills-note" id="skillsNote" hidden></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="skillsRefreshBtn" type="button">刷新</button>
+                    <button class="btn btn-secondary" id="skillsDoneBtn" type="button">关闭</button>
                 </div>
             </div>
         </div>
@@ -581,6 +631,7 @@
     <script src="splits.js"></script>
     <script src="file-explorer.js"></script>
     <script src="conversations.js"></script>
+    <script src="skills.js"></script>
     <script src="git-branches.js"></script>
     <script src="icons.js"></script>
     <!-- Pure geometry for the draggable mobile buttons; app.js calls into it,

@@ -3666,3 +3666,183 @@ body.overlay-open .settings-modal       { z-index: 5004; }
         bottom: calc(16px + var(--safe-bottom, 0px));
     }
 }
+
+/* ── Skills panel ──────────────────────────────────────────────────────────
+   Self-contained block, deliberately: dbaf5ab lost the explorer icon by adding
+   a new button into the middle of a shared selector list. Everything here is
+   prefixed .skills-, and the rows themselves reuse .conv-* so the panel reads
+   like the Sessions panel it sits beside. */
+
+/* .modal-content is itself an 80vh scroller. For a panel whose markets pane ends
+   in an add row, that put the row inside the OUTER scroll: measured at 780x493
+   its bottom edge sat 16px past the dialog and elementFromPoint no longer found
+   it. So this one dialog is a column instead — header and footer fixed, the body
+   the only thing that scrolls — which keeps the add row and the tabs on screen
+   whatever the list does. Scoped to #skillsModal: .modal-content is shared with
+   Settings, the Sessions panel and the new tab dialog. */
+#skillsModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#skillsModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The pane fills what is left and the LIST is what scrolls, so the markets
+   pane's add row stays put at the bottom instead of sitting below the fold.
+   The [hidden] rule is not redundant: an explicit `display` beats the hidden
+   attribute, and without it every pane would be visible at once. */
+#skillsModal .skills-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#skillsModal .skills-pane[hidden] { display: none; }
+
+#skillsModal .conv-list {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: none;
+}
+
+#skillsModal .skills-add-market,
+#skillsModal .skills-search,
+#skillsModal .skills-note { flex-shrink: 0; }
+
+.skills-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.skills-tab {
+    /* 44px tall: the same touch target as the toolbar buttons. */
+    min-height: 44px;
+    padding: 0 14px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.skills-tab:hover { color: var(--text-primary); }
+
+.skills-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.skills-search,
+.skills-add-market input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 10px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.skills-search { margin-bottom: 8px; }
+
+.skills-search:focus,
+.skills-add-market input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.skills-add-market {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.skills-add-market input { flex: 1; min-width: 0; }
+.skills-add-market .btn { flex-shrink: 0; }
+
+/* A plugin's marketplace, a skill's origin, or "already installed". */
+.skills-badge {
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: normal;
+    vertical-align: middle;
+}
+
+.skills-badge.on {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.skills-badge.project {
+    border-color: var(--success, #3fb950);
+    color: var(--success, #3fb950);
+}
+
+/* Someone else's SKILL.md, shown as source. Wrapped rather than scrolled
+   sideways — a long instruction line should not hide off the right edge. */
+.skills-detail {
+    margin: 0 0 8px;
+    padding: 10px 12px;
+    max-height: 320px;
+    overflow: auto;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* One status line for the whole panel: what just happened, or why a half of it
+   is empty. Not app.showToast — that fades after 2.2s, and these messages have
+   to stay up: "installing…" while a CLI runs, and "no claude command found, so
+   the plugin half is empty" for as long as that is true. */
+.skills-note {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.skills-note.error {
+    background-color: color-mix(in srgb, var(--error, #f85149) 12%, var(--bg-tertiary));
+    color: var(--error, #f85149);
+}
+
+.skills-row .conv-meta {
+    /* Catalogue descriptions are a paragraph; two lines is enough to judge one
+       by, and keeps the list scannable. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+@media (max-width: 700px) {
+    .skills-tabs { gap: 2px; }
+    .skills-tab { flex: 1; padding: 0 6px; font-size: 12px; }
+    .skills-add-market { flex-direction: column; }
+    .skills-add-market .btn { width: 100%; min-height: 44px; }
+}
