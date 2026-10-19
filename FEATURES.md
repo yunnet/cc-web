@@ -390,6 +390,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-20 | 一次性票据最多同时保留 200 个，超出丢弃最旧的；每张 30 秒过期且用一次即失效 | `route:POST /api/fs/ticket` | `test/fs-browse.test.js` |
 | SRV-21 | 计划链接里的 `~/…` 会展开成家目录绝对路径；不在白名单、超过 2MB 或不是 .md 的一律 404（不泄露文件存不存在） | `route:GET /api/plan` | `test/plan-file.test.js` |
 | SRV-22 | 退出时除保存会话外，还会停掉所有正在跑的 Claude 进程并清理定时器 | 手工 | — |
+| SRV-23 | 数据目录默认在 `~/.cc-web/data`（`~/.cc-web` 按 0700 创建）；首次启动把旧布局的 `~/.claude-code-web` 一次性原子迁入，迁移失败则继续用原目录、绝不抛错 | `file:src/utils/data-dir.js` | `test/data-dir.test.js` |
 ## 命令行
 
 | ID | 功能 | 入口 | 守卫 |

@@ -95,8 +95,8 @@ npm run dev
 node bin/cc-web.js
 
 # Token from a file (preferred when you want a fixed one)
-echo "your-secret-token" > ~/.ccweb-token && chmod 600 ~/.ccweb-token
-node bin/cc-web.js --auth-file ~/.ccweb-token
+echo "your-secret-token" > ~/.cc-web/token && chmod 600 ~/.cc-web/token
+node bin/cc-web.js --auth-file ~/.cc-web/token
 
 # …or from the environment
 CCWEB_AUTH=your-secret-token node bin/cc-web.js
@@ -160,7 +160,7 @@ CLAUDE_ALIAS=Alice node bin/cc-web.js
 | Variable | Description |
 |----------|-------------|
 | `CCWEB_AUTH` | Authentication token. Beats `--auth`, loses to `--auth-file`. `/proc/<pid>/environ` is readable only by the owner, unlike `cmdline`. |
-| `CCW_DATA_DIR` | Where sessions, plan dirs and the instance registry live. Defaults to `~/.claude-code-web`. Point a second instance at another directory to isolate it. |
+| `CCW_DATA_DIR` | Where sessions, plan dirs and the instance registry live. Defaults to `~/.cc-web/data` — the first start moves an old `~/.claude-code-web` there in one atomic rename. Point a second instance at another directory to isolate it. |
 | `CCW_PLANS_DIR` | Same as `--plans-dir`. If `<data dir>/plan-dirs.json` exists, it wins over the flag at startup — the file is only ever read, never written (`GAP-22`). |
 | `CLAUDE_ALIAS` | Same as `--claude-alias`. |
 
@@ -220,7 +220,7 @@ port, so listing the directory tells you what is running without opening anythin
   "port": 32353,
   "pid": 12345,
   "sourceDir": "/path/to/checkout",
-  "dataDir": "/home/you/.claude-code-web-dev",
+  "dataDir": "/home/you/.cc-web/data-dev",
   "version": "4.3.0",
   "buildId": "f3b4ceee",
   "https": false,
@@ -454,7 +454,7 @@ falling back to a bare `claude` on `PATH`.
 ### The port is refused on startup
 
 Another instance is already using that data directory. Either stop it or give this one
-its own: `CCW_DATA_DIR=~/.claude-code-web-dev node bin/cc-web.js --port 32353`.
+its own: `CCW_DATA_DIR=~/.cc-web/data-dev node bin/cc-web.js --port 32353`.
 
 ### Connection issues
 

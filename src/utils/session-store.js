@@ -1,8 +1,8 @@
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
-const os = require('os');
 const crypto = require('crypto');
+const { dataDir } = require('./data-dir');
 
 // Session persistence: one file per session.
 //
@@ -54,10 +54,10 @@ class SessionStore {
     constructor() {
         // CCW_DATA_DIR lets a second instance (e.g. the dev sandbox on another
         // port) keep its own session list. The claude CLI's own ~/.claude config
-        // stays shared.
-        this.storageDir = process.env.CCW_DATA_DIR
-            ? path.resolve(process.env.CCW_DATA_DIR)
-            : path.join(os.homedir(), '.claude-code-web');
+        // stays shared. The default — and the one-time adoption of the old
+        // ~/.claude-code-web — resolves in data-dir.js: one answer for
+        // SessionStore, the instance registry and plan-dirs alike.
+        this.storageDir = dataDir();
         // Writable at runtime: the server sets it from the persisted setting on
         // startup and again whenever it changes, so a save takes effect on the
         // next autosave rather than on the next restart.

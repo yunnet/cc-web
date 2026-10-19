@@ -2281,7 +2281,7 @@ class ClaudeCodeWebServer {
   }
 
   // Where the runtime plan-dirs list is persisted — same data dir as SessionStore
-  // (CCW_DATA_DIR override, else ~/.claude-code-web), so it survives restarts.
+  // (CCW_DATA_DIR override, else ~/.cc-web/data), so it survives restarts.
   // Every file we keep beside the sessions resolves through here, so there is
   // one answer to "where is the data dir" rather than a copy per caller. It
   // reads the store's own storageDir: session-store.js:70 records what happened

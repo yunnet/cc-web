@@ -22,16 +22,13 @@
 // every read path returns null rather than throwing.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
-// Same data dir as SessionStore and plan-dirs: CCW_DATA_DIR when set, else
-// ~/.claude-code-web. Two instances isolate by pointing this elsewhere.
-function dataDir() {
-  return process.env.CCW_DATA_DIR
-    ? path.resolve(process.env.CCW_DATA_DIR)
-    : path.join(os.homedir(), '.claude-code-web');
-}
+// Same data dir as SessionStore and plan-dirs, from the one place that
+// resolves it: CCW_DATA_DIR when set, else ~/.cc-web/data (data-dir.js also
+// adopts the pre-layout ~/.claude-code-web once). Two instances isolate by
+// pointing this elsewhere.
+const { dataDir } = require('./utils/data-dir');
 
 function instancesDir() {
   return path.join(dataDir(), 'instances');

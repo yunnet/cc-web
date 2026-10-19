@@ -81,6 +81,19 @@
   so a folder name or a clipped conversation title is never passed. A rename
   applies from the next start.
 
+### Changed
+- **The data directory moved under `~/.cc-web/`.** The default is now
+  `~/.cc-web/data` (base directory created 0700) instead of
+  `~/.claude-code-web` at the home root, and the first start adopts the old
+  directory in one atomic, same-filesystem rename — sessions come along, a
+  move that cannot happen falls back to the old directory instead of forking a
+  second store, and nothing about it can block startup. `ccweb.sh`
+  places the rest of an instance's files alongside it (`token-<port>`,
+  `data-<port>/`, `<port>.log`) and adopts the pre-layout files the same way.
+  `CCW_DATA_DIR` still wins absolutely, and the default now resolves in one
+  place (`src/utils/data-dir.js`) for SessionStore, the instance registry and
+  plan-dirs alike — the two copies of that ternary had drifted apart before.
+
 ### Fixed
 - **Permission mode "default" no longer reaches the CLI.** Old sessions carry
   `permissionMode: "default"`; `launchArgs` passed it through as
