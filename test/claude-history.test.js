@@ -155,6 +155,21 @@ describe('claude-history', function() {
       assert.strictEqual(list.find(c => c.id === B).title, '发布前检查');
     });
 
+    it('keeps a prompt holding U+2028/U+2029 line separators', async function() {
+      // Upstream 2.1.296 fixed transcript GC dropping records whose text held
+      // these; our regression is that the parser never treats a separator
+      // inside a JSON string as a record boundary.
+      const proj = path.join(root, history.projectDirName(dir));
+      const title = 'before after end';
+      fs.writeFileSync(path.join(proj, `${B}.jsonl`), transcript([
+        { type: 'user', message: { content: title } }
+      ]));
+      const list = await history.listConversations(dir, { root });
+      // The record survives and the title renders with the separators
+      // normalized to spaces — dropped would be list without B, null title.
+      assert.strictEqual(list.find(c => c.id === B).title, 'before after end');
+    });
+
     it('honours the limit and returns [] for a directory Claude has never seen', async function() {
       assert.strictEqual((await history.listConversations(dir, { root, limit: 1 })).length, 1);
       assert.deepStrictEqual(await history.listConversations('/data/work/unknown', { root }), []);

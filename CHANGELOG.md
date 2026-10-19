@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- **The startup banner names the Claude it will run.** One line under the
+  running-at note: the version of the bridge-discovered binary (not whatever
+  `claude` is first on PATH) and a warning when it is older than the 2.0.0
+  that session binding (`--session-id`/`--resume`) needs. A note, never a
+  blocker: an undetectable version starts anyway and says so.
 - **Back to the newest screen.** Scroll up into the history and a round button
   appears at the bottom right of the terminal; one press returns to the bottom
   and gives the terminal the keyboard back. It hides itself once you are at the
@@ -66,6 +71,13 @@
   it. Only typed names — with `--name` set Claude stops writing its own title,
   so a folder name or a clipped conversation title is never passed. A rename
   applies from the next start.
+
+### Fixed
+- **Permission mode "default" no longer reaches the CLI.** Old sessions carry
+  `permissionMode: "default"`; `launchArgs` passed it through as
+  `--permission-mode default`, a choice the installed CLI no longer has
+  (checked against 2.1.296), so Claude exited before drawing a frame. It now
+  means what it says — no `--permission-mode` flag at all.
 
 ### Security
 - **The browser could override server-owned launch fields.** `start_claude`

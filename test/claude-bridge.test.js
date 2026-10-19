@@ -67,6 +67,12 @@ describe('ClaudeBridge', function() {
       assert.deepStrictEqual(args({ model: '--help' }), []);
     });
 
+    it('sends nothing for permissionMode "default" — the CLI has no such choice', function() {
+      // Old sessions.json records carry 'default'; passing it through would make
+      // claude exit with "invalid choice" before drawing a single frame.
+      assert.deepStrictEqual(args({ permissionMode: 'default' }), []);
+    });
+
     it('lets skipping permissions win over a permission mode', function() {
       assert.deepStrictEqual(args({ dangerouslySkipPermissions: true, permissionMode: 'plan', effort: 'low' }),
         ['--dangerously-skip-permissions', '--effort', 'low']);
@@ -103,6 +109,25 @@ describe('ClaudeBridge', function() {
       const efforts = /--effort <level>.*?\(([^)]*)\)/.exec(flat);
       assert.ok(efforts, '--effort levels not found in claude --help');
       for (const e of ClaudeBridge.EFFORTS) assert.ok(efforts[1].split(/,\s*/).includes(e), `claude no longer accepts --effort ${e}`);
+    });
+
+    it('offers no model alias the installed claude does not mention', function() {
+      // One-directional by necessity: `--help` only *examples* aliases
+      // ("e.g. 'fable', 'opus', or 'sonnet'"), so anything it names must be in
+      // our list; a new alias Claude gained is caught by review, not here.
+      let help;
+      try {
+        help = require('child_process').execFileSync('claude', ['--help'], { encoding: 'utf8', timeout: 20000 });
+      } catch (_) {
+        this.skip(); // no claude on this machine
+      }
+      const line = /--model <model>(?:.|\n)*?(?:\n  -|$)/.exec(help);
+      assert.ok(line, '--model help line not found');
+      const named = [...line[0].matchAll(/'([a-z0-9-]+)'/g)].map(m => m[1]);
+      assert.ok(named.length > 0, 'no model aliases named in --model help');
+      for (const m of named) {
+        assert.ok(ClaudeBridge.MODELS.includes(m), `claude names model alias '${m}' but MODELS omits it`);
+      }
     });
   });
 

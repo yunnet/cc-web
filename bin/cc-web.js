@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const open = require('open');
 const crypto = require('crypto');
-const { startServer } = require('../src/server');
+const { startServer, ClaudeCodeWebServer } = require('../src/server');
 
 const program = new Command();
 
@@ -151,6 +151,23 @@ async function main() {
     
     console.log(`\n🚀 Claude Code Web Interface is running at: ${url}`);
 
+    // What the terminal will actually run — the bridge's discovered binary, not
+    // whatever `claude` is first on this shell's PATH. A note, never a blocker:
+    // cc-web only breaks when a flag it sends disappears, so say what is running.
+    try {
+      const cliVersion = await server.claudeVersion();
+      // Session binding (--session-id on first start, --resume after) is the
+      // oldest flag cc-web cannot work without.
+      const MIN_CLI = '2.0.0';
+      if (!cliVersion) {
+        console.log(`   Claude CLI: version unknown (${server.claudeBridge.claudeCommand} --version failed)`);
+      } else if (ClaudeCodeWebServer.compareVersions(cliVersion, MIN_CLI) < 0) {
+        console.log(`⚠️  Claude CLI ${cliVersion} is older than ${MIN_CLI}; session resume (--session-id/--resume) needs it.`);
+      } else {
+        console.log(`   Claude CLI: ${cliVersion}  (${server.claudeBridge.claudeCommand})`);
+      }
+    } catch (_) { /* the version note must never stop startup */ }
+
     if (!noAuth) {
       console.log('\n📋 Authentication Required:');
       if (options.auth) {
@@ -218,7 +235,7 @@ async function main() {
       if (ngrokListener && typeof ngrokListener.close === 'function') {
         try { await ngrokListener.close(); } catch (_) {}
       }
-      server.close(() => {
+      server.httpServer.close(() => {
         console.log('Server closed');
         process.exit(0);
       });

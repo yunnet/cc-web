@@ -2799,7 +2799,13 @@ class ClaudeCodeWebServer {
 
 async function startServer(options) {
   const server = new ClaudeCodeWebServer(options);
-  return await server.start();
+  const httpServer = await server.start();
+  // start() resolves the raw http.Server (an inner variable shadows the web
+  // server there); callers want the web server itself — claudeVersion(), the
+  // bridge — so that rides on top and the http.Server stays reachable for
+  // shutdown's close().
+  server.httpServer = httpServer;
+  return server;
 }
 
 module.exports = { startServer, ClaudeCodeWebServer };

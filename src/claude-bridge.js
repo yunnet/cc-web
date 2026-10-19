@@ -494,7 +494,11 @@ class ClaudeBridge {
   static launchArgs({ dangerouslySkipPermissions = false, model = '', permissionMode = '', effort = '', name = '' } = {}) {
     const args = dangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : [];
     if (ClaudeBridge.MODELS.includes(model)) args.push('--model', model);
-    if (!dangerouslySkipPermissions && ClaudeBridge.PERMISSION_MODES.includes(permissionMode)) {
+    // 'default' means "no --permission-mode at all": it stays in PERMISSION_MODES
+    // because old sessions.json records carry it, but the CLI has no such choice
+    // (measured on 2.1.296) and would reject the flag.
+    if (!dangerouslySkipPermissions && permissionMode !== 'default'
+        && ClaudeBridge.PERMISSION_MODES.includes(permissionMode)) {
       args.push('--permission-mode', permissionMode);
     }
     if (ClaudeBridge.EFFORTS.includes(effort)) args.push('--effort', effort);
