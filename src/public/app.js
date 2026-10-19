@@ -1848,6 +1848,11 @@ class ClaudeCodeWebInterface {
                     message.tool_input && message.tool_input.plan) {
                     this.showPlanModal({ content: message.tool_input.plan });
                 }
+                // ccweb-companion mod: a Bash call waiting for the web dialog's
+                // answer. The mod's request is held server-side until a button.
+                if (message.event === 'ccweb_permission_request') {
+                    this.showPermissionRequestCard(message);
+                }
                 if (this.sessionTabManager) this.sessionTabManager.hookEvent(message.sessionId, message);
                 break;
 
@@ -3535,6 +3540,48 @@ class ClaudeCodeWebInterface {
 
         // Play a subtle notification sound (optional)
         this.playNotificationSound();
+    }
+
+    // ccweb-companion mod: a Bash call awaiting the web dialog's answer. The
+    // mod's POST is held server-side until one of these buttons POSTs the
+    // decision back, or 120 s pass and the server allows through on its own.
+    showPermissionRequestCard(message) {
+        const callId = message.call_id;
+        const sessionId = message.sessionId;
+        if (!callId || !sessionId) return;
+        if (document.getElementById('ccwebPermCard')) return; // one at a time
+
+        const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const card = document.createElement('div');
+        card.id = 'ccwebPermCard';
+        card.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        card.innerHTML = `
+          <div style="background:var(--bg-elevated,#1e1e1e);color:var(--text,#eee);border-radius:10px;padding:20px;max-width:560px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,.5);">
+            <div style="font-weight:600;font-size:15px;margin-bottom:10px;">Claude 想执行一条命令（ccweb-companion）</div>
+            <pre style="background:rgba(127,127,127,.15);padding:10px;border-radius:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;font-size:12px;margin:0 0 14px;">${esc(message.tool_input && message.tool_input.command)}</pre>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+              <button data-decision="deny" style="padding:8px 16px;border-radius:6px;border:1px solid #888;background:transparent;color:inherit;cursor:pointer;">拒绝</button>
+              <button data-decision="allow" style="padding:8px 16px;border-radius:6px;border:0;background:#2f7df6;color:#fff;cursor:pointer;">允许</button>
+            </div>
+          </div>`;
+        card.addEventListener('click', (ev) => {
+            const decision = ev.target && ev.target.dataset && ev.target.dataset.decision;
+            if (!decision) return;
+            card.remove();
+            this.answerPermissionRequest(sessionId, callId, decision);
+        });
+        document.body.appendChild(card);
+        this.playNotificationSound();
+    }
+
+    async answerPermissionRequest(sessionId, callId, decision) {
+        try {
+            await fetch(`/api/hooks/${encodeURIComponent(sessionId)}/answer`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...window.authManager.getAuthHeaders() },
+                body: JSON.stringify({ call_id: callId, decision })
+            });
+        } catch (_) { /* the server's 120 s timeout allows through */ }
     }
     
     // Render the plan markdown (from Claude's ExitPlanMode tool_input.plan) to

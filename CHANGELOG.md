@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- **A web dialog for Bash approvals (ccweb-companion mod pilot).** With the
+  companion mod loaded (`CLAUDE_CODE_PLUGIN_DIRS`, mod in `~/.claude/dev-mods/`),
+  a Bash call that wants an answer is held by the mod and shown in the browser
+  as a card — command, 允许 / 拒绝 — instead of only in the terminal. The press
+  rides back through a held POST: allow speaks for the person, deny withholds
+  the call with the reason; 120 s of silence allows through so a sleeping
+  browser degrades to the terminal flow, never a lost command. The relay gains
+  `POST /api/hooks/:sessionId/answer` (header auth) and passes `CCWEB_HOOK_PORT`
+  to the spawned Claude so the mod can find it.
 - **The startup banner names the Claude it will run.** One line under the
   running-at note: the version of the bridge-discovered binary (not whatever
   `claude` is first on PATH) and a warning when it is older than the 2.0.0

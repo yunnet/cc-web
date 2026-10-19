@@ -54,6 +54,9 @@ class ClaudeCodeWebServer {
     this.planDirs = persistedPlanDirs !== null ? persistedPlanDirs : seededPlanDirs;
     this.app = express();
     this.claudeSessions = new Map(); // Persistent sessions, keyed by session id
+    // Web-dialog permission requests (ccweb-companion mod): callId → { res, timer }.
+    // The mod's POST is held open until the browser presses a button or 120 s pass.
+    this.pendingPermissionRequests = new Map();
     this.webSocketConnections = new Map(); // Maps WebSocket connection ID to session info
     // Single-use, short-lived credentials for ONE file each (see createFileTicket).
     // They are what lets the explorer render html/svg without putting the
@@ -735,6 +738,11 @@ class ClaudeCodeWebServer {
 
     // Which Claude Code is installed vs what npm publishes. Display only.
     this.app.get('/api/version', ClaudeCodeWebServer.asyncRoute((req, res) => this.getVersionInfo(req, res)));
+
+    // The browser's answer to a ccweb_permission_request card: resolves the
+    // companion mod's held POST (registered in handleHookEvent). Normal header
+    // auth — the browser knows the global token, not the per-session hook token.
+    this.app.post('/api/hooks/:sessionId/answer', ClaudeCodeWebServer.asyncRoute((req, res) => this.answerPermissionRequest(req, res)));
 
     this.app.post('/api/set-working-dir', (req, res) => {
       const { path: selectedPath } = req.body;
@@ -1576,6 +1584,36 @@ class ClaudeCodeWebServer {
     }
 
     const event = req.body || {};
+
+    // ccweb-companion mod: a Bash call wanting the web dialog's answer. Hold the
+    // mod's POST open (this is its whole point) until the browser answers via
+    // /api/hooks/:sessionId/answer, or 120 s pass — then allow-through, so a
+    // sleeping browser degrades to the terminal flow, never a lost command.
+    if (event.hook_event_name === 'ccweb_permission_request') {
+      const callId = String(event.call_id || '');
+      if (!callId) return res.json({ decision: 'allow-through' });
+      this.broadcastToSession(sessionId, {
+        type: 'hook_event',
+        sessionId,
+        event: 'ccweb_permission_request',
+        call_id: callId,
+        tool_name: event.tool,
+        tool_input: { command: event.command }
+      });
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          this.pendingPermissionRequests.delete(`${sessionId}:${callId}`);
+          resolve(res.json({ decision: 'allow-through' }));
+        }, 120000);
+        this.pendingPermissionRequests.set(`${sessionId}:${callId}`, {
+          resolve: (decision) => {
+            clearTimeout(timer);
+            resolve(res.json({ decision }));
+          }
+        });
+      });
+    }
+
     const message = {
       type: 'hook_event',
       sessionId,
@@ -1603,9 +1641,25 @@ class ClaudeCodeWebServer {
     res.json({ ok: true });
   }
 
+  // The browser pressed a button on a ccweb_permission_request card. Resolve the
+  // held mod POST; unknown/expired callIds answer plainly so the client can't tell.
+  answerPermissionRequest(req, res) {
+    const sessionId = req.params.sessionId;
+    if (!this.claudeSessions.has(sessionId)) return res.status(404).json({ error: 'Unknown session' });
+    const { call_id: callId, decision } = req.body || {};
+    if (!callId || (decision !== 'allow' && decision !== 'deny')) {
+      return res.status(400).json({ error: 'call_id and decision (allow|deny) required' });
+    }
+    const key = `${sessionId}:${callId}`;
+    const pending = this.pendingPermissionRequests.get(key);
+    if (!pending) return res.json({ ok: false, error: 'no such pending request (timeout?)' });
+    this.pendingPermissionRequests.delete(key);
+    pending.resolve(decision);
+    res.json({ ok: true });
+  }
+
   // Record the conversation id Claude reports at SessionStart. Returns true when
   // it changed, which is the only case worth a disk write.
-  //
   // Claude sends `session_id`; nothing else in the payload is trusted here.
   recordClaudeSessionStart(session, event) {
     const real = event && event.session_id;

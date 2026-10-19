@@ -153,6 +153,9 @@ class ClaudeBridge {
       // Hook relay token: inherited by the ExitPlanMode hook (cc-hook.js) via the
       // environment instead of argv, so it doesn't leak through /proc/<pid>/cmdline.
       if (hookToken) childEnv.CCWEB_HOOK_TOKEN = hookToken;
+      // Read by the ccweb-companion mod ($.env.get) to reach the relay: the port
+      // is not secret but env beats another argv surface.
+      if (hookToken && hookPort) childEnv.CCWEB_HOOK_PORT = String(hookPort);
       delete childEnv.CLAUDE_CODE_CHILD_SESSION;
       return spawn(this.claudeCommand, [...idArgs, ...baseArgs], {
         cwd: workingDir,

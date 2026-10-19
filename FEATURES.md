@@ -360,6 +360,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-12 | 信任文件夹的提示不是盲按回车：先读出光标离「Yes, I trust this folder」差几行再按方向键确认；读不出来就把选择留给你（盲按会选中 No 直接退出） | 手工 | `test/claude-bridge.test.js` |
 | CLA-13 | 传给 Claude 的标签名先去掉控制字符并截断到 80 字，超长或带控制符的名字不会弄坏终端标题 | 手工 | `test/start-options.test.js` |
 | CLA-14 | 注入 `tui: default` 会压过用户全局的 fullscreen 设置，并让 Claude 不再反复询问是否切换渲染器 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` |
+| CLA-18 | 网页权限卡片（ccweb-companion mod 配套）：mod 把待执行的 Bash 命令 POST 到 hook 端点并挂起等待；网页弹出「Claude 想执行一条命令」卡片，允许/拒绝经 answer 端点回传，超时 120 秒自动放行（回退到终端流程）；端口经环境变量告知 mod | `route:POST /api/hooks/:sessionId/answer` `env:CCWEB_HOOK_PORT` `ws-client:app.js:hook_event` | `test/permission-card.test.js` |
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`（原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
