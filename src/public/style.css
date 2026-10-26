@@ -872,6 +872,55 @@ body.sidebar-hidden .spaces-sidebar {
     overflow-wrap: anywhere;
 }
 
+/* New-space dialog (spaces.js): name + dir + recent-dir chips. */
+.new-space-modal .modal-content {
+    max-width: 420px;
+}
+
+.new-space-recents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px;
+}
+
+.new-space-recent-chip {
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.new-space-recent-chip:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.new-space-error {
+    color: var(--error);
+    font-size: 12px;
+    margin: 4px 0 0;
+}
+
+/* Space mode of the new-tab dialog (openNewTabDialog({space})): the folder is
+   the space's, locked — the way out of it (up / home / browse / recents /
+   typing a path) is hidden rather than merely ignored. */
+.new-tab-modal.space-locked #folderUpBtn,
+.new-tab-modal.space-locked #folderHomeBtn,
+.new-tab-modal.space-locked #newTabBrowseBtn,
+.new-tab-modal.space-locked #newTabRecent,
+.new-tab-modal.space-locked #newFolderNameInput {
+    display: none !important;
+}
+
+.new-tab-modal.space-locked #currentPathInput {
+    opacity: .75;
+    cursor: default;
+}
+
 /* Session reconcile picker (shown on refresh only when the tab set diverges). */
 .session-reconcile-modal .modal-content { padding: 16px 0 12px; max-width: 560px; }
 .session-reconcile-modal .modal-header { padding: 0 20px 6px; }
@@ -1010,10 +1059,24 @@ body.sidebar-hidden .spaces-sidebar {
 }
 
 /* Context menu for tabs */
-.pane-session-menu { position: absolute; z-index: 3000; min-width: 220px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
+/* z-index 10002: the sidebar's own context menu must not sit under the chrome
+   the Start overlay lifts (header/sidebar 5001, modals 5004) — a menu is a
+   popup and belongs on top of everything currently on screen. */
+.pane-session-menu { position: absolute; z-index: 10002; min-width: 220px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
 .pane-session-item { padding:8px 10px; border-radius:6px; cursor:pointer; color: var(--text-primary); }
 .pane-session-item.used { color: var(--text-secondary); }
 .pane-session-item:hover { background: var(--bg-tertiary); }
+
+/* The 移动到空间… submenu inside the context menu (session-manager.js). */
+.pane-submenu { position: relative; }
+.pane-submenu-list { display: none; position: absolute; left: calc(100% + 4px); top: 0; min-width: 180px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
+.pane-submenu:hover .pane-submenu-list { display: block; }
+@media (max-width: 768px) {
+    /* No hover on a phone: the submenu opens as an inline section instead of
+       flying off the right edge of the screen. */
+    .pane-submenu-list { position: static; margin-top: 4px; box-shadow: none; }
+    .pane-submenu .pane-submenu-list { display: block; }
+}
 
 /* Split View — CSS grid; orientation swaps columns <-> rows (see splits.js applyLayout) */
 .split-container {

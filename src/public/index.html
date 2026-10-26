@@ -461,6 +461,35 @@
              controls keep their old ids, which is what loadFolders and friends
              address. The Start Claude prompt (#startPrompt) stays for restarting
              a stopped session. -->
+        <!-- New space: a name + a working directory. Recent dirs are offered
+             as one-tap fills; the path is validated server-side (403 outside
+             the allowed area). spaces.js owns the whole flow. -->
+        <div class="session-modal new-space-modal" id="newSpaceModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>新建空间</h2>
+                    <button class="close-btn" id="newSpaceCloseX" type="button">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label for="newSpaceName">空间名</label>
+                        <input type="text" id="newSpaceName" maxlength="200" placeholder="如：投标前台" autocomplete="off">
+                    </div>
+                    <div class="setting-group">
+                        <label for="newSpaceDir">工作目录</label>
+                        <input type="text" id="newSpaceDir" spellcheck="false" autocomplete="off" placeholder="/Users/you/work/project">
+                    </div>
+                    <div class="new-space-recents" id="newSpaceRecents"></div>
+                    <p class="setting-hint">空间 = 名字 + 工作目录；在空间下新建的任务都以该目录启动。之后改目录只影响新任务，不改已有任务。</p>
+                    <p class="new-space-error" id="newSpaceError" hidden></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="newSpaceCancelBtn" type="button">取消</button>
+                    <button class="btn btn-primary" id="newSpaceCreateBtn" type="button">创建</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Generic confirmation dialog (deleting a task / a space — the user's
              2026-10-26 ask: 删除时，要有确认弹窗). app.confirmDialog shows it and
              answers with a Promise<boolean>. -->

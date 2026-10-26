@@ -607,7 +607,7 @@ class SessionTabManager {
                 <span class="tab-status ${status}"></span>
                 <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
             </div>
-            <span class="tab-close" title="Close tab">
+            <span class="tab-close" title="删除任务">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -731,9 +731,49 @@ class SessionTabManager {
         if (this.sidebar) this.sidebar.setActive(sessionId);
     }
 
-    closeSession(sessionId, { skipServerRequest = false } = {}) {
+    // Closing a task deletes the session server-side (stopping its Claude).
+    // The user asked on 2026-10-26 that deletion always confirm — one dialog,
+    // shown here at the single funnel every close path goes through (×,
+    // middle-click, Ctrl+W, Close Others). skipConfirm is for callers that
+    // just asked the question themselves (the conversations panel's trash, the
+    // Close Others batch); a session_deleted from another window arrives with
+    // skipServerRequest and never confirms either — it is news, not an act.
+    async confirmClose(sessionIds, { keeper = null } = {}) {
+        if (!this.claudeInterface || !this.claudeInterface.confirmDialog) return true;
+        const nameOf = (id) => {
+            const s = this.activeSessions.get(id);
+            return (s && s.name) || 'Session';
+        };
+        const running = sessionIds.filter(id => {
+            const s = this.activeSessions.get(id);
+            return s && s.status === 'active';
+        });
+        const first = sessionIds.length === 1
+            ? `删除任务「${nameOf(sessionIds[0])}」？`
+            : (keeper
+                ? `删除「${nameOf(keeper)}」之外的 ${sessionIds.length} 个任务？`
+                : `删除这 ${sessionIds.length} 个任务？`);
+        const body = [first,
+            running.length > 0 ? `其中 ${running.length} 个任务正在运行 Claude，会被停止。` : null,
+            '对话记录保留，之后可从「继续之前的对话」里恢复。'].filter(Boolean).join('\n');
+        return this.claudeInterface.confirmDialog({
+            title: sessionIds.length === 1 ? '删除任务' : '删除其他任务',
+            body,
+            confirmText: '删除',
+            danger: true,
+        });
+    }
+
+    closeSession(sessionId, { skipServerRequest = false, skipConfirm = false } = {}) {
         const tab = this.tabs.get(sessionId);
         if (!tab) return;
+
+        if (!skipConfirm && !skipServerRequest) {
+            // Fire-and-forget on purpose: closeSession has synchronous callers
+            // (click handlers); the dialog resolves and does the real close.
+            this.confirmClose([sessionId]).then((ok) => { if (ok) this.closeSession(sessionId, { skipConfirm: true }); });
+            return;
+        }
 
         const orderedIds = this.getOrderedTabIds();
         const closedIndex = orderedIds.indexOf(sessionId);
@@ -841,10 +881,14 @@ class SessionTabManager {
         });
     }
 
-    // Close all other tabs except the given session
-    closeOthers(sessionId) {
-        const ids = this.getOrderedTabIds();
-        ids.forEach(id => { if (id !== sessionId) this.closeSession(id); });
+    // Close all other tabs except the given session — ONE confirmation for
+    // the whole batch (the user's 2026-10-26 rule is "deletion confirms", not
+    // "confirms N times").
+    async closeOthers(sessionId) {
+        const ids = this.getOrderedTabIds().filter(id => id !== sessionId);
+        if (ids.length === 0) return;
+        if (!(await this.confirmClose(ids, { keeper: sessionId }))) return;
+        ids.forEach(id => this.closeSession(id, { skipConfirm: true }));
     }
 
     // Context menu for a session tab

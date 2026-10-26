@@ -2780,7 +2780,10 @@ class ClaudeCodeWebInterface {
         const modal = $('newTabModal');
         // The space this dialog was opened for (sidebar + on a space). Null for
         // the generic entries; the submit path uses it to file the new task.
-        this._newTabSpace = space;
+        // With a space the folder is LOCKED to its dir — a task in space A
+        // running somewhere else would defeat the grouping — and the default
+        // name becomes task N (every row would otherwise read the folder name).
+        this._newTabSpace = space || null;
         this.pendingStart = null;
         this.hideCreateFolderInput();
         const nameInput = $('sessionName');
@@ -2795,22 +2798,33 @@ class ClaudeCodeWebInterface {
         this.setNewSessionMode('new');
 
         modal.classList.add('active');
+        modal.classList.toggle('space-locked', !!this._newTabSpace);
+        // The path bar is how a folder gets changed (typing + Enter, NEW-06);
+        // a locked dialog must not offer a way out of the space's dir.
+        $('currentPathInput').readOnly = !!this._newTabSpace;
         // Prevent body scroll on mobile when the dialog is open
         if (this.isMobile) document.body.style.overflow = 'hidden';
 
-        // First recent folder that still opens; the ones that don't (deleted,
-        // or no longer allowed) stop being offered. None left: open the tree,
-        // that is what they need.
         let loaded = false;
-        for (const dir of this.newTabRecentDirs().filter(d => !this.nonProjectDirReason(d))) {
-            if ((loaded = await this.loadFolders(dir))) break;
-            // Forget it only when the server says it cannot be opened (403/404:
-            // gone, or not allowed). Signed out, offline or a restarting
-            // server says nothing about the folder — stop, and keep the list.
-            if (this._lastFolderStatus === 403 || this._lastFolderStatus === 404) this.forgetRecentDir(dir);
-            else break;
+        if (this._newTabSpace) {
+            // Space mode: the space's dir, nothing else. Continuing a past
+            // conversation of that dir still works (NEW-12) — it is a folder
+            // property, not a folder change.
+            loaded = await this.loadFolders(this._newTabSpace.dir);
+        } else {
+            // First recent folder that still opens; the ones that don't (deleted,
+            // or no longer allowed) stop being offered. None left: open the tree,
+            // that is what they need.
+            for (const dir of this.newTabRecentDirs().filter(d => !this.nonProjectDirReason(d))) {
+                if ((loaded = await this.loadFolders(dir))) break;
+                // Forget it only when the server says it cannot be opened (403/404:
+                // gone, or not allowed). Signed out, offline or a restarting
+                // server says nothing about the folder — stop, and keep the list.
+                if (this._lastFolderStatus === 403 || this._lastFolderStatus === 404) this.forgetRecentDir(dir);
+                else break;
+            }
         }
-        this.toggleNewTabBrowser(!loaded);
+        this.toggleNewTabBrowser(!loaded && !this._newTabSpace);
         // Signed out: the login prompt is already up; asking again only
         // raises it a second time.
         if (!loaded && this._lastFolderStatus !== 401) await this.loadFolders();
@@ -2825,6 +2839,9 @@ class ClaudeCodeWebInterface {
         const modal = document.getElementById('newTabModal');
         if (!modal.classList.contains('active')) return;
         modal.classList.remove('active');
+        modal.classList.remove('space-locked');
+        document.getElementById('currentPathInput').readOnly = false;
+        this._newTabSpace = null;
         // Restore body scroll
         if (this.isMobile) document.body.style.overflow = '';
         this.hideCreateFolderInput();
@@ -2890,7 +2907,12 @@ class ClaudeCodeWebInterface {
         if (nameInput.dataset.userEdited === 'true') return;
         nameInput.value = this.selectedConversation
             ? this.conversationName(this.selectedConversation)
-            : ((this.currentFolderPath || '').split('/').pop() || '');
+            // In space mode the folder-name case becomes task N: the folder is
+            // the same for every task in the group, so its name says nothing
+            // about WHICH task this is.
+            : (this._newTabSpace && this.spacesSidebar
+                ? this.spacesSidebar.nextTaskName(this._newTabSpace.id)
+                : ((this.currentFolderPath || '').split('/').pop() || ''));
     }
 
     loadStored(key, fallback) {
@@ -3469,6 +3491,7 @@ class ClaudeCodeWebInterface {
             }
             const resumeId = resuming ? this.selectedConversation.id : undefined;
             const name = document.getElementById('sessionName').value.trim()
+                || (this._newTabSpace && this.spacesSidebar ? this.spacesSidebar.nextTaskName(this._newTabSpace.id) : '')
                 || workingDir.split('/').pop() || `Session ${new Date().toLocaleString()}`;
             const options = {};
             const model = document.getElementById('newTabModelSelect').value;

@@ -129,6 +129,117 @@ class SpacesSidebar {
         });
 
         document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeDrawer());
+        document.getElementById('newSpaceBtn')?.addEventListener('click', () => this.openNewSpaceDialog());
+    }
+
+    // ---- new space dialog (#newSpaceModal) --------------------------------
+    //
+    // Name + working directory. The recent dirs (the new-tab dialog's own
+    // list, cc-web-recent-dirs) are offered as one-tap fills; the path itself
+    // is validated server-side on create — a 403 names the real reason, which
+    // beats re-implementing the folder browser a second time for a field most
+    // often filled by paste or recents anyway.
+
+    openNewSpaceDialog() {
+        const modal = document.getElementById('newSpaceModal');
+        if (!modal) return;
+        this.closeDrawer();
+        document.getElementById('newSpaceName').value = '';
+        document.getElementById('newSpaceDir').value = '';
+        this.setNewSpaceError(null);
+        this.renderNewSpaceRecents();
+        modal.classList.add('active');
+
+        const close = () => this.closeNewSpaceDialog();
+        const cancel = document.getElementById('newSpaceCancelBtn');
+        const closeX = document.getElementById('newSpaceCloseX');
+        const create = document.getElementById('newSpaceCreateBtn');
+        const name = document.getElementById('newSpaceName');
+        const dir = document.getElementById('newSpaceDir');
+        // Rebind per open: the listeners below read the current input values.
+        create.onclick = () => this.submitNewSpace();
+        cancel.onclick = close;
+        closeX.onclick = close;
+        name.onkeydown = dir.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); this.submitNewSpace(); }
+            if (e.key === 'Escape') close();
+        };
+        modal.onmousedown = (e) => { if (e.target === modal) close(); };
+        setTimeout(() => name.focus(), 0);
+    }
+
+    closeNewSpaceDialog() {
+        document.getElementById('newSpaceModal')?.classList.remove('active');
+    }
+
+    setNewSpaceError(message) {
+        const el = document.getElementById('newSpaceError');
+        if (!el) return;
+        el.hidden = !message;
+        el.textContent = message || '';
+    }
+
+    renderNewSpaceRecents() {
+        const box = document.getElementById('newSpaceRecents');
+        if (!box) return;
+        const dirs = (this.app.newTabRecentDirs ? this.app.newTabRecentDirs() : [])
+            .filter(d => !this.spaces.some(s => s.dir === d));
+        box.innerHTML = '';
+        if (dirs.length === 0) return;
+        dirs.forEach(dir => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'new-space-recent-chip';
+            chip.textContent = dir.split('/').pop() || dir;
+            chip.title = dir;
+            chip.onclick = () => {
+                document.getElementById('newSpaceDir').value = dir;
+                const nameInput = document.getElementById('newSpaceName');
+                // A dir you have worked in before probably names the space
+                // for you; typing over it is one keystroke, not a punishment.
+                if (!nameInput.value.trim()) nameInput.value = dir.split('/').pop() || dir;
+            };
+            box.appendChild(chip);
+        });
+    }
+
+    async submitNewSpace() {
+        const nameInput = document.getElementById('newSpaceName');
+        const dirInput = document.getElementById('newSpaceDir');
+        const dir = dirInput.value.trim();
+        const name = nameInput.value.trim() || (dir ? (dir.split('/').pop() || dir) : '');
+        this.setNewSpaceError(null);
+        if (!dir) {
+            this.setNewSpaceError('请填写工作目录。');
+            dirInput.focus();
+            return;
+        }
+        if (this.spaces.some(s => s.dir === dir)) {
+            this.setNewSpaceError('这个目录已经是另一个空间的工作目录。');
+            dirInput.focus();
+            return;
+        }
+        const btn = document.getElementById('newSpaceCreateBtn');
+        btn.disabled = true;
+        try {
+            const res = await this.app.authFetch('/api/spaces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, dir })
+            });
+            if (!res || !res.ok) {
+                const data = res ? await res.json().catch(() => ({})) : {};
+                this.setNewSpaceError(data.message || data.error || '创建空间失败，请检查目录路径。');
+                return;
+            }
+            this.closeNewSpaceDialog();
+            await this.reloadSpaces();
+            if (this.app.showToast) this.app.showToast(`空间「${name}」已创建`);
+        } catch (error) {
+            this.setNewSpaceError('创建空间失败，请检查连接后重试。');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     isNarrow() {

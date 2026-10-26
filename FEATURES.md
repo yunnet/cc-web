@@ -68,7 +68,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 |---|---|---|---|
 | TAB-01 | 每个会话在侧边栏显示为所属空间下的一行任务；默认名是目录名，自定义名优先；悬停显示完整路径（2026-10-26 由顶部标签栏迁入侧边栏，行为不变） | `file:src/public/session-manager.js` | `test/tab-working-dir.test.js` |
 | TAB-02 | 当前任务整行填充强调色、白色粗体 | 手工 | — |
-| TAB-03 | 标签的 × 关闭按钮（悬停时出现），点了关闭标签并删除会话，停掉其中的 Claude，不确认 | `js-control:session-manager.js:Close tab` | `test/session-views.test.js` |
+| TAB-03 | 任务的 × 删除按钮（悬停时出现），点了先弹确认框（用户 2026-10-26：「删除时，要有确认弹窗」），确认后删除任务并停止其中的 Claude；取消则不动；提示对话记录保留 | `js-control:session-manager.js:删除任务` | `test/session-views.test.js` |
 | TAB-04 | 中键点击标签关闭它 | 手工 | — |
 | TAB-05 | 右键标签弹出菜单「Close Others」，点菜单外关闭 | 手工 | — |
 | TAB-06 | 双击标签名原地重命名：回车或失焦保存，Esc 恢复，清空保留原名；名字写到服务器，所有设备可见；只有真的改了才算自定义名 | `key:session-manager.js:Enter` `key:session-manager.js:Escape` `route:PATCH /api/sessions/:sessionId` | `test/session-rename.test.js` |
@@ -76,7 +76,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-08 | 切换到的任务不在侧边栏可视区时，侧边栏自动滚动把它露出来 | 手工 | — |
 | TAB-09 | 关闭当前标签后自动切到最近用过的标签；关掉最后一个时显示 Start 面板而不是空终端 | 手工 | — |
 | TAB-10 | 标签顺序和当前标签存在浏览器里，刷新后原样恢复 | 手工 | — |
-| TAB-11 | Ctrl/Cmd+T 打开新建标签对话框；Ctrl/Cmd+W 关闭当前标签（删除会话，不确认） | `key:session-manager.js:t` `key:session-manager.js:w` | — |
+| TAB-11 | Ctrl/Cmd+T 打开新建标签对话框；Ctrl/Cmd+W 删除当前任务（删除会话，带确认弹窗——2026-10-26 用户要求「删除时，要有确认弹窗」；无任务时拦下不误关浏览器标签） | `key:session-manager.js:t` `key:session-manager.js:w` | — |
 | TAB-12 | Ctrl/Cmd+Tab 切到最近用过的标签，Ctrl/Cmd+Shift+Tab 切到左边一个（循环）；Alt+1…9 按位置跳转 | `key:session-manager.js:Tab` | — |
 | TAB-13 | 标签状态圆点：运行中绿色脉冲，空闲蓝色呼吸，断开或出错红色 | 手工 | — |
 | TAB-14 | 后台标签从运行转为空闲时标为未读（圆点变蓝闪烁、名字蓝色粗体），切过去后清除 | 手工 | — |
@@ -85,7 +85,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-17 | Claude 在没人看的标签里等待权限批准（包括用提问框问你、在计划模式里等你批准计划，2.1.278 实测这两种也发 permission_prompt）时，圆点变成琥珀色慢脉冲，名字后出现「待批准」徽章，优先于 ✓；只有权限请求触发，空闲提醒不触发 | `state:awaiting` `ws-client:app.js:hook_event` `ws-client:splits.js:hook_event` | `test/claude-title.test.js` |
 | TAB-18 | 只有「没人在看」的标签才打 ✓ 和「待批准」；切到标签、Claude 重新开始工作、页面回到前台且标签在眼前时清除 | 手工 | `test/claude-title.test.js` |
 | TAB-19 | 页面在后台且有标签带 ✓ 时，浏览器标签标题前加「✓ 」，回到页面后去掉 | 手工 | `test/claude-title.test.js` |
-| TAB-20 | 右键菜单的「Close Others」会把其它标签逐个关闭并删除对应会话（停掉其中的 Claude），且不二次确认 | 手工 | — |
+| TAB-20 | 右键菜单的「Close Others」把其它任务删除前弹**一次**批量确认（显示数量与运行中的 Claude 数），确认后逐个删除；不再逐个弹、也不无确认（2026-10-26 布局改造随删除确认一并调整） | 手工 | — |
 | TAB-21 | 关掉当前标签时若没有最近访问记录（例如刚刷新过），改为切到被关标签原位置上的标签 | 手工 | — |
 | TAB-22 | 最近使用顺序最多记 50 个且不落盘：刷新后 Ctrl/Cmd+Tab 退化为按可视顺序切换 | 手工 | — |
 | TAB-23 | 即使一个标签都没有，Ctrl/Cmd+W 也会被拦下，不会误关浏览器标签页 | `key:session-manager.js:w` | — |
@@ -102,7 +102,8 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可整条收起，窄屏（≤768px）变左滑抽屉带遮罩 | `control:sidebarToggleBtn` `control:sidebarCollapseBtn` `file:src/public/spaces.js` | `test/features.test.js` |
 | SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器全设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
-| SPACE-08 | 侧边栏底部「＋ 新建空间」：名字 + 工作目录，建好即可在空间下开任务 | `control:newSpaceBtn` | — |
+| SPACE-08 | 侧边栏底部「＋ 新建空间」：名字（留空自动取目录名）+ 工作目录（最近目录一键填入，路径服务端校验、越界 403 有中文提示；重复目录拒绝）；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | — |
+| SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用 | `file:src/public/app.js` | — |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |
@@ -174,7 +175,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SES-01 | 工具栏的对话气泡按钮打开 Sessions 面板，头部显示当前目录（长路径截掉前面） | `control:historyBtn` `file:src/public/conversations.js` | — |
 | SES-02 | 「Sessions (N)」列出服务器上所有会话：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
 | SES-03 | 点会话行：已开标签的切过去，没开的新开一个标签 | 手工 | — |
-| SES-04 | 会话行的垃圾桶删除会话，先确认「…This stops any running Claude process.」；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:Delete session` `route:DELETE /api/sessions/:sessionId` | — |
+| SES-04 | 会话行的垃圾桶删除会话，先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
 | SES-05 | 「Conversations in this folder (N)」只列出没有会话占用的历史对话，点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
 | SES-06 | 空状态和出错提示：No sessions yet. / No previous conversations in this folder. / Every conversation here is already open. / Could not load sessions. / No folder selected | 手工 | — |
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |
