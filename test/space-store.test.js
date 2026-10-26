@@ -277,18 +277,26 @@ describe('spaces on the server', function () {
   });
 
   describe('POST /api/sessions/create with spaceId', function () {
-    it('assigns a known space, and degrades an unknown one to ungrouped', async function () {
-      server.spaces = [spaceOf()];
+    it('assigns a known space; defaults to the dir\'s space; else ungrouped', async function () {
+      server.spaces = [spaceOf()]; // dir /Users/dev/work/cgs-master
       const create = route('post', '/api/sessions/create');
 
       let res = mockRes();
       await create({ body: { name: 'task 1', workingDir: '/Users/dev/work/cgs-master', spaceId: UUID(1) } }, res);
       assert.strictEqual(res.statusCode, 200);
-      assert.strictEqual(res.body.session.spaceId, UUID(1));
+      assert.strictEqual(res.body.session.spaceId, UUID(1), 'explicit id wins');
 
+      // A stale id from some other device: the dir is a space, so join that
+      // rather than dropping to 未分组.
       res = mockRes();
       await create({ body: { name: 'task 2', workingDir: '/Users/dev/work/cgs-master', spaceId: UUID(8) } }, res);
-      assert.strictEqual(res.statusCode, 200, 'a stale space list on some device must not block creation');
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.body.session.spaceId, UUID(1), 'unknown id falls back to the dir\'s space');
+
+      // A dir no space binds: genuinely ungrouped.
+      res = mockRes();
+      await create({ body: { name: 'task 3', workingDir: '/Users/dev/work/somewhere-else' } }, res);
+      assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body.session.spaceId, null);
     });
   });

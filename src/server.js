@@ -151,6 +151,15 @@ class ClaudeCodeWebServer {
   resolveSpaceId(raw) {
     return typeof raw === 'string' && this.spaces.some((s) => s.id === raw) ? raw : null;
   }
+
+  // Default a session with no explicit (or no longer known) space to the one
+  // bound to its working directory: opening a task in a directory that IS a
+  // space joins it, rather than landing in 未分组 because nobody passed the id.
+  spaceIdForDir(dir) {
+    if (!dir) return null;
+    const space = this.spaces.find((s) => s.dir === dir);
+    return space ? space.id : null;
+  }
   
   setupAutoSave() {
     // Auto-save sessions every 30 seconds
@@ -1287,8 +1296,9 @@ class ClaudeCodeWebServer {
       active: false,
       workingDir: validWorkingDir,
       // The sidebar space this task belongs to. resolveSpaceId degrades an
-      // unknown id to null (ungrouped) instead of rejecting the create.
-      spaceId: this.resolveSpaceId(spaceId),
+      // unknown id to null; from there the working dir's own space (if any)
+      // is the natural default.
+      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
       planDirs: [], // per-session extra plan directories (additive to global + auto-discovery)
       // Claude has been started under this id before — by us, or (when resuming
       // a conversation from the history list) by whoever recorded it.
@@ -1377,7 +1387,7 @@ class ClaudeCodeWebServer {
       lastActivity: new Date(),
       active: false,
       workingDir: validWorkingDir,
-      spaceId: this.resolveSpaceId(spaceId),
+      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
       connections: new Set([wsId]),
       // Flow control: connections that have asked us to pause the PTY.
       pausedConnections: new Set(),

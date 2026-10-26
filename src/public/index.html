@@ -69,46 +69,45 @@
 <body>
     <div id="app">
         
-        <!-- Session Tabs Bar -->
-        <div class="session-tabs-bar" id="sessionTabsBar">
+        <!-- App header: menu · breadcrumb (space · task · dir) · global actions.
+             The old top tab bar's buttons moved here unchanged — same ids, so
+             their wiring in app.js / splits.js / git-branches.js is untouched.
+             Tasks live in the sidebar below; the + here creates one in the
+             active space (or opens the plain dialog when nothing is active). -->
+        <header class="app-header" id="appHeader">
             <!-- Menu button — opens the slide-in menu with Sessions / Close
-                 Session / Reconnect / Clear / Settings. Shown on both mobile and
-                 desktop (desktop styling + right-side placement via the
-                 min-width:769px rule in style.css). Was previously desktop-hidden,
-                 which left desktop users unable to exit a session or switch
-                 project folder. -->
+                 Session / Reconnect / Clear / Settings. -->
             <button class="hamburger-btn" id="hamburgerBtn" title="Settings" aria-label="Open settings menu">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="3"/>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                 </svg>
             </button>
-            <div class="tabs-section">
-                <div class="tabs-container" id="tabsContainer">
-                    <!-- Tabs will be dynamically added here -->
-                </div>
-                <button class="tab-new" id="tabNewBtn" title="New Session (Ctrl+T)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Spaces drawer toggle: the sidebar is always visible on desktop,
+                 becomes a slide-in drawer on narrow screens (see style.css). -->
+            <button class="header-icon-btn" id="sidebarToggleBtn" title="Spaces" aria-label="Toggle the spaces sidebar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="16" rx="2"/>
+                    <line x1="9" y1="4" x2="9" y2="20"/>
+                </svg>
+            </button>
+            <!-- Breadcrumb: active space · active task · the task's working
+                 directory (middle-truncated). spaces.js keeps it in step with
+                 tab switches. -->
+            <div class="header-breadcrumb" id="headerBreadcrumb">
+                <span class="crumb-space" id="crumbSpace"></span>
+                <span class="crumb-sep" aria-hidden="true">·</span>
+                <span class="crumb-task" id="crumbTask"></span>
+                <span class="crumb-dir" id="crumbDir"></span>
+            </div>
+            <div class="header-actions">
+                <button class="header-new-task" id="headerNewTaskBtn" title="New task (Ctrl+T)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/>
                         <line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
+                    <span>任务</span>
                 </button>
-            </div>
-            <!-- Overflow dropdown for mobile - outside tabs-section to prevent scrolling issues -->
-            <div class="tab-overflow-wrapper" id="tabOverflowWrapper" style="display: none;">
-                <button class="tab-overflow-btn" id="tabOverflowBtn" title="More tabs">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="5" r="1"/>
-                        <circle cx="12" cy="12" r="1"/>
-                        <circle cx="12" cy="19" r="1"/>
-                    </svg>
-                    <span class="tab-overflow-count">0</span>
-                </button>
-                <div class="tab-overflow-menu" id="tabOverflowMenu">
-                    <!-- Overflow tabs will be listed here -->
-                </div>
-            </div>
-            <div class="tab-actions">
                 <button class="tab-settings" id="layoutBtn" title="Split layout (Ctrl+\\)" aria-label="Split layout">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="4" width="18" height="16" rx="2"/>
@@ -155,7 +154,38 @@
                 </svg>
                 </button>
             </div>
-        </div>
+        </header>
+
+        <div class="app-body">
+            <!-- Spaces sidebar: 空间 (named working-directory groups) with the
+                 任务 (session tabs) nested under each. spaces.js renders the
+                 groups; session-manager appends its .session-tab rows into each
+                 group's .space-tasks container, so every tab behaviour — marks,
+                 rename, drag, context menu — keeps working where it always
+                 lived. -->
+            <aside class="spaces-sidebar" id="spacesSidebar" aria-label="Spaces and tasks">
+                <div class="sidebar-head">
+                    <span class="sidebar-title">空间</span>
+                    <button class="sidebar-collapse" id="sidebarCollapseBtn" title="Hide the sidebar" aria-label="Hide the sidebar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="spaces-tree" id="spacesTree">
+                    <!-- Space groups render here (spaces.js) -->
+                </div>
+                <div class="sidebar-foot">
+                    <button class="sidebar-new-space" id="newSpaceBtn" title="Create a space bound to a working directory">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span>新建空间</span>
+                    </button>
+                </div>
+            </aside>
+            <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
 
 
         <div class="mobile-menu" id="mobileMenu">
@@ -188,6 +218,7 @@
                 </svg>
             </button>
         </main>
+        </div><!-- /.app-body -->
 
         <!-- App-wide overlay (moved out of terminal container to avoid width issues) -->
         <div class="terminal-overlay" id="overlay" style="display: none;">
@@ -430,6 +461,25 @@
              controls keep their old ids, which is what loadFolders and friends
              address. The Start Claude prompt (#startPrompt) stays for restarting
              a stopped session. -->
+        <!-- Generic confirmation dialog (deleting a task / a space — the user's
+             2026-10-26 ask: 删除时，要有确认弹窗). app.confirmDialog shows it and
+             answers with a Promise<boolean>. -->
+        <div class="session-modal confirm-modal" id="confirmModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="confirmTitle">确认</h2>
+                    <button class="close-btn" id="confirmCancelX" type="button">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="confirm-body" id="confirmBody"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="confirmCancelBtn" type="button">取消</button>
+                    <button class="btn btn-primary" id="confirmOkBtn" type="button">确认</button>
+                </div>
+            </div>
+        </div>
+
         <div class="session-modal new-tab-modal" id="newTabModal">
             <div class="modal-content">
                 <div class="modal-header">
@@ -626,6 +676,7 @@
 
     <script src="auth.js"></script>
     <script src="session-manager.js"></script>
+    <script src="spaces.js"></script>
     <script src="claude-title.js"></script>
     <script src="terminal-links.js"></script>
     <script src="splits.js"></script>

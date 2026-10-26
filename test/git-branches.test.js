@@ -312,13 +312,13 @@ describe('branch panel styling', function () {
 
     // 340px right-anchored to a 44px button puts the left edge at -10px on a
     // 390px phone. Below 480px the wrapper drops its own positioning so the
-    // panel anchors to the tab bar instead — which only works because the bar
-    // is the positioning context, so assert that too rather than leave it to
-    // luck.
+    // panel anchors to the app header instead (the tab bar before the
+    // 2026-10-26 sidebar layout) — which only works because the header is the
+    // positioning context, so assert that too rather than leave it to luck.
     assert.ok(/@media \(max-width: 480px\)\s*\{\s*\.branch-wrapper\s*\{\s*position:\s*static/.test(CSS),
-      'narrow screens re-anchor the panel to the tab bar');
-    assert.ok(/\.session-tabs-bar\s*\{[^}]*position:\s*relative/.test(CSS),
-      'the tab bar is the positioning context that re-anchoring falls back to');
+      'narrow screens re-anchor the panel to the app header');
+    assert.ok(/\.app-header\s*\{[^}]*position:\s*relative/.test(CSS),
+      'the app header is the positioning context that re-anchoring falls back to');
   });
 });
 

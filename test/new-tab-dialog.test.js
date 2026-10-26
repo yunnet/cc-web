@@ -111,10 +111,11 @@ describe('new tab dialog', function () {
   });
 
   it('is where every "new" entry point lands', function () {
-    // + in the tab bar, Ctrl+T and the Sessions panel go through the tab
+    // + in the header, the spaces sidebar and Ctrl+T go through the tab
     // manager; the rest call the dialog directly. The old chain's openers must
-    // not come back as a second road.
-    assert.ok(/createNewSession\(\)\s*\{[\s\S]*?openNewTabDialog\(\)/.test(TABS), 'tab manager → dialog');
+    // not come back as a second road. (The call carries the active space for
+    // the sidebar's +; undefined for the generic entries.)
+    assert.ok(/createNewSession\(\)\s*\{[\s\S]*?openNewTabDialog\(/.test(TABS), 'tab manager → dialog');
     assert.ok(/ensureProjectFolder\(options\)\s*\{[\s\S]*?openNewTabDialog\(\{ reason/.test(APP),
       'a refused folder reopens the dialog with its reason');
     for (const gone of ['showFolderBrowser', 'showNewSessionModal', 'selectCurrentFolder', 'isCreatingNewSession']) {

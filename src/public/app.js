@@ -83,6 +83,12 @@ class ClaudeCodeWebInterface {
         
         // Initialize the session tab manager and wait for sessions to load
         this.sessionTabManager = new SessionTabManager(this);
+        // The spaces sidebar owns the groups the tabs sit in; it must exist and
+        // be loaded (GET /api/spaces) before the tab manager's init — addTab
+        // resolves its container through it.
+        this.spacesSidebar = new window.SpacesSidebar(this);
+        this.sessionTabManager.sidebar = this.spacesSidebar;
+        await this.spacesSidebar.load();
         const reconcile = await this.sessionTabManager.init();
         
         // Initialize split container
@@ -991,6 +997,54 @@ class ClaudeCodeWebInterface {
 
     // Minimal self-removing toast (bottom-center). Avoids hijacking the terminal
     // with the full-screen error overlay for transient paste feedback.
+    // A styled yes/no dialog — window.confirm's job, but in the app's own
+    // theme and wording (used for deleting a task or a space: the user asked
+    // on 2026-10-26 that deletion always confirm). Resolves true only on the
+    // confirm button; cancel, ×, Esc and the backdrop all answer false. If the
+    // markup is somehow missing, falls back to window.confirm rather than
+    // silently confirming.
+    confirmDialog({ title = '确认', body = '', confirmText = '确认', cancelText = '取消', danger = false } = {}) {
+        const modal = document.getElementById('confirmModal');
+        if (!modal) return Promise.resolve(window.confirm(`${title}\n\n${body}`));
+        if (this._confirmResolve) this._confirmResolve(false); // one question at a time; withdraw the older one
+
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmBody').textContent = body;
+        document.getElementById('confirmCancelBtn').textContent = cancelText;
+        const okBtn = document.getElementById('confirmOkBtn');
+        okBtn.textContent = confirmText;
+        okBtn.classList.toggle('btn-danger', !!danger);
+        okBtn.classList.toggle('btn-primary', !danger);
+
+        modal.classList.add('active');
+        return new Promise((resolve) => {
+            this._confirmResolve = resolve;
+            const done = (answer) => {
+                modal.classList.remove('active');
+                cleanup();
+                this._confirmResolve = null;
+                resolve(answer);
+            };
+            const onOk = () => done(true);
+            const onCancel = () => done(false);
+            const onKey = (e) => { if (e.key === 'Escape') done(false); };
+            const onBackdrop = (e) => { if (e.target === modal) done(false); };
+            const cleanup = () => {
+                okBtn.removeEventListener('click', onOk);
+                document.getElementById('confirmCancelBtn').removeEventListener('click', onCancel);
+                document.getElementById('confirmCancelX').removeEventListener('click', onCancel);
+                document.removeEventListener('keydown', onKey);
+                modal.removeEventListener('mousedown', onBackdrop);
+            };
+            okBtn.addEventListener('click', onOk);
+            document.getElementById('confirmCancelBtn').addEventListener('click', onCancel);
+            document.getElementById('confirmCancelX').addEventListener('click', onCancel);
+            document.addEventListener('keydown', onKey);
+            modal.addEventListener('mousedown', onBackdrop);
+            okBtn.focus();
+        });
+    }
+
     showToast(message, isError = false, ms = 2200) {
         const el = document.createElement('div');
         el.textContent = message;
@@ -1611,7 +1665,7 @@ class ClaudeCodeWebInterface {
                 
                 // Add tab for the new session if using tab manager
                 if (this.sessionTabManager) {
-                    this.sessionTabManager.addTab(message.sessionId, message.sessionName, 'idle', message.workingDir);
+                    this.sessionTabManager.addTab(message.sessionId, message.sessionName, 'idle', message.workingDir, true, message.spaceId || null);
                     this.sessionTabManager.switchToTab(message.sessionId);
                 }
                 
@@ -2721,9 +2775,12 @@ class ClaudeCodeWebInterface {
     // the project you are already in — is just Enter. `reason` says why it
     // opened (a folder we refuse), `options` carries launch options the user
     // already chose on the Start prompt.
-    async openNewTabDialog({ reason = null, options = null } = {}) {
+    async openNewTabDialog({ reason = null, options = null, space = null } = {}) {
         const $ = (id) => document.getElementById(id);
         const modal = $('newTabModal');
+        // The space this dialog was opened for (sidebar + on a space). Null for
+        // the generic entries; the submit path uses it to file the new task.
+        this._newTabSpace = space;
         this.pendingStart = null;
         this.hideCreateFolderInput();
         const nameInput = $('sessionName');
@@ -3426,7 +3483,10 @@ class ClaudeCodeWebInterface {
             // back to the folder name above, which is not a name anyone gave.
             const nameBox = document.getElementById('sessionName');
             const customName = nameBox.dataset.userEdited === 'true' && nameBox.value.trim() !== '';
-            const created = await this.requestSession({ name, workingDir, resumeId, customName });
+            const created = await this.requestSession({
+                name, workingDir, resumeId, customName,
+                spaceId: this._newTabSpace ? this._newTabSpace.id : undefined
+            });
             if (!created) {
                 // Refused (already open elsewhere, or gone). The list is stale, so
                 // redraw it rather than leaving the dead row selected.
@@ -3441,7 +3501,7 @@ class ClaudeCodeWebInterface {
             // the join lands while attachSessionTab is still awaiting.
             this.pendingStart = { options };
             this.hideNewTabDialog({ cancelled: false });
-            await this.attachSessionTab(created.sessionId, name, workingDir);
+            await this.attachSessionTab(created.sessionId, name, workingDir, created.session ? created.session.spaceId : undefined);
         } finally {
             // Always restored, including on the refusal paths above: a dialog
             // left with a dead button is worse than the duplicate it prevents.
@@ -3453,12 +3513,12 @@ class ClaudeCodeWebInterface {
 
     // POST /api/sessions/create, with the resume-specific failures spelled out.
     // Returns the created session, or null if the server refused.
-    async requestSession({ name, workingDir, resumeId, customName = false }) {
+    async requestSession({ name, workingDir, resumeId, customName = false, spaceId = undefined }) {
         try {
             const response = await this.authFetch('/api/sessions/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, workingDir, resumeId, customName })
+                body: JSON.stringify({ name, workingDir, resumeId, customName, spaceId })
             });
 
             if (response.status === 409) {
@@ -3486,10 +3546,12 @@ class ClaudeCodeWebInterface {
         }
     }
 
-    // Give a freshly created session a tab and switch to it.
-    async attachSessionTab(sessionId, name, workingDir) {
+    // Give a freshly created session a tab and switch to it. The caller passes
+    // the server's own answer for the space (created.session.spaceId), which
+    // already reflects any by-directory defaulting.
+    async attachSessionTab(sessionId, name, workingDir, spaceId = undefined) {
         if (this.sessionTabManager) {
-            this.sessionTabManager.addTab(sessionId, name, 'idle', workingDir);
+            this.sessionTabManager.addTab(sessionId, name, 'idle', workingDir, true, spaceId);
             // switchToTab will handle joining the session
             await this.sessionTabManager.switchToTab(sessionId);
         } else {
