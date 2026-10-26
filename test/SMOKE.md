@@ -43,9 +43,19 @@
 | S28 | SKILL-09 | 在搜索框输入一个**已安装**插件的名字 | 出现「你已经装了（N）」分组，该行带「已安装」徽章——CLI 的可装列表本就不含已装项，没有这一组会显示成「搜索结果（0）」 |
 | S29 | SKILL-22 | 切到「市场」，量添加行 | `#skillsMarketAddBtn` 和 `#skillsMarketInput` 的底边都在 `.modal-content` 内，且命中测试命中自己；390 宽时按钮高 ≥ 44px，`document.documentElement.scrollWidth <= innerWidth` |
 | S30 | SKILL-04 | 点一行技能展开 | 出现 `pre.skills-detail`，内容以 `---` 开头（SKILL.md 的 frontmatter），长度 > 100 |
+| S31 | SPACE-05、TAB-01 | 建两个空间各带任务，量 `.spaces-sidebar` 与 `.app-header` | 侧边栏宽 264±6、Header 高 44±6、`.main` 的 x 等于侧边栏右缘；任务行宽 > 180 |
+| S32 | SPACE-05、TAB-02 | 点非当前任务 | 该行 `backgroundColor` 等于 `--accent`（数值对比，注意 rgb/hex 归一），其余无 `.active` |
+| S33 | SPACE-06 | 双击空间名改名；点空间行折叠/展开 | 改名后 PATCH 落服务器（另一窗口刷新可见）；折叠后 `.space-tasks` 的 `display === 'none'`，展开恢复 |
+| S34 | SPACE-07、TAB-03、TAB-11 | 点任务 ×、按 Ctrl+W | `#confirmModal` 打开且标题「删除任务」；点取消任务仍在；点确认任务数 -1；两路都只弹一次 |
+| S35 | SPACE-08 | 点「＋ 新建空间」，填名字+目录创建 | 侧边栏出现新空间；重复目录点创建显示中文错误、模态不关 |
+| S36 | SPACE-09 | 空间行「+」打开新建任务对话框 | 路径栏 readOnly 且值=空间目录；#folderUpBtn/#newTabBrowseBtn/#newTabRecent 都 `display:none`；名称框预填 `task N` 且 `dataset.userEdited === 'false'` |
+| S37 | SPACE-05、MOB-11 | 390 宽视口点 #sidebarToggleBtn | 抽屉 transform 从 `matrix(1,0,0,1,-300,0)` 变 `matrix(1,0,0,1,0,0)`，#sidebarBackdrop 可见；点任一任务后 transform 回 -300 且遮罩隐藏 |
+| S38 | SPACE-05、TERM-31 | Start 覆盖层打开时（会话未启动）点侧边栏任务 | 点击生效（`elementFromPoint` 命中任务行而非遮罩）；390 宽时抽屉同样可点 |
 
 ## 基线结果
 
 2026-09-22 首次全套运行的结果，记在 `ts/.claude/plans/2026-09-22-防止遗漏现有功能.md` 的「实测记录」一节。
 
 S25–S30（技能面板）于 2026-09-26 在一次性实例（32354）上跑过一遍：19 行（15 插件 + 4 技能目录）、3 个市场、299 个可装项；三个只读技能正确禁用卸载；390 宽无横向溢出。过程记在 `ts/.claude/plans/2026-09-26-技能管理.md`。
+
+S31–S38（空间侧边栏）于 2026-10-26 在一次性实例（32354，`CCW_DATA_DIR` 临时目录、每轮重新播种）上以 Playwright 量化跑过：布局套件 16/17（1 项为脚本 rgb/hex 同色对比假阴性）、交互套件 15/15。过程与两个真实层叠缺陷的修复记在 `ts/.claude/plans/2026-10-26-空间任务侧边栏布局.md` 的「实测记录」。
