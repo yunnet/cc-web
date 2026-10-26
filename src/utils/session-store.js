@@ -118,6 +118,9 @@ class SessionStore {
             created: session.created || new Date(),
             lastActivity: session.lastActivity || new Date(),
             workingDir: session.workingDir || process.cwd(),
+            // The sidebar space (working-directory group) this session belongs
+            // to. Dropped rather than stored null: null IS "ungrouped".
+            spaceId: session.spaceId || undefined,
             planDirs: Array.isArray(session.planDirs) ? session.planDirs : [],
             // Whether Claude has been started under this session id (bound via
             // --session-id). Lets a restart resume the conversation instead of

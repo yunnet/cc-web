@@ -91,6 +91,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-23 | 即使一个标签都没有，Ctrl/Cmd+W 也会被拦下，不会误关浏览器标签页 | `key:session-manager.js:w` | — |
 | TAB-24 | 标签栏横向滚动条为 4px 细条，颜色跟随主题 | 手工 | — |
 | TAB-25 | 浏览器禁用本地存储时，标签顺序、当前标签、最近目录、上次启动选项都不记住，但不报错 | 手工 | — |
+## 空间与任务（侧边栏）
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
+| SPACE-02 | 空间 CRUD：GET 列出全部；POST 建（名字 1-200 字、目录经路径校验越界 403）；PATCH 改名/改目录（改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
+| SPACE-03 | 一次性迁移：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
+| SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId 降级为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |
