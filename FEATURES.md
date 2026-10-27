@@ -66,17 +66,17 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| TAB-01 | 每个会话在标签栏显示为一个标签；默认名是目录名，自定义名优先；悬停显示完整路径 | `file:src/public/session-manager.js` | `test/tab-working-dir.test.js` |
-| TAB-02 | 当前标签整块填充强调色、白色粗体 | 手工 | — |
-| TAB-03 | 标签的 × 关闭按钮（悬停时出现），点了关闭标签并删除会话，停掉其中的 Claude，不确认 | `js-control:session-manager.js:Close tab` | `test/session-views.test.js` |
+| TAB-01 | 每个会话在侧边栏显示为所属空间下的一行任务；默认名是目录名，自定义名优先；悬停显示完整路径（2026-10-26 由顶部标签栏迁入侧边栏，行为不变） | `file:src/public/session-manager.js` | `test/tab-working-dir.test.js` |
+| TAB-02 | 当前任务整行填充强调色、白色粗体 | 手工 | — |
+| TAB-03 | 任务的 × 删除按钮（悬停时出现），点了先弹确认框（用户 2026-10-26：「删除时，要有确认弹窗」），确认后删除任务并停止其中的 Claude；取消则不动；提示对话记录保留 | `js-control:session-manager.js:删除任务` | `test/session-views.test.js` |
 | TAB-04 | 中键点击标签关闭它 | 手工 | — |
 | TAB-05 | 右键标签弹出菜单「Close Others」，点菜单外关闭 | 手工 | — |
 | TAB-06 | 双击标签名原地重命名：回车或失焦保存，Esc 恢复，清空保留原名；名字写到服务器，所有设备可见；只有真的改了才算自定义名 | `key:session-manager.js:Enter` `key:session-manager.js:Escape` `route:PATCH /api/sessions/:sessionId` | `test/session-rename.test.js` |
 | TAB-07 | 拖动标签调整顺序；顺序变化时分屏窗格跟着换边；标签可以拖进分屏区域 | 手工 | — |
-| TAB-08 | 切换到的标签不在可视区时，标签栏自动滚动把它露出来 | 手工 | — |
+| TAB-08 | 切换到的任务不在侧边栏可视区时，侧边栏自动滚动把它露出来 | 手工 | — |
 | TAB-09 | 关闭当前标签后自动切到最近用过的标签；关掉最后一个时显示 Start 面板而不是空终端 | 手工 | — |
 | TAB-10 | 标签顺序和当前标签存在浏览器里，刷新后原样恢复 | 手工 | — |
-| TAB-11 | Ctrl/Cmd+T 打开新建标签对话框；Ctrl/Cmd+W 关闭当前标签（删除会话，不确认） | `key:session-manager.js:t` `key:session-manager.js:w` | — |
+| TAB-11 | Ctrl/Cmd+T 打开新建标签对话框；Ctrl/Cmd+W 删除当前任务（删除会话，带确认弹窗——2026-10-26 用户要求「删除时，要有确认弹窗」；无任务时拦下不误关浏览器标签） | `key:session-manager.js:t` `key:session-manager.js:w` | — |
 | TAB-12 | Ctrl/Cmd+Tab 切到最近用过的标签，Ctrl/Cmd+Shift+Tab 切到左边一个（循环）；Alt+1…9 按位置跳转 | `key:session-manager.js:Tab` | — |
 | TAB-13 | 标签状态圆点：运行中绿色脉冲，空闲蓝色呼吸，断开或出错红色 | 手工 | — |
 | TAB-14 | 后台标签从运行转为空闲时标为未读（圆点变蓝闪烁、名字蓝色粗体），切过去后清除 | 手工 | — |
@@ -85,12 +85,25 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-17 | Claude 在没人看的标签里等待权限批准（包括用提问框问你、在计划模式里等你批准计划，2.1.278 实测这两种也发 permission_prompt）时，圆点变成琥珀色慢脉冲，名字后出现「待批准」徽章，优先于 ✓；只有权限请求触发，空闲提醒不触发 | `state:awaiting` `ws-client:app.js:hook_event` `ws-client:splits.js:hook_event` | `test/claude-title.test.js` |
 | TAB-18 | 只有「没人在看」的标签才打 ✓ 和「待批准」；切到标签、Claude 重新开始工作、页面回到前台且标签在眼前时清除 | 手工 | `test/claude-title.test.js` |
 | TAB-19 | 页面在后台且有标签带 ✓ 时，浏览器标签标题前加「✓ 」，回到页面后去掉 | 手工 | `test/claude-title.test.js` |
-| TAB-20 | 右键菜单的「Close Others」会把其它标签逐个关闭并删除对应会话（停掉其中的 Claude），且不二次确认 | 手工 | — |
+| TAB-20 | 右键菜单的「Close Others」把其它任务删除前弹**一次**批量确认（显示数量与运行中的 Claude 数），确认后逐个删除；不再逐个弹、也不无确认（2026-10-26 布局改造随删除确认一并调整） | 手工 | — |
 | TAB-21 | 关掉当前标签时若没有最近访问记录（例如刚刷新过），改为切到被关标签原位置上的标签 | 手工 | — |
 | TAB-22 | 最近使用顺序最多记 50 个且不落盘：刷新后 Ctrl/Cmd+Tab 退化为按可视顺序切换 | 手工 | — |
 | TAB-23 | 即使一个标签都没有，Ctrl/Cmd+W 也会被拦下，不会误关浏览器标签页 | `key:session-manager.js:w` | — |
-| TAB-24 | 标签栏横向滚动条为 4px 细条，颜色跟随主题 | 手工 | — |
+| TAB-24 | 侧边栏任务列表纵向滚动条为 4px 细条，颜色跟随主题 | 手工 | — |
 | TAB-25 | 浏览器禁用本地存储时，标签顺序、当前标签、最近目录、上次启动选项都不记住，但不报错 | 手工 | — |
+## 空间与任务（侧边栏）
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
+| SPACE-02 | 空间 CRUD：GET 列出全部；POST 建（名字 1-200 字、目录经路径校验越界 403）；PATCH 改名/改目录（改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
+| SPACE-03 | 一次性迁移：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
+| SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId 降级为其目录所绑空间、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
+| SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可整条收起，窄屏（≤768px）变左滑抽屉带遮罩 | `control:sidebarToggleBtn` `control:sidebarCollapseBtn` `file:src/public/spaces.js` | `test/features.test.js` |
+| SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器全设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
+| SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
+| SPACE-08 | 侧边栏底部「＋ 新建空间」：名字（留空自动取目录名）+ 工作目录（最近目录一键填入，路径服务端校验、越界 403 有中文提示；重复目录拒绝）；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | — |
+| SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用 | `file:src/public/app.js` | — |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |
@@ -111,7 +124,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| NEW-01 | 标签栏 +、Ctrl+T、Sessions 面板和菜单里的 New Session、恢复对话框、首次运行，都打开同一个「新建标签页」对话框 | `control:tabNewBtn` `control:conversationsNewBtn` `control:newSessionBtnMobile` | `test/new-tab-dialog.test.js` |
+| NEW-01 | 头部「＋任务」、空间行的 +、Ctrl+T、Sessions 面板和菜单里的 New Session、恢复对话框、首次运行，都打开同一个「新建标签页」对话框 | `control:headerNewTaskBtn` `control:conversationsNewBtn` `control:newSessionBtnMobile` | `test/new-tab-dialog.test.js` |
 | NEW-02 | 工程目录默认选当前标签的目录，其次是其他已开标签，再其次是最近用过的目录；最近目录打不开（403/404）时自动忘掉并试下一个，断网或未登录时保留 | 手工 | `test/new-tab-dialog.test.js` |
 | NEW-03 | 打开时焦点落在「启动」上，直接回车即可启动；由危险模式进入时焦点在「危险模式启动」上 | `control:newTabStartBtn` | — |
 | NEW-04 | 模型、权限模式、思考强度默认沿用上次启动的选择；「跳过权限」从不记住；每次都默认「新对话」模式 | `control:newTabModelSelect` `control:newTabPermissionSelect` `control:newTabEffortSelect` | `test/new-tab-dialog.test.js` |
@@ -162,7 +175,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SES-01 | 工具栏的对话气泡按钮打开 Sessions 面板，头部显示当前目录（长路径截掉前面） | `control:historyBtn` `file:src/public/conversations.js` | — |
 | SES-02 | 「Sessions (N)」列出服务器上所有会话：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
 | SES-03 | 点会话行：已开标签的切过去，没开的新开一个标签 | 手工 | — |
-| SES-04 | 会话行的垃圾桶删除会话，先确认「…This stops any running Claude process.」；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:Delete session` `route:DELETE /api/sessions/:sessionId` | — |
+| SES-04 | 会话行的垃圾桶删除会话，先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
 | SES-05 | 「Conversations in this folder (N)」只列出没有会话占用的历史对话，点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
 | SES-06 | 空状态和出错提示：No sessions yet. / No previous conversations in this folder. / Every conversation here is already open. / Could not load sessions. / No folder selected | 手工 | — |
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |
@@ -328,7 +341,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | MOB-08 | 按住按钮组可以拖动，松手吸附到左或右边；不会盖住标签栏和底部安全区；小于 8px 算点按，拖动后不误触；位置按高度比例记住，旋转后仍在屏幕内；拖过后不再跟随输入框 | `file:src/public/fab-position.js` | `test/fab-position.test.js` |
 | MOB-09 | 应用高度跟随可见视口；弹出软键盘时终端不改行数，外框变成停在底部的小窗口，输入框和状态行留在键盘上方；旋转屏幕按真实尺寸变化重新适配 | `file:src/public/viewport-mode.js` | `test/keyboard-viewport.test.js` |
 | MOB-10 | 终端比屏幕宽时自动减少列数；强制等于屏宽，不横向滚动 | 手工 | — |
-| MOB-11 | 窄屏（≤768px）只显示前 2 个标签，其余收进「⋮」溢出按钮（显示数量），下拉里可切换或 × 关闭；切到第 3 个以后的标签时按最近访问排序 | `control:tabOverflowBtn` | — |
+| MOB-11 | 窄屏（≤768px）侧边栏收为左滑抽屉：头部按钮开合、遮罩点击关闭、切到某任务后自动收起；任务列表整列滚动，不再截成两格 + 溢出下拉（2026-10-26 布局改造，用户原话「左边是空间+任务，右边是session+console」） | `control:sidebarToggleBtn` | — |
 | MOB-12 | 齿轮按钮在手机上放在最左边，桌面放在右侧 | 手工 | — |
 | MOB-13 | 手机上各弹窗改为顶部对齐、可滚动的全宽卡片，标题栏和底部按钮固定，按钮至少 44px；新建标签对话框全屏 | 手工 | — |
 | MOB-14 | 窄屏上文件浏览器占满屏幕；超小屏（≤480px）隐藏文件大小给文件名让位 | 手工 | — |
@@ -427,7 +440,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GAP-14 | 计划弹窗只能用 × 关闭，按 Esc 或点背景都没反应 | `control:closePlanBtn` | — |
 | GAP-15 | 「Restore sessions」对话框没有任何关闭方式（没有 ×、点背景和 Esc 都不关），只能点 Open 或「+ New session」 | 手工 | — |
 | GAP-16 | 重命名标签或关闭标签时，发给服务器的请求失败没有任何提示：界面已经改了，刷新后又变回去 | 手工 | — |
-| GAP-17 | 收进「⋮」溢出菜单的标签只剩名字和 ×，看不到状态圆点、未读、✓ 答完和「待批准」徽章 | `control:tabOverflowBtn` | — |
+| GAP-17 | （已随 2026-10-26 侧边栏布局消亡）原缺陷：收进「⋮」溢出菜单的标签只剩名字和 ×，看不到状态圆点、未读、✓ 答完和「待批准」徽章。溢出菜单被空间侧边栏取代（MOB-11），任务行整列显示全部 marks，缺陷不复存在 | `手工` | — |
 | GAP-18 | 标签的 × 和分支行的拉取按钮都是悬停才显形，触屏没有悬停：手机上标签还能从溢出菜单关掉，拉取按钮则完全点不到 | 手工 | — |
 | GAP-19 | 系统开启「减少动效」后，运行中的绿色脉冲、未读蓝闪、加载转圈仍在动（只覆盖了转球、✓、待批准和拉取图标） | 手工 | — |
 | GAP-20 | 计划弹窗声明了 fadeIn 淡入动画，但样式表里没有这个关键帧，淡入从未发生过 | 手工 | — |

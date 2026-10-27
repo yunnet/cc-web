@@ -9,6 +9,7 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
+const SpaceStore = require('./utils/space-store');
 const claudeHistory = require('./utils/claude-history');
 const claudeTheme = require('./utils/claude-theme');
 const { inlineLocalAssets } = require('./utils/inline-assets');
@@ -50,6 +51,11 @@ class ClaudeCodeWebServer {
     // Scrollback depth is a user setting (Settings panel → /api/settings/scrollback).
     // Applied to the store immediately so the very first autosave already honours it.
     this.sessionStore.maxOutputChunks = this.loadScrollbackChunks();
+    // Sidebar spaces (named working-directory groups). Same data dir as the
+    // sessions; loaded in loadPersistedSessions, where the one-time migration
+    // needs both sides in hand.
+    this.spaceStore = new SpaceStore();
+    this.spaces = [];
     const persistedPlanDirs = this.loadPlanDirs();
     this.planDirs = persistedPlanDirs !== null ? persistedPlanDirs : seededPlanDirs;
     this.app = express();
@@ -73,7 +79,10 @@ class ClaudeCodeWebServer {
     };
     
     this.setupExpress();
-    this.loadPersistedSessions();
+    // Tracked so a caller (the tests, or anything that needs the sessions and
+    // spaces actually loaded before acting) can await the initial load instead
+    // of racing it.
+    this._initialLoad = this.loadPersistedSessions();
     this.setupAutoSave();
   }
   
@@ -87,6 +96,69 @@ class ClaudeCodeWebServer {
     } catch (error) {
       console.error('Failed to load persisted sessions:', error);
     }
+    await this.loadSpacesAndMigrate();
+  }
+
+  // Spaces load after the sessions they group. First run on an existing
+  // install — no spaces.json but sessions exist — runs the one-time
+  // migration: one space per distinct working directory (name = the folder's
+  // basename, disambiguated on a clash), every session assigned to its dir's
+  // space. The sidebar then arrives organised instead of dumping everything
+  // into 未分组 on upgrade day.
+  async loadSpacesAndMigrate() {
+    try {
+      this.spaces = await this.spaceStore.loadSpaces();
+      if (this.spaces.length > 0 || this.spaceStore.fileExisted || this.claudeSessions.size === 0) return;
+
+      const byDir = new Map();
+      const usedNames = new Set();
+      for (const session of this.claudeSessions.values()) {
+        const dir = session.workingDir;
+        if (!dir || byDir.has(dir)) continue;
+
+        // basename alone, then parent/basename if another dir already claimed
+        // that name — two cgs-master checkouts must not both read
+        // "cgs-master" in the sidebar.
+        let name = path.basename(dir) || dir;
+        if (usedNames.has(name)) {
+          name = path.join(path.basename(path.dirname(dir)), path.basename(dir) || dir);
+        }
+        while (usedNames.has(name)) name = `${name} ${usedNames.size + 1}`;
+        usedNames.add(name);
+
+        const now = new Date().toISOString();
+        byDir.set(dir, { id: uuidv4(), name, dir, createdAt: now, updatedAt: now });
+      }
+
+      this.spaces = [...byDir.values()];
+      for (const session of this.claudeSessions.values()) {
+        const space = byDir.get(session.workingDir);
+        if (space) session.spaceId = space.id;
+      }
+      await this.spaceStore.saveSpaces(this.spaces);
+      await this.saveSessionsToDisk();
+      if (this.spaces.length > 0) {
+        console.log(`Migrated ${this.claudeSessions.size} sessions into ${this.spaces.length} spaces by working directory`);
+      }
+    } catch (error) {
+      console.error('Failed to load spaces:', error.message);
+    }
+  }
+
+  // A session's sidebar group. Unknown or absent ids degrade to null
+  // (ungrouped) rather than erroring: creating a task must not fail because
+  // some device still holds a stale space list.
+  resolveSpaceId(raw) {
+    return typeof raw === 'string' && this.spaces.some((s) => s.id === raw) ? raw : null;
+  }
+
+  // Default a session with no explicit (or no longer known) space to the one
+  // bound to its working directory: opening a task in a directory that IS a
+  // space joins it, rather than landing in 未分组 because nobody passed the id.
+  spaceIdForDir(dir) {
+    if (!dir) return null;
+    const space = this.spaces.find((s) => s.dir === dir);
+    return space ? space.id : null;
   }
   
   setupAutoSave() {
@@ -444,6 +516,7 @@ class ClaudeCodeWebServer {
         created: session.created,
         active: session.active,
         workingDir: session.workingDir,
+        spaceId: session.spaceId || null,
         connectedClients: session.connections.size,
         lastActivity: session.lastActivity
       }));
@@ -478,33 +551,55 @@ class ClaudeCodeWebServer {
       });
     });
 
-    // Rename a session. Without this the new name lived only in the renaming
-    // browser's memory: the tab state in localStorage keeps ids and nothing
-    // else, so a reload dropped it, and it never reached sessions.json or any
-    // other device — even though the persisted session already has a name.
+    // Rename a session, move it between sidebar spaces, or both in one call.
+    // Without this the new name lived only in the renaming browser's memory:
+    // the tab state in localStorage keeps ids and nothing else, so a reload
+    // dropped it, and it never reached sessions.json or any other device —
+    // even though the persisted session already has a name.
     this.app.patch('/api/sessions/:sessionId', (req, res) => {
       const session = this.claudeSessions.get(req.params.sessionId);
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
-      const raw = req.body && req.body.name;
-      if (typeof raw !== 'string') {
-        return res.status(400).json({ error: 'name must be a string' });
+      const body = req.body || {};
+
+      // The sidebar's 移动到空间… sends { spaceId }; null means 未分组.
+      if (body.spaceId !== undefined) {
+        if (body.spaceId === null || body.spaceId === '') {
+          session.spaceId = null;
+        } else {
+          const resolved = this.resolveSpaceId(body.spaceId);
+          if (!resolved) {
+            return res.status(400).json({ error: 'spaceId must reference an existing space' });
+          }
+          session.spaceId = resolved;
+        }
       }
-      const name = raw.trim();
-      if (!name) {
-        return res.status(400).json({ error: 'name must not be empty' });
+
+      if (body.name === undefined) {
+        if (body.spaceId === undefined) {
+          return res.status(400).json({ error: 'nothing to update' });
+        }
+      } else {
+        if (typeof body.name !== 'string') {
+          return res.status(400).json({ error: 'name must be a string' });
+        }
+        const name = body.name.trim();
+        if (!name) {
+          return res.status(400).json({ error: 'name must not be empty' });
+        }
+        if (name.length > 200) {
+          return res.status(400).json({ error: 'name must be at most 200 characters' });
+        }
+        // Renamed by hand — but only if it actually changed: the tab's rename box
+        // PATCHes on every blur and on Escape, and marking an untouched folder
+        // name as typed would pass it to `claude --name` and freeze the title.
+        if (name !== session.name) session.nameIsCustom = true;
+        session.name = name;
       }
-      if (name.length > 200) {
-        return res.status(400).json({ error: 'name must be at most 200 characters' });
-      }
-      // Renamed by hand — but only if it actually changed: the tab's rename box
-      // PATCHes on every blur and on Escape, and marking an untouched folder
-      // name as typed would pass it to `claude --name` and freeze the title.
-      if (name !== session.name) session.nameIsCustom = true;
-      session.name = name;
+
       this.saveSessionsToDisk();
-      res.json({ success: true, id: session.id, name: session.name });
+      res.json({ success: true, id: session.id, name: session.name, spaceId: session.spaceId || null });
     });
 
     // Delete a Claude session
@@ -720,6 +815,66 @@ class ClaudeCodeWebServer {
     // after validating each entry is a real existing directory, and persists it.
     this.app.get('/api/plan-dirs', (req, res) => this.getPlanDirs(req, res));
     this.app.post('/api/plan-dirs', (req, res) => this.setPlanDirs(req, res));
+
+    // Sidebar spaces: named working-directory groups above the session tabs.
+    // A space is metadata only — deleting one keeps its sessions; they fall
+    // back to the sidebar's 未分组 pseudo-group until moved elsewhere.
+    // Changing a space's dir only changes where NEW tasks default to; existing
+    // sessions keep their own workingDir.
+    this.app.get('/api/spaces', (req, res) => {
+      res.json({ spaces: this.spaces });
+    });
+    this.app.post('/api/spaces', (req, res) => {
+      const cleaned = SpaceStore.cleanName(req.body && req.body.name);
+      if (cleaned.error) return res.status(400).json({ error: cleaned.error });
+      const validation = this.validatePath(req.body.dir);
+      if (!validation.valid) {
+        return res.status(403).json({ error: validation.error, message: 'Cannot create a space outside the allowed area' });
+      }
+      const now = new Date().toISOString();
+      const space = { id: uuidv4(), name: cleaned.name, dir: validation.path, createdAt: now, updatedAt: now };
+      this.spaces.push(space);
+      this.spaceStore.saveSpaces(this.spaces);
+      res.json({ success: true, space });
+    });
+    this.app.patch('/api/spaces/:id', (req, res) => {
+      const space = this.spaces.find((s) => s.id === req.params.id);
+      if (!space) return res.status(404).json({ error: 'Space not found' });
+      const body = req.body || {};
+
+      if (body.name !== undefined) {
+        const cleaned = SpaceStore.cleanName(body.name);
+        if (cleaned.error) return res.status(400).json({ error: cleaned.error });
+        space.name = cleaned.name;
+      }
+      if (body.dir !== undefined) {
+        const validation = this.validatePath(body.dir);
+        if (!validation.valid) {
+          return res.status(403).json({ error: validation.error, message: 'Cannot point a space outside the allowed area' });
+        }
+        space.dir = validation.path;
+      }
+
+      space.updatedAt = new Date().toISOString();
+      this.spaceStore.saveSpaces(this.spaces);
+      res.json({ success: true, space });
+    });
+    this.app.delete('/api/spaces/:id', (req, res) => {
+      const index = this.spaces.findIndex((s) => s.id === req.params.id);
+      if (index === -1) return res.status(404).json({ error: 'Space not found' });
+      this.spaces.splice(index, 1);
+      // The tasks survive; they lose their group and show under 未分组.
+      let orphaned = 0;
+      for (const session of this.claudeSessions.values()) {
+        if (session.spaceId === req.params.id) {
+          session.spaceId = null;
+          orphaned++;
+        }
+      }
+      this.spaceStore.saveSpaces(this.spaces);
+      if (orphaned > 0) this.saveSessionsToDisk();
+      res.json({ success: true, orphaned });
+    });
 
     // Skills — what Claude can already do, and what it could. Three reads and
     // ONE write: keeping every mutation behind a single route means the
@@ -979,7 +1134,7 @@ class ClaudeCodeWebServer {
 
     switch (data.type) {
       case 'create_session':
-        await this.createAndJoinSession(wsId, data.name, data.workingDir);
+        await this.createAndJoinSession(wsId, data.name, data.workingDir, data.spaceId);
         break;
 
       case 'join_session':
@@ -1085,7 +1240,7 @@ class ClaudeCodeWebServer {
   // first start resumes it, every later start (a restart included) resumes it
   // again, and everything said from now on is appended to that transcript.
   async createSession(req, res) {
-    const { name, workingDir, resumeId, customName } = req.body || {};
+    const { name, workingDir, resumeId, customName, spaceId } = req.body || {};
 
     let validWorkingDir = this.baseFolder;
     if (workingDir) {
@@ -1140,6 +1295,10 @@ class ClaudeCodeWebServer {
       lastActivity: new Date(),
       active: false,
       workingDir: validWorkingDir,
+      // The sidebar space this task belongs to. resolveSpaceId degrades an
+      // unknown id to null; from there the working dir's own space (if any)
+      // is the natural default.
+      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
       planDirs: [], // per-session extra plan directories (additive to global + auto-discovery)
       // Claude has been started under this id before — by us, or (when resuming
       // a conversation from the history list) by whoever recorded it.
@@ -1172,6 +1331,7 @@ class ClaudeCodeWebServer {
         id: sessionId,
         name: session.name,
         workingDir: session.workingDir,
+        spaceId: session.spaceId || null,
         resumedConversation: resumed
       }
     });
@@ -1198,7 +1358,7 @@ class ClaudeCodeWebServer {
     });
   }
 
-  async createAndJoinSession(wsId, name, workingDir) {
+  async createAndJoinSession(wsId, name, workingDir, spaceId) {
     const wsInfo = this.webSocketConnections.get(wsId);
     if (!wsInfo) return;
 
@@ -1227,6 +1387,7 @@ class ClaudeCodeWebServer {
       lastActivity: new Date(),
       active: false,
       workingDir: validWorkingDir,
+      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
       connections: new Set([wsId]),
       // Flow control: connections that have asked us to pause the PTY.
       pausedConnections: new Set(),
@@ -1245,7 +1406,8 @@ class ClaudeCodeWebServer {
       type: 'session_created',
       sessionId,
       sessionName: session.name,
-      workingDir: session.workingDir
+      workingDir: session.workingDir,
+      spaceId: session.spaceId || null
     });
   }
 

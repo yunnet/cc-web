@@ -31,14 +31,14 @@ describe('overlay stacking', function () {
     assert.strictEqual(zIndexOf('.terminal-overlay'), OVERLAY_Z);
   });
 
-  it('lifts the tab bar and the stack it would otherwise invert', function () {
-    const bar = zIndexOf('body.overlay-open .session-tabs-bar');
+  it('lifts the header and the stack it would otherwise invert', function () {
+    const bar = zIndexOf('body.overlay-open .app-header');
     const menu = zIndexOf('body.overlay-open .mobile-menu');
 
-    assert.ok(bar > OVERLAY_Z, `tab bar (${bar}) must clear the overlay (${OVERLAY_Z})`);
-    // Lifting the bar unconditionally would drop the mobile side menu (3000)
-    // behind it. Inside the scope it has to come along, above the bar.
-    assert.ok(menu > bar, `mobile menu (${menu}) must stay above the tab bar (${bar})`);
+    assert.ok(bar > OVERLAY_Z, `app header (${bar}) must clear the overlay (${OVERLAY_Z})`);
+    // Lifting the header unconditionally would drop the mobile side menu (3000)
+    // behind it. Inside the scope it has to come along, above the header.
+    assert.ok(menu > bar, `mobile menu (${menu}) must stay above the app header (${bar})`);
   });
 
   it('puts the new tab dialog in the lifted .session-modal stack', function () {
@@ -52,14 +52,14 @@ describe('overlay stacking', function () {
 
   it('lifts every modal that can open while the overlay is up', function () {
     // The overlay is what a user sees whenever a session's Claude isn't running.
-    // From that state the tab bar's + and the mobile menu both still work (they
+    // From that state the header's + and the mobile menu both still work (they
     // were lifted above it), and each of them ends in a modal. A modal left at
     // its ordinary z-index opens UNDER the overlay — a ghost outline you cannot
     // tap — which is exactly how "create a session in ts" failed on a phone:
     // every tap landed on .overlay-content and the server never saw a single
     // POST /api/sessions/create. Lifting the paths that REACH a modal without
     // lifting the modal itself is half a fix.
-    const bar = zIndexOf('body.overlay-open .session-tabs-bar');
+    const bar = zIndexOf('body.overlay-open .app-header');
     for (const rule of ['.session-modal', '.settings-modal']) {
       const z = zIndexOf(`body.overlay-open ${rule}`);
       assert.ok(z !== null, `${rule} must be lifted under body.overlay-open`);
@@ -71,10 +71,10 @@ describe('overlay stacking', function () {
   it('keeps the lift scoped, so normal stacking is untouched', function () {
     // The unscoped rules must NOT have grown a z-index of their own: outside
     // the overlay state, the mobile menu and the modals still have to sit
-    // above a tab bar that is back down at its ordinary level.
-    assert.ok(zIndexOf('.session-tabs-bar') === null || zIndexOf('.session-tabs-bar') < zIndexOf('.mobile-menu'),
-      'unscoped tab bar stays below the mobile menu');
-    for (const rule of ['.session-tabs-bar', '.mobile-menu', '.session-modal', '.settings-modal']) {
+    // above an app header that is back down at its ordinary level.
+    assert.ok(zIndexOf('.app-header') === null || zIndexOf('.app-header') < zIndexOf('.mobile-menu'),
+      'unscoped app header stays below the mobile menu');
+    for (const rule of ['.app-header', '.mobile-menu', '.session-modal', '.settings-modal']) {
       assert.ok(new RegExp(`body\\.overlay-open ${rule.replace('.', '\\.')}\\s*\\{`).test(CSS),
         `${rule} is lifted only under body.overlay-open`);
     }

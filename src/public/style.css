@@ -91,43 +91,351 @@ body {
 
 /* Header styles removed - using tab-based interface */
 
-/* Session Tabs Bar */
-.session-tabs-bar {
+/* App header — menu · breadcrumb (space · task · dir) · global actions.
+   The old top tab bar's buttons moved here unchanged; the tasks themselves
+   live in the spaces sidebar below. */
+.app-header {
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 4px;
     padding: 0 10px;
-    min-height: 36px;
+    min-height: 44px;
     position: relative;
-    overflow: visible; /* Ensure dropdown can overflow */
+    z-index: 20;
+    overflow: visible; /* the branch panel dropdown hangs below */
 }
 
-.tabs-section {
+.header-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#sidebarToggleBtn {
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+#sidebarToggleBtn:hover {
+    color: var(--accent);
+}
+
+.header-new-task {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background-color: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.header-new-task:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* Breadcrumb: 空间 · 任务 · 目录. One line, everything truncates except the
+   space name. The dot mirrors the active task's own status dot. */
+.header-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 1;
-    overflow-x: auto;
-    overflow-y: visible; /* Allow dropdown to overflow vertically */
+    min-width: 0;
+    margin: 0 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.header-breadcrumb.empty {
+    visibility: hidden;
+}
+
+.crumb-space {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.crumb-space.ungrouped {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.crumb-sep { opacity: .5; flex-shrink: 0; }
+
+.crumb-task {
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+
+/* The status classes are copied from the active task's dot (spaces.js
+   updateBreadcrumb) — the same states, restated for this element. */
+.crumb-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: var(--border);
+}
+
+.crumb-dot.active { background-color: var(--success); animation: pulse 2s infinite; }
+.crumb-dot.idle { background-color: #3b82f6; animation: idle-gentle-pulse 3s infinite; }
+.crumb-dot.error, .crumb-dot.disconnected { background-color: var(--error); }
+.crumb-dot.unread { background-color: #3b82f6; animation: unread-pulse 1.5s infinite; }
+.crumb-dot[data-awaiting] { background-color: #f59e0b; animation: idle-gentle-pulse 2s infinite; }
+.crumb-dot[data-done] { background-color: var(--success); }
+
+/* direction:rtl = middle truncation for paths: the head folds away and the
+   meaningful tail (…/cgs-master) stays visible. */
+.crumb-dir {
+    flex: 1;
+    min-width: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+    unicode-bidi: plaintext;
+}
+
+/* Body row: sidebar + terminal area. */
+.app-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+/* Spaces sidebar — 空间 groups with the 任务 (session tabs) nested under. */
+.spaces-sidebar {
+    width: 264px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background-color: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+}
+
+body.sidebar-hidden .spaces-sidebar {
+    display: none;
+}
+
+.sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px;
+}
+
+.sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.sidebar-collapse {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    opacity: .6;
+}
+
+.sidebar-collapse:hover { opacity: 1; color: var(--text-primary); }
+
+.spaces-tree {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 8px 8px;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
 }
 
-.tabs-section::-webkit-scrollbar {
-    height: 4px;
-}
+.spaces-tree::-webkit-scrollbar { width: 4px; }
+.spaces-tree::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: 2px; }
 
-.tabs-section::-webkit-scrollbar-thumb {
-    background-color: var(--border);
-    border-radius: 2px;
-}
+.space-group { margin-bottom: 6px; }
+.space-group.hidden-group { display: none; }
 
-.tabs-container {
+.space-head {
     display: flex;
     align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 13px;
+    user-select: none;
+}
+
+.space-head:hover { background-color: var(--bg-tertiary); }
+
+.space-chevron {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.space-chevron svg { transition: transform .15s ease; }
+.space-group:not(.collapsed) .space-chevron svg { transform: rotate(90deg); }
+
+.space-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.space-name-input {
+    width: 110px;
+    font: inherit;
+    font-weight: 400;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-hover);
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
+}
+
+.space-dir {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+}
+
+.space-actions {
+    display: none;
     gap: 2px;
-    padding: 4px 0;
+    flex-shrink: 0;
+}
+
+.space-head:hover .space-actions { display: flex; }
+
+.space-action {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.space-add-task:hover { color: var(--accent); background-color: var(--bg-primary); }
+.space-delete:hover { color: var(--error); background-color: var(--bg-primary); }
+
+.space-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0 4px 14px;
+}
+
+.space-group.collapsed .space-tasks { display: none; }
+
+.sidebar-foot {
+    padding: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.sidebar-new-space {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.sidebar-new-space:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.sidebar-backdrop { display: none; }
+
+/* Narrow screens: the sidebar becomes a slide-in drawer (the mobile-menu's
+   0.3s pattern); the header keeps the toggle. */
+@media (max-width: 768px) {
+    .spaces-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(300px, 85vw);
+        z-index: 2900;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        box-shadow: none;
+    }
+
+    .spaces-sidebar.drawer-open {
+        transform: translateX(0);
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+    }
+
+    body.sidebar-hidden .spaces-sidebar { transform: translateX(-100%); }
+
+    .sidebar-backdrop:not([hidden]) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 2899;
+    }
+
+    /* The drawer keeps its fixed positioning while the overlay is up; it and
+       its backdrop rise above the scrim instead (5000), below the lifted
+       modals (5004). Extra specificity (.drawer-open) so this wins over the
+       unscoped overlay rule further down the file. */
+    body.overlay-open .spaces-sidebar.drawer-open { position: fixed; z-index: 5003; }
+    body.overlay-open .sidebar-backdrop:not([hidden]) { z-index: 5002; }
 }
 
 .session-tab {
@@ -313,36 +621,14 @@ body {
     outline: none;
 }
 
-.tab-new {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-    flex-shrink: 0;
-    margin-left: 4px;
-}
-
-.tab-actions { display: flex; gap: 6px; align-items: center; }
-.tab-tile {
-  width: 28px; height: 28px; display:flex; align-items:center; justify-content:center;
-  background: transparent; border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-secondary); cursor: pointer; transition: all .2s; flex-shrink: 0; margin-left: 4px;
-}
-.tab-tile:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.tab-tile[disabled] { opacity: .5; cursor: not-allowed; }
-
-/* Global tabs are visible; panes can be enabled optionally */
-
-.tab-new:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
+/* Task rows in the sidebar: the same .session-tab as always, reshaped from
+   the old horizontal bar's chip into a full-width row. */
+.spaces-sidebar .session-tab {
+    border-radius: 6px;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    padding: 6px 8px;
 }
 
 .tab-settings {
@@ -395,110 +681,6 @@ body {
     display: none;
 }
 
-/* Tab Overflow Dropdown for Mobile */
-.tab-overflow-wrapper {
-    position: relative;
-    display: none;
-}
-
-.tab-overflow-btn {
-    width: auto;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 8px;
-    background-color: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-left: 4px;
-}
-
-.tab-overflow-btn:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
-}
-
-.tab-overflow-count {
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.tab-overflow-menu {
-    display: none;
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    min-width: 200px;
-    max-width: 300px;
-    z-index: 10000; /* Higher z-index to ensure it appears above everything */
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.tab-overflow-menu.active {
-    display: block;
-}
-
-.overflow-tab-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    border-bottom: 1px solid var(--border);
-}
-
-.overflow-tab-item:last-child {
-    border-bottom: none;
-}
-
-.overflow-tab-item:hover {
-    background-color: var(--bg-tertiary);
-}
-
-.overflow-tab-item.active {
-    background-color: var(--bg-tertiary);
-    color: var(--accent);
-}
-
-.overflow-tab-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 13px;
-}
-
-.overflow-tab-close {
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.overflow-tab-close:hover {
-    background-color: var(--error);
-    color: white;
-}
-
-/* Mobile-specific styles */
-@media (max-width: 768px) {
-    /* Overflow wrapper visibility is controlled by JavaScript */
-}
 
 /* Terminal Container */
 .terminal-container {
@@ -676,6 +858,69 @@ body {
     display: flex;
 }
 
+/* The generic yes/no dialog (app.confirmDialog): a small, calm card. */
+.confirm-modal .modal-content {
+    max-width: 380px;
+}
+
+.confirm-modal .confirm-body {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* New-space dialog (spaces.js): name + dir + recent-dir chips. */
+.new-space-modal .modal-content {
+    max-width: 420px;
+}
+
+.new-space-recents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px;
+}
+
+.new-space-recent-chip {
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.new-space-recent-chip:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.new-space-error {
+    color: var(--error);
+    font-size: 12px;
+    margin: 4px 0 0;
+}
+
+/* Space mode of the new-tab dialog (openNewTabDialog({space})): the folder is
+   the space's, locked — the way out of it (up / home / browse / recents /
+   typing a path) is hidden rather than merely ignored. */
+.new-tab-modal.space-locked #folderUpBtn,
+.new-tab-modal.space-locked #folderHomeBtn,
+.new-tab-modal.space-locked #newTabBrowseBtn,
+.new-tab-modal.space-locked #newTabRecent,
+.new-tab-modal.space-locked #newFolderNameInput {
+    display: none !important;
+}
+
+.new-tab-modal.space-locked #currentPathInput {
+    opacity: .75;
+    cursor: default;
+}
+
 /* Session reconcile picker (shown on refresh only when the tab set diverges). */
 .session-reconcile-modal .modal-content { padding: 16px 0 12px; max-width: 560px; }
 .session-reconcile-modal .modal-header { padding: 0 20px 6px; }
@@ -814,10 +1059,24 @@ body {
 }
 
 /* Context menu for tabs */
-.pane-session-menu { position: absolute; z-index: 3000; min-width: 220px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
+/* z-index 10002: the sidebar's own context menu must not sit under the chrome
+   the Start overlay lifts (header/sidebar 5001, modals 5004) — a menu is a
+   popup and belongs on top of everything currently on screen. */
+.pane-session-menu { position: absolute; z-index: 10002; min-width: 220px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
 .pane-session-item { padding:8px 10px; border-radius:6px; cursor:pointer; color: var(--text-primary); }
 .pane-session-item.used { color: var(--text-secondary); }
 .pane-session-item:hover { background: var(--bg-tertiary); }
+
+/* The 移动到空间… submenu inside the context menu (session-manager.js). */
+.pane-submenu { position: relative; }
+.pane-submenu-list { display: none; position: absolute; left: calc(100% + 4px); top: 0; min-width: 180px; background: var(--bg-secondary); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.35); padding:6px; }
+.pane-submenu:hover .pane-submenu-list { display: block; }
+@media (max-width: 768px) {
+    /* No hover on a phone: the submenu opens as an inline section instead of
+       flying off the right edge of the screen. */
+    .pane-submenu-list { position: static; margin-top: 4px; box-shadow: none; }
+    .pane-submenu .pane-submenu-list { display: block; }
+}
 
 /* Split View — CSS grid; orientation swaps columns <-> rows (see splits.js applyLayout) */
 .split-container {
@@ -1870,8 +2129,7 @@ body {
    folder — only the gear was reachable. Show it on desktop too, on the right
    next to the gear. Mobile keeps its own rule below (hamburger on the left). */
 @media (min-width: 769px) {
-    .hamburger-btn { display: flex; order: 5; }
-    .tab-actions { order: 6; }
+    .hamburger-btn { display: flex; }
 }
 
 /* A gear now, not three lines: the menu it opens is where Settings lives.
@@ -2742,7 +3000,15 @@ pre, code {
    order is untouched. #fileExplorerModal keeps 6000 by its id rule, so the
    drawer stays on top.
    --------------------------------------------------------------------------- */
-body.overlay-open .session-tabs-bar     { z-index: 5001; }
+body.overlay-open .app-header         { z-index: 5001; }
+/* The sidebar is task-switching chrome, same as the header: it stays usable
+   while the Start/Loading/Error overlay is up (TERM-31's principle), so it
+   comes up with the header rather than sitting under the scrim. Mobile
+   re-fixes it in the drawer media block below. */
+body.overlay-open .spaces-sidebar {
+    position: relative;
+    z-index: 5001;
+}
 body.overlay-open .mobile-menu          { z-index: 5002; }
 /* Lifting the two entry points without lifting what they OPEN was half a fix.
    Both roads out of the overlay end in a modal: the tab bar's + and the mobile

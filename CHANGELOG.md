@@ -3,6 +3,29 @@
 ## [Unreleased]
 
 ### Added
+- **Spaces: working-directory groups above the session tabs.** The window is
+  now a header (menu · breadcrumb 空间·任务·目录 · the same toolbar buttons)
+  above a left sidebar of spaces with their tasks, and the untouched terminal
+  area on the right — the layout the user asked for on 2026-10-26
+  (“左边是空间+任务，右边是session+console”). A space is a name bound to a
+  directory, persisted server-side (`spaces.json`) so every device sees the
+  same groups; a session points back at one by id. On first start an existing
+  install migrates itself: one space per distinct working directory, every
+  session filed under its dir's space. Spaces rename (double-click), re-point
+  (new tasks only), and delete without deleting their tasks — those fall to
+  the sidebar's 未分组, from where a context-menu 移动到空间… files them
+  anywhere else.
+- **Creating a task in a space.** The sidebar's + and the header's +任务 (and
+  Ctrl+T, when the active task has a space) open the shared new-tab dialog
+  locked to the space's directory — the folder escape hatches are hidden —
+  with the default name `task N` (a derived name: it still never reaches
+  `claude --name`). Continuing a past conversation of that directory works
+  as before.
+- **Deletion confirms.** Deleting a task (×, middle-click, Ctrl+W) or a
+  space asks first, in one shared dialog that names what will stop and notes
+  the transcript survives; Close Others asks once for the whole batch
+  (user, 2026-10-26: “删除时，要有确认弹窗”). A deletion arriving from another
+  window never confirms — news, not an act.
 - **A web dialog for Bash approvals (ccweb-companion mod pilot).** With the
   companion mod loaded (`CLAUDE_CODE_PLUGIN_DIRS`, mod in `~/.claude/dev-mods/`),
   a Bash call that wants an answer is held by the mod and shown in the browser
@@ -82,6 +105,14 @@
   applies from the next start.
 
 ### Changed
+- **The top tab bar became the spaces sidebar.** Every tab behaviour moved
+  with it — status dots and the ✓ / 待批准 / spinning-ball marks, double-click
+  rename, drag-to-reorder (vertical, within a space), the context menu
+  (Close Others, now plus 移动到空间…), middle-click and Alt+1..9. On narrow
+  screens the sidebar is a slide-in drawer with a backdrop that closes on
+  task switch, replacing the 2-visible-tabs + ⋮ overflow menu (and its
+  GAP-17 missing-marks defect with it). Chrome stays clickable above the
+  Start overlay.
 - **The data directory moved under `~/.cc-web/`.** The default is now
   `~/.cc-web/data` (base directory created 0700) instead of
   `~/.claude-code-web` at the home root, and the first start adopts the old

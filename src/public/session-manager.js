@@ -13,6 +13,9 @@ class SessionTabManager {
         this.activeTabId = null;
         this.tabOrder = []; // visual order of tabs
         this.tabHistory = []; // most recently used order
+        // The spaces sidebar (spaces.js), injected by app.js right after it is
+        // built. Owns the groups this manager's .session-tab rows sit in.
+        this.sidebar = null;
         this.notificationsEnabled = false;
         this.requestNotificationPermission();
     }
@@ -254,9 +257,9 @@ class SessionTabManager {
     }
 
     syncOrderFromDom() {
-        const tabsContainer = document.getElementById('tabsContainer');
-        if (!tabsContainer) return;
-        const ids = Array.from(tabsContainer.querySelectorAll('.session-tab'))
+        // Tasks sit in per-space containers now, so the order is read across
+        // the whole tree — group order first, tasks within each group second.
+        const ids = Array.from(document.querySelectorAll('.spaces-tree .session-tab'))
             .map(tab => tab.dataset.sessionId)
             .filter(Boolean);
         if (ids.length) {
@@ -268,15 +271,15 @@ class SessionTabManager {
     ensureTabVisible(sessionId) {
         const tab = this.tabs.get(sessionId);
         if (!tab) return;
-        const scrollContainer = tab.closest('.tabs-section');
+        const scrollContainer = tab.closest('.spaces-tree');
         if (!scrollContainer) return;
         const tabRect = tab.getBoundingClientRect();
         const containerRect = scrollContainer.getBoundingClientRect();
 
-        if (tabRect.left < containerRect.left) {
-            scrollContainer.scrollLeft += tabRect.left - containerRect.left - 16;
-        } else if (tabRect.right > containerRect.right) {
-            scrollContainer.scrollLeft += tabRect.right - containerRect.right + 16;
+        if (tabRect.top < containerRect.top) {
+            scrollContainer.scrollTop += tabRect.top - containerRect.top - 16;
+        } else if (tabRect.bottom > containerRect.bottom) {
+            scrollContainer.scrollTop += tabRect.bottom - containerRect.bottom + 16;
         }
     }
 
@@ -295,9 +298,7 @@ class SessionTabManager {
     async init() {
         this.setupTabBar();
         this.setupKeyboardShortcuts();
-        this.setupOverflowDropdown();
         const reconcile = await this.reconcileSessions();
-        this.updateTabOverflow();
         
         // Show notification permission prompt after a slight delay
         setTimeout(() => {
@@ -434,190 +435,66 @@ class SessionTabManager {
     }
 
     setupTabBar() {
-        const tabsContainer = document.getElementById('tabsContainer');
-        const newTabBtn = document.getElementById('tabNewBtn');
-        
-        // New tab button
-        newTabBtn?.addEventListener('click', () => {
+        const newTaskBtn = document.getElementById('headerNewTaskBtn');
+
+        // New task in the header — Ctrl+T and the Sessions panel's New Session
+        // all land here too (createNewSession).
+        newTaskBtn?.addEventListener('click', () => {
             this.createNewSession();
         });
-        
-        // Enable drag and drop for tabs
-        if (tabsContainer) {
-            tabsContainer.addEventListener('dragstart', (e) => {
-                if (e.target.classList.contains('session-tab')) {
-                    e.dataTransfer.effectAllowed = 'copyMove';
-                    const sid = e.target.dataset.sessionId;
-                    if (sid) {
-                        e.dataTransfer.setData('text/plain', sid);
-                        e.dataTransfer.setData('application/x-session-id', sid);
-                        e.dataTransfer.setData('x-source-pane', '-1');
-                    }
-                    e.target.classList.add('dragging');
-                }
-            });
-            
-            tabsContainer.addEventListener('dragend', (e) => {
-                if (e.target.classList.contains('session-tab')) {
-                    e.target.classList.remove('dragging');
-                    this.syncOrderFromDom();
-                    this.updateTabOverflow();
-                    this.updateOverflowMenu();
-                    // Swapping the tab order swaps the split panes' sides too.
-                    const app = this.claudeInterface;
-                    if (app && app.splitContainer && typeof app.splitContainer.syncPaneOrderToTabs === 'function') {
-                        app.splitContainer.syncPaneOrderToTabs(this.tabOrder);
-                    }
-                }
-            });
-            
-            tabsContainer.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const draggingTab = tabsContainer.querySelector('.dragging');
-                if (!draggingTab) return;
-                const afterElement = this.getDragAfterElement(tabsContainer, e.clientX);
-                
-                if (afterElement == null) {
-                    tabsContainer.appendChild(draggingTab);
-                } else {
-                    tabsContainer.insertBefore(draggingTab, afterElement);
-                }
-            });
-
-            tabsContainer.addEventListener('drop', (e) => {
-                e.preventDefault();
-            });
-        }
     }
 
+    // Drag & drop inside one space's task list (the sidebar replaced the old
+    // single horizontal bar, so the handlers attach per container, vertical).
+    // Dragging a tab into a split pane is a different gesture owned by
+    // splits.js and unaffected here.
+    attachTaskContainerDnd(container) {
+        if (!container || container.dataset.dndAttached) return;
+        container.dataset.dndAttached = '1';
 
-    setupOverflowDropdown() {
-        const overflowBtn = document.getElementById('tabOverflowBtn');
-        const overflowMenu = document.getElementById('tabOverflowMenu');
-        
-        if (overflowBtn) {
-            overflowBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                overflowMenu.classList.toggle('active');
-                this.updateOverflowMenu();
-            });
-        }
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!overflowMenu?.contains(e.target) && !overflowBtn?.contains(e.target)) {
-                overflowMenu?.classList.remove('active');
+        container.addEventListener('dragstart', (e) => {
+            if (e.target.classList.contains('session-tab')) {
+                e.dataTransfer.effectAllowed = 'copyMove';
+                const sid = e.target.dataset.sessionId;
+                if (sid) {
+                    e.dataTransfer.setData('text/plain', sid);
+                    e.dataTransfer.setData('application/x-session-id', sid);
+                    e.dataTransfer.setData('x-source-pane', '-1');
+                }
+                e.target.classList.add('dragging');
             }
         });
-        
-        // Update overflow on window resize
-        window.addEventListener('resize', () => {
-            this.updateTabOverflow();
-            this.updateOverflowMenu();
-        });
-    }
-    
-    updateTabOverflow() {
-        const isMobile = window.innerWidth <= 768;
-        const overflowWrapper = document.getElementById('tabOverflowWrapper');
-        const overflowCount = document.querySelector('.tab-overflow-count');
-        
-        if (!isMobile) {
-            // On desktop, show all tabs and hide overflow
-            this.tabs.forEach(tab => {
-                tab.style.display = '';
-            });
-            if (overflowWrapper) {
-                overflowWrapper.style.display = 'none';
+
+        container.addEventListener('dragend', (e) => {
+            if (e.target.classList.contains('session-tab')) {
+                e.target.classList.remove('dragging');
+                this.syncOrderFromDom();
+                // Swapping the tab order swaps the split panes' sides too.
+                const app = this.claudeInterface;
+                if (app && app.splitContainer && typeof app.splitContainer.syncPaneOrderToTabs === 'function') {
+                    app.splitContainer.syncPaneOrderToTabs(this.tabOrder);
+                }
             }
-            if (overflowCount) overflowCount.textContent = '';
-            return;
-        }
-        
-        // On mobile, show only first 2 tabs
-        const tabsArray = this.getOrderedTabElements();
-        
-        tabsArray.forEach((tab, index) => {
-            if (index < 2) {
-                tab.style.display = ''; // Show first 2 tabs
+        });
+
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggingTab = container.querySelector('.dragging');
+            if (!draggingTab) return;
+            const afterElement = this.getDragAfterElement(container, e.clientY);
+
+            if (afterElement == null) {
+                container.appendChild(draggingTab);
             } else {
-                tab.style.display = 'none'; // Hide rest
+                container.insertBefore(draggingTab, afterElement);
             }
         });
-        
-        if (tabsArray.length > 2) {
-            // Show overflow button with count
-            if (overflowWrapper) {
-                overflowWrapper.style.display = 'flex';
-                if (overflowCount) {
-                    overflowCount.textContent = tabsArray.length - 2;
-                }
-            }
-        } else {
-            // Hide overflow button
-            if (overflowWrapper) {
-                overflowWrapper.style.display = 'none';
-            }
-            if (overflowCount) {
-                overflowCount.textContent = '';
-            }
-        }
-    }
-    
-    updateOverflowMenu() {
-        const menu = document.getElementById('tabOverflowMenu');
-        if (!menu) return;
-        
-        const overflowIds = this.getOrderedTabIds().slice(2);
-        
-        menu.innerHTML = '';
-        
-        overflowIds.forEach((sessionId) => {
-            const tabElement = this.tabs.get(sessionId);
-            if (!tabElement) return;
-            const session = this.activeSessions.get(sessionId);
-            if (!session) return;
-            
-            const item = document.createElement('div');
-            item.className = 'overflow-tab-item';
-            if (sessionId === this.activeTabId) {
-                item.classList.add('active');
-            }
-            
-            item.innerHTML = `
-                <span class="overflow-tab-name">${tabElement.querySelector('.tab-name').textContent}</span>
-                <span class="overflow-tab-close" data-session-id="${sessionId}" title="Close tab">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </span>
-            `;
-            
-            // Click to switch to tab
-            item.addEventListener('click', async (e) => {
-                if (!e.target.classList.contains('overflow-tab-close')) {
-                    await this.switchToTab(sessionId);
-                    menu.classList.remove('active');
-                    // Update menu contents after switching - use a slightly longer delay to ensure UI updates
-                    setTimeout(() => {
-                        this.updateTabOverflow();
-                        this.updateOverflowMenu();
-                    }, 150);
-                }
-            });
-            
-            // Close button
-            const closeBtn = item.querySelector('.overflow-tab-close');
-            closeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.closeSession(sessionId);
-                menu.classList.remove('active');
-            });
-            
-            menu.appendChild(item);
+
+        container.addEventListener('drop', (e) => {
+            e.preventDefault();
         });
     }
+
 
     setupKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
@@ -684,12 +561,7 @@ class SessionTabManager {
                     sessionData.lastAccessed = Date.now() - (sessions.length - index) * 1000;
                 }
             });
-            
-            // Reorder tabs based on the initial timestamps (mobile only)
-            if (window.innerWidth <= 768) {
-                this.reorderTabsByLastAccessed();
-            }
-            
+
             console.log('[SessionManager.loadSessions] Final tabs.size:', this.tabs.size);
             
             return sessions;
@@ -699,8 +571,17 @@ class SessionTabManager {
         }
     }
 
-    addTab(sessionId, sessionName, status = 'idle', workingDir = null, autoSwitch = true) {
-        const tabsContainer = document.getElementById('tabsContainer');
+    addTab(sessionId, sessionName, status = 'idle', workingDir = null, autoSwitch = true, spaceId = undefined) {
+        // Which space group this task belongs to: the explicit argument when
+        // the caller knows (create flow), else the index spaces.js keeps from
+        // /api/sessions/list — so panels that open an existing session as a
+        // tab (conversations panel, ?sessionId= links) land it in its space.
+        const effectiveSpaceId = spaceId !== undefined && spaceId !== null
+            ? spaceId
+            : (this.sidebar ? this.sidebar.sessionSpace(sessionId) : null);
+        const tabsContainer = this.sidebar
+            ? this.sidebar.getTaskContainer(effectiveSpaceId)
+            : document.getElementById('tabsContainer');
         if (!tabsContainer) return;
         
         // Check if tab already exists
@@ -726,7 +607,7 @@ class SessionTabManager {
                 <span class="tab-status ${status}"></span>
                 <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
             </div>
-            <span class="tab-close" title="Close tab">
+            <span class="tab-close" title="删除任务">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -783,15 +664,18 @@ class SessionTabManager {
             name: sessionName,
             status: status,
             workingDir: workingDir,
+            spaceId: effectiveSpaceId,
             lastAccessed: Date.now(),
             lastActivity: Date.now(),
             unreadOutput: false,
             hasError: false
         });
-        
-        // Update overflow on mobile
-        this.updateTabOverflow();
-        this.updateOverflowMenu();
+
+        if (this.sidebar) {
+            this.sidebar.noteSession(sessionId, effectiveSpaceId);
+            this.sidebar.updateUngroupedVisibility();
+            this.sidebar.updateBreadcrumb();
+        }
 
         // If this is the first tab and autoSwitch is enabled, make it active
         if (this.tabs.size === 1 && autoSwitch) {
@@ -828,13 +712,6 @@ class SessionTabManager {
             this.updateTabHistory(sessionId);
         }
 
-        if (window.innerWidth <= 768) {
-            const tabIndex = this.getOrderedTabIds().indexOf(sessionId);
-            if (tabIndex >= 2) this.reorderTabsByLastAccessed();
-        }
-
-        this.updateOverflowMenu();
-
         // In split mode the tab targets the active pane (VS Code-style). Do NOT
         // join the main terminal: it is hidden (collapsed to ~10x5) and joining it
         // would resize the shared PTY to that tiny size, blanking the panes.
@@ -849,39 +726,54 @@ class SessionTabManager {
             // back to a tab.
             await app.showSession(sessionId);
         }
-        this.updateHeaderInfo(sessionId);
+        // The sidebar follows the switch: breadcrumb, drawer (narrow screens),
+        // and the owning space's expansion.
+        if (this.sidebar) this.sidebar.setActive(sessionId);
     }
-    
-    reorderTabsByLastAccessed() {
-        const tabsContainer = document.getElementById('tabsContainer');
-        if (!tabsContainer) return;
-        
-        // Get all tabs sorted by last accessed time (most recent first)
-        const sortedIds = this.getOrderedTabIds()
-            .sort((a, b) => {
-                const sessionA = this.activeSessions.get(a);
-                const sessionB = this.activeSessions.get(b);
-                const timeA = sessionA ? sessionA.lastAccessed : 0;
-                const timeB = sessionB ? sessionB.lastAccessed : 0;
-                return timeB - timeA; // Most recent first
-            });
 
-        sortedIds.forEach((sessionId) => {
-            const tabElement = this.tabs.get(sessionId);
-            if (tabElement) {
-                tabsContainer.appendChild(tabElement);
-            }
+    // Closing a task deletes the session server-side (stopping its Claude).
+    // The user asked on 2026-10-26 that deletion always confirm — one dialog,
+    // shown here at the single funnel every close path goes through (×,
+    // middle-click, Ctrl+W, Close Others). skipConfirm is for callers that
+    // just asked the question themselves (the conversations panel's trash, the
+    // Close Others batch); a session_deleted from another window arrives with
+    // skipServerRequest and never confirms either — it is news, not an act.
+    async confirmClose(sessionIds, { keeper = null } = {}) {
+        if (!this.claudeInterface || !this.claudeInterface.confirmDialog) return true;
+        const nameOf = (id) => {
+            const s = this.activeSessions.get(id);
+            return (s && s.name) || 'Session';
+        };
+        const running = sessionIds.filter(id => {
+            const s = this.activeSessions.get(id);
+            return s && s.status === 'active';
         });
-
-        this.tabOrder = sortedIds;
-        
-        // Update overflow on mobile
-        this.updateTabOverflow();
+        const first = sessionIds.length === 1
+            ? `删除任务「${nameOf(sessionIds[0])}」？`
+            : (keeper
+                ? `删除「${nameOf(keeper)}」之外的 ${sessionIds.length} 个任务？`
+                : `删除这 ${sessionIds.length} 个任务？`);
+        const body = [first,
+            running.length > 0 ? `其中 ${running.length} 个任务正在运行 Claude，会被停止。` : null,
+            '对话记录保留，之后可从「继续之前的对话」里恢复。'].filter(Boolean).join('\n');
+        return this.claudeInterface.confirmDialog({
+            title: sessionIds.length === 1 ? '删除任务' : '删除其他任务',
+            body,
+            confirmText: '删除',
+            danger: true,
+        });
     }
 
-    closeSession(sessionId, { skipServerRequest = false } = {}) {
+    closeSession(sessionId, { skipServerRequest = false, skipConfirm = false } = {}) {
         const tab = this.tabs.get(sessionId);
         if (!tab) return;
+
+        if (!skipConfirm && !skipServerRequest) {
+            // Fire-and-forget on purpose: closeSession has synchronous callers
+            // (click handlers); the dialog resolves and does the real close.
+            this.confirmClose([sessionId]).then((ok) => { if (ok) this.closeSession(sessionId, { skipConfirm: true }); });
+            return;
+        }
 
         const orderedIds = this.getOrderedTabIds();
         const closedIndex = orderedIds.indexOf(sessionId);
@@ -898,9 +790,7 @@ class SessionTabManager {
         this.removeFromHistory(sessionId);
         this.saveTabState();
 
-        // Update overflow on mobile
-        this.updateTabOverflow();
-        this.updateOverflowMenu();
+        if (this.sidebar) this.sidebar.forgetSession(sessionId);
 
         if (!skipServerRequest) {
             const authHeaders = window.authManager ? window.authManager.getAuthHeaders() : {};
@@ -991,10 +881,14 @@ class SessionTabManager {
         });
     }
 
-    // Close all other tabs except the given session
-    closeOthers(sessionId) {
-        const ids = this.getOrderedTabIds();
-        ids.forEach(id => { if (id !== sessionId) this.closeSession(id); });
+    // Close all other tabs except the given session — ONE confirmation for
+    // the whole batch (the user's 2026-10-26 rule is "deletion confirms", not
+    // "confirms N times").
+    async closeOthers(sessionId) {
+        const ids = this.getOrderedTabIds().filter(id => id !== sessionId);
+        if (ids.length === 0) return;
+        if (!(await this.confirmClose(ids, { keeper: sessionId }))) return;
+        ids.forEach(id => this.closeSession(id, { skipConfirm: true }));
     }
 
     // Context menu for a session tab
@@ -1011,6 +905,27 @@ class SessionTabManager {
             return el;
         };
         menu.appendChild(addItem('Close Others', () => this.closeOthers(sessionId)));
+        // Moving a task between spaces — every space except the one it is in
+        // (and out, into 未分组). Only when spaces exist at all.
+        if (this.sidebar && this.sidebar.spaces.length > 0) {
+            const current = this.sidebar.sessionSpace(sessionId);
+            const targets = this.sidebar.spaces.filter(s => s.id !== current);
+            if (targets.length > 0 || current) {
+                const move = document.createElement('div');
+                move.className = 'pane-session-item pane-submenu';
+                move.textContent = '移动到空间…';
+                const sub = document.createElement('div');
+                sub.className = 'pane-submenu-list';
+                if (current) {
+                    sub.appendChild(addItem('未分组', () => this.sidebar.moveSession(sessionId, null)));
+                }
+                targets.forEach(space => {
+                    sub.appendChild(addItem(space.name, () => this.sidebar.moveSession(sessionId, space.id)));
+                });
+                move.appendChild(sub);
+                menu.appendChild(move);
+            }
+        }
         document.body.appendChild(menu);
         menu.style.top = `${clientY + 4}px`;
         menu.style.left = `${clientX + 4}px`;
@@ -1018,9 +933,12 @@ class SessionTabManager {
         setTimeout(() => document.addEventListener('mousedown', close, true), 0);
     }
 
-    // + in the tab bar, Ctrl+T and the Sessions panel's New Session all land here.
+    // The header +, Ctrl+T and the Sessions panel's New Session all land here.
+    // With the sidebar, a "new task" defaults to the active task's space.
     createNewSession() {
-        if (this.claudeInterface) this.claudeInterface.openNewTabDialog();
+        if (!this.claudeInterface) return;
+        const space = this.sidebar ? this.sidebar.activeSpaceContext() : null;
+        this.claudeInterface.openNewTabDialog(space ? { space } : undefined);
     }
 
     switchToNextTab() {
@@ -1054,16 +972,6 @@ class SessionTabManager {
         }
     }
 
-
-    updateHeaderInfo(sessionId) {
-        const session = this.activeSessions.get(sessionId);
-        if (session) {
-            const workingDirEl = document.getElementById('workingDir');
-            if (workingDirEl && session.workingDir) {
-                workingDirEl.textContent = session.workingDir;
-            }
-        }
-    }
 
     // Claude is working in this session (its terminal title leads with ◐/◑,
     // see claude-title.js), or no longer is. An attribute on the tab, not a
@@ -1254,12 +1162,15 @@ class SessionTabManager {
             if (session) {
                 session.status = status;
                 session.lastActivity = Date.now();
-                
+
                 // Clear error state if status is not error
                 if (status !== 'error') {
                     session.hasError = false;
                 }
             }
+
+            // The breadcrumb dot mirrors the active tab's dot.
+            if (sessionId === this.activeTabId && this.sidebar) this.sidebar.updateBreadcrumb();
         }
     }
     
@@ -1412,12 +1323,13 @@ class SessionTabManager {
         }
     }
 
-    getDragAfterElement(container, x) {
+    // Vertical drop target: which task the dragged row should land BEFORE.
+    getDragAfterElement(container, y) {
         const draggableElements = [...container.querySelectorAll('.session-tab:not(.dragging)')];
-        
+
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
-            const offset = x - box.left - box.width / 2;
+            const offset = y - box.top - box.height / 2;
             
             if (offset < 0 && offset > closest.offset) {
                 return { offset: offset, element: child };

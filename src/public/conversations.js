@@ -242,8 +242,8 @@
 
       const del = document.createElement('button');
       del.className = 'conv-act';
-      del.title = 'Delete session';
-      del.setAttribute('aria-label', `Delete session ${session.name || ''}`.trim());
+      del.title = '删除会话';
+      del.setAttribute('aria-label', `删除会话 ${session.name || ''}`.trim());
       del.appendChild(icon('trash'));
       del.addEventListener('click', (e) => {
         e.stopPropagation(); // the row itself means "switch"
@@ -299,12 +299,20 @@
     async deleteSession(session) {
       const app = window.app;
       if (!app) return;
-      if (!confirm(`Delete session "${session.name || session.id.slice(0, 8)}"? This stops any running Claude process.`)) return;
-      // Closing the tab is what deletes the session server-side; with no tab
-      // here, ask the server directly. Either way the transcript is untouched —
-      // the conversation reappears below, ready to be resumed again.
+      const label = session.name || session.id.slice(0, 8);
+      // One confirm for both paths (2026-10-26: 删除时要有确认弹窗). Closing
+      // the tab is what deletes the session server-side; with no tab here, ask
+      // the server directly. Either way the transcript is untouched — the
+      // conversation reappears below, ready to be resumed again.
       if (app.sessionTabManager && app.sessionTabManager.tabs.has(session.id)) {
-        app.sessionTabManager.closeSession(session.id);
+        app.sessionTabManager.closeSession(session.id);  // asks its own dialog
+      } else if (!(await app.confirmDialog({
+        title: '删除会话',
+        body: `删除会话「${label}」？其中正在运行的 Claude 会被停止。\n对话记录保留，之后可从「继续之前的对话」里恢复。`,
+        confirmText: '删除',
+        danger: true,
+      }))) {
+        return;
       } else {
         await app.deleteSession(session.id, { skipConfirm: true });
       }
