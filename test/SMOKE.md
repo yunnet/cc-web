@@ -47,7 +47,7 @@
 | S32 | SPACE-05、TAB-02 | 点非当前任务 | 该行 `backgroundColor` 等于 `--accent`（数值对比，注意 rgb/hex 归一），其余无 `.active` |
 | S33 | SPACE-06 | 双击空间名改名；点空间行折叠/展开 | 改名后 PATCH 落服务器（另一窗口刷新可见）；折叠后 `.space-tasks` 的 `display === 'none'`，展开恢复 |
 | S34 | SPACE-07、TAB-03、TAB-11 | 点任务 ×、按 Ctrl+W | `#confirmModal` 打开且标题「删除任务」；点取消任务仍在；点确认任务数 -1；两路都只弹一次 |
-| S35 | SPACE-08、SPACE-02 | 点「＋ 新建空间」→「浏览…」→ 路径栏输入目录回车 → 点行进入 → 「选定此目录」 | 目录输入框=所选目录、名字自动=目录名；再手填一个不存在路径点创建 → 中文报错「工作目录不存在或不是目录」且模态不关 |
+| S35 | SPACE-08、SPACE-02 | 点「＋ 新建空间」→「浏览…」→ 面包屑点中间段跳转 → 点行进入目标目录 → 「选定此目录」 | 弹窗内容宽 ≈640px、列表高 ≥360px；面包屑末段加粗（`.crumb.current`）；选定后目录输入框=所选目录、名字自动=目录名；再手填一个不存在路径点创建 → 中文报错「工作目录不存在或不是目录」且模态不关；390 宽无横向溢出 |
 | S36 | SPACE-09 | 空间行「+」打开新建任务对话框 | 路径栏 readOnly 且值=空间目录；#folderUpBtn/#newTabBrowseBtn/#newTabRecent 都 `display:none`；名称框预填 `task N` 且 `dataset.userEdited === 'false'` |
 | S37 | SPACE-05、MOB-11 | 390 宽视口点 #sidebarToggleBtn | 抽屉 transform 从 `matrix(1,0,0,1,-300,0)` 变 `matrix(1,0,0,1,0,0)`，#sidebarBackdrop 可见；点任一任务后 transform 回 -300 且遮罩隐藏 |
 | S38 | SPACE-05、TERM-31 | Start 覆盖层打开时（会话未启动）点侧边栏任务 | 点击生效（`elementFromPoint` 命中任务行而非遮罩）；390 宽时抽屉同样可点 |

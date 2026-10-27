@@ -471,32 +471,44 @@
                     <button class="close-btn" id="newSpaceCloseX" type="button">&times;</button>
                 </div>
                 <div class="modal-body">
-                    <div class="setting-group">
+                    <!-- Block layout on both groups: labels above controls,
+                         one consistent pattern (the plain .setting-group is a
+                         horizontal flex row). -->
+                    <div class="setting-group setting-group-block">
                         <label for="newSpaceName">空间名</label>
                         <input type="text" id="newSpaceName" maxlength="200" placeholder="如：投标前台" autocomplete="off">
                     </div>
-                    <div class="setting-group">
+                    <!-- Block layout (label above, controls stacked): the dir
+                         row, the hint and the picker panel must stack — the
+                         plain .setting-group is a horizontal flex row and
+                         squeezed the panel to a sliver (the "不友好" first
+                         round). -->
+                    <div class="setting-group setting-group-block">
                         <label for="newSpaceDir">工作目录</label>
                         <div class="new-space-dir-row">
                             <input type="text" id="newSpaceDir" spellcheck="false" autocomplete="off" placeholder="/Users/you/work/project">
                             <button class="btn btn-secondary btn-small" id="newSpaceBrowseBtn" type="button">浏览…</button>
                         </div>
+                        <p class="setting-hint">可粘贴路径直接创建，或点「浏览…」挑选。挑选的目录会成为这个空间下新任务的工作目录。</p>
                         <!-- The folder picker: same /api/folders data and the
                              same .folder-item rows as the new-tab dialog's
-                             browser, scoped to this modal (spaces.js). Click a
-                             row to enter it; 选定此目录 fills the input. -->
+                             browser (spaces.js). Navigate with the breadcrumb
+                             (click a segment to jump) or by entering folders;
+                             the bottom button confirms the CURRENT folder. -->
                         <div class="new-space-browser" id="newSpaceBrowser" hidden>
-                            <div class="nsb-bar">
+                            <div class="nsb-nav">
                                 <button class="nsb-up" id="newSpaceUpBtn" type="button" title="上一级" aria-label="上一级">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <polyline points="15 18 9 12 15 6"/>
                                     </svg>
                                 </button>
-                                <input type="text" id="newSpaceBrowserPath" spellcheck="false" autocomplete="off" placeholder="输入路径，回车跳转">
-                                <button class="btn btn-primary btn-small" id="newSpacePickBtn" type="button">选定此目录</button>
+                                <div class="nsb-crumbs" id="newSpaceCrumbs" aria-label="当前路径"></div>
                             </div>
-                            <div class="nsb-list" id="newSpaceList"></div>
                             <label class="nsb-hidden"><input type="checkbox" id="newSpaceHiddenToggle"> 显示隐藏目录</label>
+                            <div class="nsb-list" id="newSpaceList"></div>
+                            <div class="nsb-foot">
+                                <button class="btn btn-primary nsb-pick" id="newSpacePickBtn" type="button">选定此目录</button>
+                            </div>
                         </div>
                     </div>
                     <div class="new-space-recents" id="newSpaceRecents"></div>

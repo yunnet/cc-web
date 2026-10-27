@@ -136,14 +136,6 @@ class SpacesSidebar {
         document.getElementById('newSpaceHiddenToggle')?.addEventListener('change', () => {
             if (this._nsPath) this.nsBrowse(this._nsPath);
         });
-        document.getElementById('newSpaceBrowserPath')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.nsBrowse(e.target.value.trim());
-            } else if (e.key === 'Escape') {
-                e.target.value = this._nsPath || '';
-            }
-        });
     }
 
     // The folder picker inside #newSpaceModal: the same /api/folders data and
@@ -166,7 +158,6 @@ class SpacesSidebar {
 
     async nsBrowse(path) {
         const list = document.getElementById('newSpaceList');
-        const pathInput = document.getElementById('newSpaceBrowserPath');
         if (!list) return;
         const hidden = document.getElementById('newSpaceHiddenToggle')?.checked;
         const params = new URLSearchParams();
@@ -182,17 +173,22 @@ class SpacesSidebar {
             }
             const data = await res.json();
             this._nsPath = data.currentPath;
-            pathInput.value = data.currentPath;
             document.getElementById('newSpaceUpBtn').disabled = !data.parentPath;
+            this.renderNsCrumbs(data.currentPath);
+            const pickBtn = document.getElementById('newSpacePickBtn');
+            if (pickBtn) pickBtn.title = data.currentPath;
 
             list.innerHTML = '';
             if (!data.folders || data.folders.length === 0) {
-                list.innerHTML = '<div class="nsb-empty">空目录</div>';
+                // An empty folder is a perfectly good project dir — say so,
+                // or "empty" reads as "wrong place".
+                list.innerHTML = '<div class="nsb-empty">这个目录是空的。如果它就是你要绑定的目录，直接点「选定此目录」。</div>';
                 return;
             }
             data.folders.forEach(folder => {
                 const row = document.createElement('div');
                 row.className = 'folder-item';
+                row.title = folder.path;
                 row.innerHTML = `
                     <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -206,6 +202,39 @@ class SpacesSidebar {
         } catch (error) {
             list.innerHTML = '<div class="nsb-empty">无法打开这个目录</div>';
         }
+    }
+
+    // The breadcrumb: every segment is a jump, the last one is where you are.
+    // A scrollable strip rather than middle-truncation — the tail (the part
+    // that differs between sibling projects) stays visible, same reasoning as
+    // the new-tab dialog's path bar.
+    renderNsCrumbs(path) {
+        const box = document.getElementById('newSpaceCrumbs');
+        if (!box) return;
+        box.innerHTML = '';
+        const parts = String(path || '').split('/').filter(Boolean);
+
+        const seg = (label, target, current) => {
+            const el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'crumb' + (current ? ' current' : '');
+            el.textContent = label;
+            el.title = target;
+            el.addEventListener('click', () => this.nsBrowse(target));
+            return el;
+        };
+
+        box.appendChild(seg('/', '/', parts.length === 0));
+        let acc = '';
+        parts.forEach((name, i) => {
+            acc += '/' + name;
+            const sep = document.createElement('span');
+            sep.className = 'crumb-sep';
+            sep.textContent = '/';
+            box.appendChild(sep);
+            box.appendChild(seg(name, acc, i === parts.length - 1));
+        });
+        box.scrollLeft = box.scrollWidth;
     }
 
     async nsUp() {
@@ -247,10 +276,10 @@ class SpacesSidebar {
         if (browser) browser.hidden = true;
         const listEl = document.getElementById('newSpaceList');
         if (listEl) listEl.innerHTML = '';
+        const crumbsEl = document.getElementById('newSpaceCrumbs');
+        if (crumbsEl) crumbsEl.innerHTML = '';
         const hiddenToggle = document.getElementById('newSpaceHiddenToggle');
         if (hiddenToggle) hiddenToggle.checked = false;
-        const browserPath = document.getElementById('newSpaceBrowserPath');
-        if (browserPath) browserPath.value = '';
         this.renderNewSpaceRecents();
         modal.classList.add('active');
 
