@@ -996,6 +996,10 @@ body.sidebar-hidden .spaces-sidebar {
     color: var(--text-secondary);
     cursor: pointer;
     margin: 0;
+    /* CJK wraps between any two characters, so a squeezed label breaks into
+       "☐ 显示隐" / "藏目录" — never shrink it, never wrap its text. */
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .nsb-list {
