@@ -994,8 +994,8 @@ body.sidebar-hidden .spaces-sidebar {
     gap: 6px;
     font-size: 12px;
     color: var(--text-secondary);
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    margin: 0;
 }
 
 .nsb-list {
@@ -1018,10 +1018,14 @@ body.sidebar-hidden .spaces-sidebar {
     text-align: center;
 }
 
+/* One action row: the quiet option (hidden dirs) left, the primary action
+   (选定) right. */
 .nsb-foot {
     display: flex;
-    justify-content: flex-end;
-    padding: 8px;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
     border-top: 1px solid var(--border);
 }
 
