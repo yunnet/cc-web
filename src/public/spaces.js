@@ -92,6 +92,11 @@ class SpacesSidebar {
     // response, WS session_created, PATCH move) — one index, every entry point.
     noteSession(sessionId, spaceId) {
         this.sessionSpaces.set(sessionId, spaceId || null);
+        // Self-heal: a space this page has never heard of — created in
+        // another window, or after this page loaded — would otherwise park
+        // the task in 未分组 forever (reproduced live: the dsh reports).
+        // Fetch the list once; render() re-parents the row into its group.
+        if (spaceId && !this.spaceById(spaceId)) this.reloadSpaces();
     }
 
     // The tab manager drops a closed session from the index; its group's
