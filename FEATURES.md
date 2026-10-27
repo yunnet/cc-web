@@ -96,14 +96,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
-| SPACE-02 | 空间 CRUD：GET 列出全部；POST 建（名字 1-200 字、目录经路径校验越界 403）；PATCH 改名/改目录（改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
+| SPACE-02 | 空间 CRUD：GET 列出全部；POST 建（名字 1-200 字、目录经路径校验越界 403、**必须是真实存在的目录**否则 400 中文提示——手滑路径建出的空间会让其下任务无处启动）；PATCH 改名/改目录（同样校验；改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
 | SPACE-03 | 一次性迁移：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
 | SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId 降级为其目录所绑空间、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
 | SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可整条收起，窄屏（≤768px）变左滑抽屉带遮罩 | `control:sidebarToggleBtn` `control:sidebarCollapseBtn` `file:src/public/spaces.js` | `test/features.test.js` |
 | SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器全设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
-| SPACE-08 | 侧边栏底部「＋ 新建空间」：名字（留空自动取目录名）+ 工作目录（最近目录一键填入，路径服务端校验、越界 403 有中文提示；重复目录拒绝）；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | — |
-| SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用 | `file:src/public/app.js` | — |
+| SPACE-08 | 侧边栏底部「＋ 新建空间」：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 行：点行进入、上一级、路径栏回车跳转、符号链接标 ↗、显示隐藏目录开关、「选定此目录」回填输入框）；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceBrowserPath` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
+| SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用；**空间目录打不开时禁用两个启动键并给出中文原因与补救指引**（防止任务静默落到其它目录/错误空间） | `file:src/public/app.js` | — |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |

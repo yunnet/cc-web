@@ -155,6 +155,18 @@ class ClaudeCodeWebServer {
   // Default a session with no explicit (or no longer known) space to the one
   // bound to its working directory: opening a task in a directory that IS a
   // space joins it, rather than landing in 未分组 because nobody passed the id.
+  // A space's dir is walked by folder pickers and becomes the working dir its
+  // tasks start in; a path that merely RESOLVES (a typo, an unexpanded ~)
+  // sails through validatePath and leaves every task in it unable to start.
+  // Same discipline as POST /api/plan-dirs: it must be a real directory.
+  spaceDirIsReal(dir) {
+    try {
+      return fs.statSync(dir).isDirectory();
+    } catch (_) {
+      return false;
+    }
+  }
+
   spaceIdForDir(dir) {
     if (!dir) return null;
     const space = this.spaces.find((s) => s.dir === dir);
@@ -831,6 +843,9 @@ class ClaudeCodeWebServer {
       if (!validation.valid) {
         return res.status(403).json({ error: validation.error, message: 'Cannot create a space outside the allowed area' });
       }
+      if (!this.spaceDirIsReal(validation.path)) {
+        return res.status(400).json({ error: 'Not a directory', message: '工作目录不存在或不是目录，请检查路径' });
+      }
       const now = new Date().toISOString();
       const space = { id: uuidv4(), name: cleaned.name, dir: validation.path, createdAt: now, updatedAt: now };
       this.spaces.push(space);
@@ -851,6 +866,9 @@ class ClaudeCodeWebServer {
         const validation = this.validatePath(body.dir);
         if (!validation.valid) {
           return res.status(403).json({ error: validation.error, message: 'Cannot point a space outside the allowed area' });
+        }
+        if (!this.spaceDirIsReal(validation.path)) {
+          return res.status(400).json({ error: 'Not a directory', message: '工作目录不存在或不是目录，请检查路径' });
         }
         space.dir = validation.path;
       }

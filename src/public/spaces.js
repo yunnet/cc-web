@@ -130,6 +130,100 @@ class SpacesSidebar {
 
         document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeDrawer());
         document.getElementById('newSpaceBtn')?.addEventListener('click', () => this.openNewSpaceDialog());
+        document.getElementById('newSpaceBrowseBtn')?.addEventListener('click', () => this.toggleNewSpaceBrowser());
+        document.getElementById('newSpaceUpBtn')?.addEventListener('click', () => this.nsUp());
+        document.getElementById('newSpacePickBtn')?.addEventListener('click', () => this.nsPick());
+        document.getElementById('newSpaceHiddenToggle')?.addEventListener('change', () => {
+            if (this._nsPath) this.nsBrowse(this._nsPath);
+        });
+        document.getElementById('newSpaceBrowserPath')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.nsBrowse(e.target.value.trim());
+            } else if (e.key === 'Escape') {
+                e.target.value = this._nsPath || '';
+            }
+        });
+    }
+
+    // The folder picker inside #newSpaceModal: the same /api/folders data and
+    // the same .folder-item rows as the new-tab dialog's browser (so it reads
+    // as one control in two places), with its own state so the two never
+    // fight over currentFolderPath. Click a row = enter it; 选定此目录 fills
+    // the dir input.
+    toggleNewSpaceBrowser() {
+        const box = document.getElementById('newSpaceBrowser');
+        if (!box) return;
+        const opening = box.hidden;
+        box.hidden = !opening;
+        if (opening) {
+            const typed = document.getElementById('newSpaceDir').value.trim();
+            // No path → the server answers with its base folder, same as the
+            // new-tab dialog's 回到起始目录.
+            this.nsBrowse(typed || null);
+        }
+    }
+
+    async nsBrowse(path) {
+        const list = document.getElementById('newSpaceList');
+        const pathInput = document.getElementById('newSpaceBrowserPath');
+        if (!list) return;
+        const hidden = document.getElementById('newSpaceHiddenToggle')?.checked;
+        const params = new URLSearchParams();
+        if (path) params.append('path', path);
+        if (hidden) params.append('showHidden', 'true');
+        list.innerHTML = '<div class="nsb-empty">加载中…</div>';
+        try {
+            const res = await this.app.authFetch(`/api/folders?${params}`);
+            if (!res || !res.ok) {
+                if (res && res.status === 401 && window.authManager) { window.authManager.showLoginPrompt(); return; }
+                list.innerHTML = '<div class="nsb-empty">无法打开这个目录</div>';
+                return;
+            }
+            const data = await res.json();
+            this._nsPath = data.currentPath;
+            pathInput.value = data.currentPath;
+            document.getElementById('newSpaceUpBtn').disabled = !data.parentPath;
+
+            list.innerHTML = '';
+            if (!data.folders || data.folders.length === 0) {
+                list.innerHTML = '<div class="nsb-empty">空目录</div>';
+                return;
+            }
+            data.folders.forEach(folder => {
+                const row = document.createElement('div');
+                row.className = 'folder-item';
+                row.innerHTML = `
+                    <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="folder-name">${escapeHtml(folder.name)}</span>
+                    ${folder.isSymlink ? '<span class="folder-symlink" title="Symbolic link">↗</span>' : ''}
+                `;
+                row.addEventListener('click', () => this.nsBrowse(folder.path));
+                list.appendChild(row);
+            });
+        } catch (error) {
+            list.innerHTML = '<div class="nsb-empty">无法打开这个目录</div>';
+        }
+    }
+
+    async nsUp() {
+        if (!this._nsPath) return;
+        const parent = this._nsPath.split('/').slice(0, -1).join('/') || '/';
+        await this.nsBrowse(parent);
+    }
+
+    nsPick() {
+        if (!this._nsPath) return;
+        document.getElementById('newSpaceDir').value = this._nsPath;
+        const nameInput = document.getElementById('newSpaceName');
+        if (!nameInput.value.trim()) {
+            nameInput.value = this._nsPath.split('/').pop() || this._nsPath;
+        }
+        document.getElementById('newSpaceBrowser').hidden = true;
+        this.setNewSpaceError(null);
+        document.getElementById('newSpaceName').focus();
     }
 
     // ---- new space dialog (#newSpaceModal) --------------------------------
@@ -147,6 +241,16 @@ class SpacesSidebar {
         document.getElementById('newSpaceName').value = '';
         document.getElementById('newSpaceDir').value = '';
         this.setNewSpaceError(null);
+        // Folder picker: fresh state per open.
+        this._nsPath = null;
+        const browser = document.getElementById('newSpaceBrowser');
+        if (browser) browser.hidden = true;
+        const listEl = document.getElementById('newSpaceList');
+        if (listEl) listEl.innerHTML = '';
+        const hiddenToggle = document.getElementById('newSpaceHiddenToggle');
+        if (hiddenToggle) hiddenToggle.checked = false;
+        const browserPath = document.getElementById('newSpaceBrowserPath');
+        if (browserPath) browserPath.value = '';
         this.renderNewSpaceRecents();
         modal.classList.add('active');
 

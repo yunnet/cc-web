@@ -477,7 +477,27 @@
                     </div>
                     <div class="setting-group">
                         <label for="newSpaceDir">工作目录</label>
-                        <input type="text" id="newSpaceDir" spellcheck="false" autocomplete="off" placeholder="/Users/you/work/project">
+                        <div class="new-space-dir-row">
+                            <input type="text" id="newSpaceDir" spellcheck="false" autocomplete="off" placeholder="/Users/you/work/project">
+                            <button class="btn btn-secondary btn-small" id="newSpaceBrowseBtn" type="button">浏览…</button>
+                        </div>
+                        <!-- The folder picker: same /api/folders data and the
+                             same .folder-item rows as the new-tab dialog's
+                             browser, scoped to this modal (spaces.js). Click a
+                             row to enter it; 选定此目录 fills the input. -->
+                        <div class="new-space-browser" id="newSpaceBrowser" hidden>
+                            <div class="nsb-bar">
+                                <button class="nsb-up" id="newSpaceUpBtn" type="button" title="上一级" aria-label="上一级">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="15 18 9 12 15 6"/>
+                                    </svg>
+                                </button>
+                                <input type="text" id="newSpaceBrowserPath" spellcheck="false" autocomplete="off" placeholder="输入路径，回车跳转">
+                                <button class="btn btn-primary btn-small" id="newSpacePickBtn" type="button">选定此目录</button>
+                            </div>
+                            <div class="nsb-list" id="newSpaceList"></div>
+                            <label class="nsb-hidden"><input type="checkbox" id="newSpaceHiddenToggle"> 显示隐藏目录</label>
+                        </div>
                     </div>
                     <div class="new-space-recents" id="newSpaceRecents"></div>
                     <p class="setting-hint">空间 = 名字 + 工作目录；在空间下新建的任务都以该目录启动。之后改目录只影响新任务，不改已有任务。</p>

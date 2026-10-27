@@ -2826,9 +2826,22 @@ class ClaudeCodeWebInterface {
         }
         this.toggleNewTabBrowser(!loaded && !this._newTabSpace);
         // Signed out: the login prompt is already up; asking again only
-        // raises it a second time.
-        if (!loaded && this._lastFolderStatus !== 401) await this.loadFolders();
+        // raises it a second time. Space mode never falls back to the base
+        // folder either — a folder the space cannot open must not silently
+        // become some other folder (the task would land in the wrong space).
+        if (!loaded && !this._newTabSpace && this._lastFolderStatus !== 401) await this.loadFolders();
         this.setNewTabError(reason);
+        // A locked dialog whose folder would not open: starting would create
+        // the task in whatever folder was current before. Refuse and say why
+        // (NEW-15's discipline).
+        if (this._newTabSpace && !loaded) {
+            this.setNewTabError(`空间目录无法打开：${this._newTabSpace.dir}。请删除该空间后重新创建（任务会保留转入未分组）。`);
+            $('newTabStartBtn').disabled = true;
+            $('newTabDangerousBtn').disabled = true;
+        } else {
+            $('newTabStartBtn').disabled = false;
+            $('newTabDangerousBtn').disabled = false;
+        }
         // Enter starts. A Dangerous start that sent the user here keeps its
         // meaning: focus lands on the button that does the same.
         $(opts.dangerouslySkipPermissions ? 'newTabDangerousBtn' : 'newTabStartBtn').focus();
@@ -2842,6 +2855,10 @@ class ClaudeCodeWebInterface {
         modal.classList.remove('space-locked');
         document.getElementById('currentPathInput').readOnly = false;
         this._newTabSpace = null;
+        // A refused-folder dialog disables these (openNewTabDialog); every
+        // close must re-arm them or the next dialog opens dead.
+        document.getElementById('newTabStartBtn').disabled = false;
+        document.getElementById('newTabDangerousBtn').disabled = false;
         // Restore body scroll
         if (this.isMobile) document.body.style.overflow = '';
         this.hideCreateFolderInput();

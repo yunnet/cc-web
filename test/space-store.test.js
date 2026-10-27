@@ -196,31 +196,60 @@ describe('spaces on the server', function () {
   });
 
   describe('POST /api/spaces', function () {
-    it('creates a space with a validated dir', function () {
+    it('creates a space with a validated real dir', async function () {
+      const real = path.join(dir, 'proj');
+      await fs.mkdir(real);
       const res = mockRes();
-      route('post', '/api/spaces')({ body: { name: ' 空间A ', dir: '/Users/dev/work/cgs-master' } }, res);
+      route('post', '/api/spaces')({ body: { name: ' 空间A ', dir: real } }, res);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body.space.name, '空间A');
-      assert.strictEqual(res.body.space.dir, path.resolve('/Users/dev/work/cgs-master'));
+      assert.strictEqual(res.body.space.dir, real);
       assert.strictEqual(server.spaces.length, 1);
+    });
+
+    it('refuses a dir that does not exist — a space on a typo\'d path would strand its tasks', async function () {
+      const res = mockRes();
+      route('post', '/api/spaces')({ body: { name: 'x', dir: path.join(dir, 'nope') } }, res);
+      assert.strictEqual(res.statusCode, 400);
+      assert.ok(res.body.message.includes('工作目录'), 'the refusal says so in Chinese');
+      assert.strictEqual(server.spaces.length, 0);
+    });
+
+    it('refuses a path that exists but is not a directory', async function () {
+      const file = path.join(dir, 'a-file');
+      await fs.writeFile(file, 'x');
+      const res = mockRes();
+      route('post', '/api/spaces')({ body: { name: 'x', dir: file } }, res);
+      assert.strictEqual(res.statusCode, 400);
     });
 
     it('rejects a bad name', function () {
       const res = mockRes();
-      route('post', '/api/spaces')({ body: { name: '', dir: '/x' } }, res);
+      route('post', '/api/spaces')({ body: { name: '', dir: os.tmpdir() } }, res);
       assert.strictEqual(res.statusCode, 400);
     });
   });
 
   describe('PATCH /api/spaces/:id', function () {
-    it('renames and re-points the dir', function () {
+    it('renames and re-points the dir', async function () {
+      const real = path.join(dir, 'biding');
+      await fs.mkdir(real);
       server.spaces = [spaceOf()];
       const res = mockRes();
       route('patch', '/api/spaces/:id')(
-        { params: { id: UUID(1) }, body: { name: '投标', dir: '/Users/dev/work/biding' } }, res);
+        { params: { id: UUID(1) }, body: { name: '投标', dir: real } }, res);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(server.spaces[0].name, '投标');
-      assert.strictEqual(server.spaces[0].dir, path.resolve('/Users/dev/work/biding'));
+      assert.strictEqual(server.spaces[0].dir, real);
+    });
+
+    it('refuses re-pointing at a dir that does not exist', async function () {
+      server.spaces = [spaceOf()];
+      const res = mockRes();
+      route('patch', '/api/spaces/:id')(
+        { params: { id: UUID(1) }, body: { dir: path.join(dir, 'gone') } }, res);
+      assert.strictEqual(res.statusCode, 400);
+      assert.strictEqual(server.spaces[0].dir, spaceOf().dir, 'the space keeps its old dir');
     });
 
     it('404s for an unknown id', function () {
