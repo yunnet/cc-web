@@ -1666,10 +1666,13 @@ class ClaudeCodeWebInterface {
                 // Add tab for the new session if using tab manager
                 if (this.sessionTabManager) {
                     this.sessionTabManager.addTab(message.sessionId, message.sessionName, 'idle', message.workingDir, true, message.spaceId || null);
+                    // The join that follows auto-starts with the defaults
+                    // (2026-10-28) — starting here too would race it.
                     this.sessionTabManager.switchToTab(message.sessionId);
+                } else {
+                    // Legacy no-tabs path: no join follows, so start here.
+                    this.startClaudeSession(this.startDefaultsOptions());
                 }
-                
-                this.showOverlay('startPrompt');
                 break;
                 
             case 'session_joined':
@@ -1760,21 +1763,13 @@ class ClaudeCodeWebInterface {
                     this.pendingStart = null;
                     this.startClaudeSession(options);
                 } else {
-                    // Session exists but Claude is not running
-                    // Check if this is a brand new session (empty output buffer indicates new)
-                    const isNewSession = !message.outputBuffer || message.outputBuffer.length === 0;
-
-                    if (isNewSession) {
-                        console.log('[session_joined] New session detected, showing start prompt');
-                        this.showOverlay('startPrompt');
-                    } else {
-                        console.log('[session_joined] Existing session with stopped Claude, showing restart prompt');
-                        // For existing sessions where Claude has stopped, show start prompt
-                        // This allows the user to restart Claude in the same session
-                        this.flushTerminalWrites(view);
-                        ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} has stopped in this session. Click "Start ${this.getAlias()}" to restart.\x1b[0m`);
-                        this.showOverlay('startPrompt');
-                    }
+                    // Session exists but Claude is not running. 2026-10-28, the
+                    // user's ask — no Start prompt on every post-restart click:
+                    // start straight away with the defaults. (The panel still
+                    // appears when a session you are watching stops, TERM-28.)
+                    this.flushTerminalWrites(view);
+                    ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} 未在运行，按默认选项启动…\x1b[0m`);
+                    this.startClaudeSession(this.startDefaultsOptions());
                 }
                 break;
                 
@@ -1868,9 +1863,11 @@ class ClaudeCodeWebInterface {
                 break;
                 
             case 'info':
-                // Info message - show the start prompt if Claude is not running
+                // "Claude is not running" (input while stopped): start it with
+                // the defaults instead of raising the Start prompt (2026-10-28;
+                // was TERM-36's auto-prompt).
                 if (message.message.includes('not running')) {
-                    this.showOverlay('startPrompt');
+                    this.startClaudeSession(this.startDefaultsOptions());
                 }
                 break;
                 
@@ -1926,6 +1923,19 @@ class ClaudeCodeWebInterface {
         if (model) opts.model = model;
         if (permissionMode) opts.permissionMode = permissionMode;
         if (effort) opts.effort = effort;
+        return opts;
+    }
+
+    // The defaults an auto-start uses (2026-10-28, the user's ask: clicking a
+    // stopped task starts Claude with these instead of raising the Start
+    // prompt). Same store the new-tab dialog seeds from (NEW-04) and Settings
+    // edits — one source — and skipping permissions is never part of it.
+    startDefaultsOptions() {
+        const stored = this.loadStored('cc-web-last-start-options', {});
+        const opts = {};
+        if (stored.model) opts.model = stored.model;
+        if (stored.permissionMode) opts.permissionMode = stored.permissionMode;
+        if (stored.effort) opts.effort = stored.effort;
         return opts;
     }
 
@@ -2381,6 +2391,14 @@ class ClaudeCodeWebInterface {
             ss.value = settings.smoothScrollDuration;
             document.getElementById('smoothScrollValue').textContent = settings.smoothScrollDuration + 'ms';
         }
+        // Task start defaults (2026-10-28): same store the dialog seeds from.
+        const defaults = this.loadStored('cc-web-last-start-options', {});
+        const dm = document.getElementById('settingsDefaultModel');
+        const dp = document.getElementById('settingsDefaultPermission');
+        const de = document.getElementById('settingsDefaultEffort');
+        if (dm) dm.value = defaults.model || '';
+        if (dp) dp.value = defaults.permissionMode || '';
+        if (de) de.value = defaults.effort || '';
         this.loadPlanDirsUI();
         this.loadScrollbackUI();
         this.loadVersionUI();
@@ -2593,6 +2611,17 @@ class ClaudeCodeWebInterface {
             theme: (document.getElementById('themeSelect')?.value) || 'dark',
             smoothScrollDuration: parseInt(document.getElementById('smoothScroll')?.value ?? 100)
         };
+        // Task start defaults (2026-10-28): three selects in Settings write
+        // the same store the new-tab dialog seeds from and every auto-start
+        // reads — one source, edited in one more place.
+        const defaults = {
+            model: document.getElementById('settingsDefaultModel')?.value || '',
+            permissionMode: document.getElementById('settingsDefaultPermission')?.value || '',
+            effort: document.getElementById('settingsDefaultEffort')?.value || ''
+        };
+        try {
+            localStorage.setItem('cc-web-last-start-options', JSON.stringify(defaults));
+        } catch (_) { /* TAB-25: no storage, no crash */ }
         try {
             // Update the global default (latest wins → new sessions inherit it).
             localStorage.setItem('cc-web-settings', JSON.stringify(settings));

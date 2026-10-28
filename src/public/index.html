@@ -303,6 +303,44 @@
                         <input type="range" id="smoothScroll" min="0" max="200" step="10" value="100" title="0 = instant (snappiest); higher = smoother/heavier wheel scroll">
                         <span id="smoothScrollValue">100ms</span>
                     </div>
+                    <div class="setting-group setting-group-block">
+                        <label>任务默认启动选项：</label>
+                        <p class="setting-hint">点击未运行的任务（含服务重启后）不再弹 Start 面板，直接按这里的默认值启动；新建任务对话框也以此为预填。与「上次启动的选择」是同一份记录，互相同步；跳过权限永远不会成为默认。</p>
+                        <div class="start-options settings-start-options">
+                            <label class="start-option">
+                                <span>Model</span>
+                                <select id="settingsDefaultModel">
+                                    <option value="">Default</option>
+                                    <option value="opus">Opus</option>
+                                    <option value="sonnet">Sonnet</option>
+                                    <option value="haiku">Haiku</option>
+                                    <option value="fable">Fable</option>
+                                </select>
+                            </label>
+                            <label class="start-option">
+                                <span>Permission</span>
+                                <select id="settingsDefaultPermission">
+                                    <option value="">Default</option>
+                                    <option value="auto">Auto</option>
+                                    <option value="manual">Ask each time</option>
+                                    <option value="plan">Plan mode</option>
+                                    <option value="acceptEdits">Accept edits</option>
+                                    <option value="dontAsk">Don't ask (deny unapproved)</option>
+                                </select>
+                            </label>
+                            <label class="start-option">
+                                <span>Effort</span>
+                                <select id="settingsDefaultEffort">
+                                    <option value="">Default</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                    <option value="xhigh">Extra high</option>
+                                    <option value="max">Max</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
                     <div class="setting-group setting-group-block mobile-only-setting">
                         <label>Floating buttons:</label>
                         <p class="setting-hint">Drag the ESC / MODE buttons to move them out of the way. Reset to have them follow Claude's input box again.</p>

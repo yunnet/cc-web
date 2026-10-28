@@ -51,7 +51,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-31 | 覆盖层（加载、Start、错误）打开时，标签栏和菜单仍可点击 | 手工 | `test/overlay-stacking.test.js` `test/start-prompt-overlay.test.js` |
 | TERM-34 | 全站轻提示条：屏幕底部居中弹出，成功绿色、失败红色，约 2.2 秒淡出，且不挡鼠标点击（粘贴图片、文件操作、设置都用它） | 手工 | — |
 | TERM-35 | 启动 Claude 时把当前终端的行列数一起发过去，PTY 直接按真实尺寸创建，不会先 80×24 再跳一下 | 手工 | `test/start-options.test.js` |
-| TERM-36 | 服务器回「Claude is not running」时自动弹出 Start 面板，不用自己去找启动入口 | `ws-client:app.js:info` | — |
+| TERM-36 | 服务器回「Claude is not running」时（停止状态下输入）自动按默认启动选项重启，不再弹 Start 面板（2026-10-28 随 START-06 一并调整，默认值可在设置面板编辑） | `ws-client:app.js:info` | — |
 | TERM-37 | 后台标签加入会话时只默默收下回放：不改顶部工作目录、不套用它的视觉设置、不动覆盖层 | 手工 | `test/session-views.test.js` |
 | TERM-38 | 终端四周留边：桌面 20px、窄屏 8px、超小屏 4px（留在外框上，避免算错行数把底部输入框挤出屏幕） | 手工 | — |
 | TERM-39 | 浏览器在首次交互前拦掉提示音时静默忽略，不报错也不弹窗 | 手工 | `test/feature-guards.test.js` |
@@ -127,7 +127,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | NEW-01 | 头部「＋任务」、空间行的 +、Ctrl+T、Sessions 面板和菜单里的 New Session、恢复对话框、首次运行，都打开同一个「新建标签页」对话框 | `control:headerNewTaskBtn` `control:conversationsNewBtn` `control:newSessionBtnMobile` | `test/new-tab-dialog.test.js` |
 | NEW-02 | 工程目录默认选当前标签的目录，其次是其他已开标签，再其次是最近用过的目录；最近目录打不开（403/404）时自动忘掉并试下一个，断网或未登录时保留 | 手工 | `test/new-tab-dialog.test.js` |
 | NEW-03 | 打开时焦点落在「启动」上，直接回车即可启动；由危险模式进入时焦点在「危险模式启动」上 | `control:newTabStartBtn` | — |
-| NEW-04 | 模型、权限模式、思考强度默认沿用上次启动的选择；「跳过权限」从不记住；每次都默认「新对话」模式 | `control:newTabModelSelect` `control:newTabPermissionSelect` `control:newTabEffortSelect` | `test/new-tab-dialog.test.js` |
+| NEW-04 | 模型、权限模式、思考强度默认沿用上次启动的选择（可在设置面板「任务默认启动选项」直接编辑，同一份记录）；「跳过权限」从不记住；每次都默认「新对话」模式 | `control:newTabModelSelect` `control:newTabPermissionSelect` `control:newTabEffortSelect` | `test/new-tab-dialog.test.js` |
 | NEW-05 | 名称框没手动输入时自动填文件夹名，选了要继续的对话时填对话标题（超 40 字截断）；手动输入的不被覆盖；回车即启动；只有手动输入的名称才作为自定义名传给 Claude | `control:sessionName` | `test/new-tab-dialog.test.js` `test/start-options.test.js` |
 | NEW-06 | 路径栏可直接输入，回车跳转，Esc 恢复当前路径（不关闭对话框）；输入了路径没回车就启动时先跳过去再启动；路径长时滚到末尾露出文件夹名 | `control:currentPathInput` | — |
 | NEW-07 | 「上一级」（根目录时禁用）和「回到起始目录」按钮；「浏览…」展开或收起目录树 | `control:folderUpBtn` `control:folderHomeBtn` `control:newTabBrowseBtn` | — |
@@ -157,7 +157,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-03 | 当前会话没有可用的工程目录时，按 Start 改为打开新建对话框，并带上已选选项和拒绝原因 | 手工 | `test/new-tab-dialog.test.js` |
 | START-04 | 本地标签与服务器会话一致时原样恢复；首次使用时采用服务器上的全部会话；服务器上没有会话时直接打开新建对话框；拉取列表失败时不清空本地标签并给出提示 | `route:GET /api/sessions/list` | — |
 | START-05 | 本地标签与服务器不一致时弹出「Restore sessions」对话框：每行可勾选打开、选为当前、删除（先确认）；没勾的记为已忽略，以后不再为它弹窗；「+ New session」打开新建对话框 | `js-control:app.js:Make this the active session` `js-control:app.js:Delete session` | — |
-| START-06 | 新会话或 Claude 未运行的会话，加入时显示 Start 面板；加入 Claude 已停止的旧会话时终端打印黄色提示 | 手工 | `test/start-prompt-overlay.test.js` |
+| START-06 | 新会话或 Claude 未运行的会话加入时**不再弹 Start 面板**，终端打印黄色提示后直接按默认启动选项自动启动（用户 2026-10-28：「这个弹窗能不能去掉，都使用默认值。在session管理中，给个地方设置默认值」）；默认值即「上次启动的选择」，可在设置面板编辑（SET-17）；正在看着的会话中 Claude 停止仍弹面板（见 TERM-28） | 手工 | `test/start-prompt-overlay.test.js` |
 | START-07 | 会话在别的窗口或设备被删除时，自动关掉本地对应的标签并提示 | `ws-client:app.js:session_deleted` | — |
 | START-08 | 离开会话时终端清空、状态点变红；没有任何标签时显示 Start 面板 | `ws-client:app.js:session_left` `ws-server:leave_session` | — |
 | START-09 | 连续启动失败熔断：短时间内多次非零退出后，拒绝自动重试并提示新建会话 | 手工 | `test/start-circuit.test.js` |
@@ -277,6 +277,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-14 | 被拒绝的计划目录以右上角卡片提示，3 秒后自动滑走；点「Reset button position」后弹出确认提示 | 手工 | `test/fab-position.test.js` |
 | SET-15 | 拖动字号、滚动动画滑块时旁边数字实时变化，但要按「Save Settings」才真正生效 | `control:fontSize` `control:smoothScroll` | — |
 | SET-16 | 菜单底部的版本行可以选中复制，悬停提示解释「build id 相同 = 两个实例代码相同」 | 手工 | — |
+| SET-17 | 设置面板「任务默认启动选项」：模型/权限/强度三个下拉，读写与「上次启动的选择」同一份记录（localStorage `cc-web-last-start-options`）；点未运行任务自动启动（START-06）与新建对话框预填（NEW-04）都用它；跳过权限不出现在默认里 | `control:settingsDefaultModel` `control:settingsDefaultPermission` `control:settingsDefaultEffort` | — |
 ## 技能管理
 
 > 技能有三种来源，只有插件有目录、安装器和开关，所以**安装的单位是插件**，面板把每个插件带的技能名列出来。
