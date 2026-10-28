@@ -244,17 +244,35 @@ describe('claude-history', function() {
       assert.deepStrictEqual((await history.listUserPrompts('/data/work/nowhere', A, { root })).prompts, []);
     });
 
-    it('parses only the tail window and says so', async function() {
-      // One record big enough that the early prompt falls outside the window.
-      const pad = { type: 'assistant', message: { content: 'x'.repeat(300 * 1024) } };
+    it('parses incrementally: a growing transcript appends only the new turn', async function() {
       fs.writeFileSync(fileOf(), transcript([
-        { type: 'user', message: { content: '老问题在窗口外' } },
-        pad,
-        { type: 'user', message: { content: '新问题在窗口内' } },
+        { type: 'user', message: { content: '第一问' } },
+        { type: 'assistant', message: { content: '答' } },
       ]));
-      const { prompts, truncated } = await history.listUserPrompts(dir, A, { root });
-      assert.strictEqual(truncated, true);
-      assert.deepStrictEqual(prompts.map(p => p.text), ['新问题在窗口内']);
+      const first = await history.listUserPrompts(dir, A, { root });
+      assert.deepStrictEqual(first.prompts.map(p => p.text), ['第一问']);
+
+      // A long agentic tail lands between the two questions — exactly the
+      // shape that defeated a fixed tail window (measured live: a 4.7MB
+      // transcript whose last 256KB were all tool results).
+      const pad = { type: 'user', toolUseResult: {}, message: { content: [{ type: 'tool_result' }] } };
+      fs.appendFileSync(fileOf(), transcript(Array(50).fill(pad)));
+      fs.appendFileSync(fileOf(), transcript([{ type: 'user', message: { content: '第二问' } }]).trimEnd() + '\n');
+      const second = await history.listUserPrompts(dir, A, { root });
+      assert.deepStrictEqual(second.prompts.map(p => p.text), ['第一问', '第二问']);
+      assert.strictEqual(second.truncated, false);
+    });
+
+    it('resumes across a mid-line write boundary (partial line held back)', async function() {
+      fs.writeFileSync(fileOf(), transcript([{ type: 'user', message: { content: '第一问' } }]));
+      // A record cut mid-line, as while Claude is writing it.
+      fs.appendFileSync(fileOf(), '{"type":"user","message":{"role":"user","content":"第');
+      const mid = await history.listUserPrompts(dir, A, { root });
+      assert.deepStrictEqual(mid.prompts.map(p => p.text), ['第一问']);
+      // The rest of the line lands: the next call must join it correctly.
+      fs.appendFileSync(fileOf(), '二问"} }\n');
+      const done = await history.listUserPrompts(dir, A, { root });
+      assert.deepStrictEqual(done.prompts.map(p => p.text), ['第一问', '第二问']);
     });
 
     it('follows a symlinked working dir to its realpath', async function() {

@@ -90,9 +90,9 @@ class ClaudeCodeWebInterface {
         this.sessionTabManager.sidebar = this.spacesSidebar;
         await this.spacesSidebar.load();
         const reconcile = await this.sessionTabManager.init();
-        // Turn rails: each view's rail re-reads its question list on a 5s
-        // floor of its own and repositions ticks between fetches.
-        this._railTimer = setInterval(() => this.refreshTurnRails(), 5000);
+        // Turn rails: each view's rail rescans its buffer on a slow cadence
+        // and repositions ticks between scans.
+        this._railTimer = setInterval(() => this.refreshTurnRails(null, true), 5000);
 
         // Initialize split container
         if (window.SplitContainer) {
@@ -525,16 +525,15 @@ class ClaudeCodeWebInterface {
     // socket was still in the session when the close deleted it, so the server's
     // session_deleted landed here and raised "Connection Error — Session has
     // been deleted" in the very browser that had just closed the tab.
-    // The turn rails: re-read their prompt lists on a slow cadence (each rail
-    // throttles its own fetch to 5s), reposition ticks between fetches, and
-    // re-match right after a turn ends or a session is joined.
+    // The turn rails: full buffer scans on a turn's end, a join, and the
+    // interval; cheap repositioning between.
     refreshTurnRails(sessionId = null, force = false) {
         for (const [sid, view] of this.views) {
             if (sessionId && sid !== sessionId) continue;
             const rail = view.turnRail;
             if (!rail) continue;
-            if (force) rail.maybeFetch(true);
-            else { rail.maybeFetch(); rail.reposition(); }
+            if (force) rail.refresh();
+            else rail.reposition();
         }
     }
 
