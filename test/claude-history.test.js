@@ -196,4 +196,83 @@ describe('claude-history', function() {
       );
     });
   });
+
+  describe('listUserPrompts', function() {
+    let root;
+    const dir = '/data/work/demo';
+    const A = '44444444-4444-4444-8444-444444444444';
+
+    beforeEach(function() {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-prompts-'));
+      fs.mkdirSync(path.join(root, history.projectDirName(dir)), { recursive: true });
+    });
+    afterEach(function() {
+      try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+    });
+    const fileOf = () => path.join(root, history.projectDirName(dir), `${A}.jsonl`);
+
+    it('returns the typed questions in order, skipping machinery and tool results', async function() {
+      fs.writeFileSync(fileOf(), transcript([
+        ...META,
+        { type: 'user', message: { content: '第一问' }, timestamp: '2026-10-29T10:00:00Z' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: '答' }] } },
+        { type: 'user', toolUseResult: {}, message: { content: [{ type: 'tool_result' }] } },
+        { type: 'user', isSidechain: true, message: { content: '子代理内部话' } },
+        { type: 'user', message: { content: '  第二问\n换行也\n算一问  ' } },
+      ]));
+      const { prompts, truncated } = await history.listUserPrompts(dir, A, { root });
+      assert.strictEqual(truncated, false);
+      assert.deepStrictEqual(prompts.map(p => p.text), ['第一问', '第二问 换行也 算一问']);
+      assert.deepStrictEqual(prompts.map(p => p.i), [0, 1]);
+      assert.strictEqual(prompts[0].ts, '2026-10-29T10:00:00Z');
+    });
+
+    it('clips each prompt to 200 chars on one line', async function() {
+      fs.writeFileSync(fileOf(), transcript([
+        { type: 'user', message: { content: '长'.repeat(300) } },
+      ]));
+      const { prompts } = await history.listUserPrompts(dir, A, { root });
+      assert.strictEqual(prompts[0].text.length, 200);
+      assert.ok(prompts[0].text.endsWith('…'));
+    });
+
+    it('empty for a missing transcript, a bad id, or an unknown dir — never a throw', async function() {
+      fs.writeFileSync(fileOf(), transcript([{ type: 'user', message: { content: '有转录' } }]));
+      assert.deepStrictEqual(await history.listUserPrompts(dir, A, { root }), { prompts: [{ i: 0, text: '有转录', ts: null }], truncated: false });
+      assert.deepStrictEqual((await history.listUserPrompts(dir, '55555555-5555-4555-8555-555555555555', { root })).prompts, []);
+      assert.deepStrictEqual((await history.listUserPrompts(dir, 'not-a-uuid', { root })).prompts, []);
+      assert.deepStrictEqual((await history.listUserPrompts('/data/work/nowhere', A, { root })).prompts, []);
+    });
+
+    it('parses only the tail window and says so', async function() {
+      // One record big enough that the early prompt falls outside the window.
+      const pad = { type: 'assistant', message: { content: 'x'.repeat(300 * 1024) } };
+      fs.writeFileSync(fileOf(), transcript([
+        { type: 'user', message: { content: '老问题在窗口外' } },
+        pad,
+        { type: 'user', message: { content: '新问题在窗口内' } },
+      ]));
+      const { prompts, truncated } = await history.listUserPrompts(dir, A, { root });
+      assert.strictEqual(truncated, true);
+      assert.deepStrictEqual(prompts.map(p => p.text), ['新问题在窗口内']);
+    });
+
+    it('follows a symlinked working dir to its realpath', async function() {
+      // Claude records transcripts under the REAL path (macOS /tmp →
+      // /private/tmp); asking through the symlink must still find them.
+      // Measured live: without this, a /tmp project's prompts came back [].
+      // Mirror production exactly: a REAL existing dir, its transcript under
+      // the encoding of its realpath, queried through a symlink to it.
+      const realWork = path.join(root, 'w', 'real');
+      fs.mkdirSync(realWork, { recursive: true });
+      const proj = path.join(root, history.projectDirName(fs.realpathSync(realWork)));
+      fs.mkdirSync(proj, { recursive: true });
+      fs.writeFileSync(path.join(proj, `${A}.jsonl`),
+        transcript([{ type: 'user', message: { content: '通过符号链接问的问题' } }]));
+      const link = path.join(root, 'w', 'link');
+      fs.symlinkSync(realWork, link);
+      const { prompts } = await history.listUserPrompts(link, A, { root });
+      assert.deepStrictEqual(prompts.map(p => p.text), ['通过符号链接问的问题']);
+    });
+  });
 });

@@ -545,6 +545,18 @@ class ClaudeCodeWebServer {
     this.app.get('/api/claude-sessions',
       ClaudeCodeWebServer.asyncRoute((req, res) => this.listClaudeConversations(req, res)));
 
+    // The typed questions of one conversation, in order — the turn rail's
+    // anchor list (src/public/turn-rail.js). Read-only, header auth; the
+    // working dir comes from the server's own session record, not the client.
+    this.app.get('/api/sessions/:sessionId/prompts',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const session = this.claudeSessions.get(req.params.sessionId);
+        if (!session) {
+          return res.status(404).json({ error: 'Session not found' });
+        }
+        res.json(await claudeHistory.listUserPrompts(session.workingDir, session.id));
+      }));
+
     // Get session details
     this.app.get('/api/sessions/:sessionId', (req, res) => {
       const session = this.claudeSessions.get(req.params.sessionId);

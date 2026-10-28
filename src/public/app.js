@@ -90,7 +90,10 @@ class ClaudeCodeWebInterface {
         this.sessionTabManager.sidebar = this.spacesSidebar;
         await this.spacesSidebar.load();
         const reconcile = await this.sessionTabManager.init();
-        
+        // Turn rails: each view's rail re-reads its question list on a 5s
+        // floor of its own and repositions ticks between fetches.
+        this._railTimer = setInterval(() => this.refreshTurnRails(), 5000);
+
         // Initialize split container
         if (window.SplitContainer) {
             this.splitContainer = new window.SplitContainer(this);
@@ -522,10 +525,24 @@ class ClaudeCodeWebInterface {
     // socket was still in the session when the close deleted it, so the server's
     // session_deleted landed here and raised "Connection Error — Session has
     // been deleted" in the very browser that had just closed the tab.
+    // The turn rails: re-read their prompt lists on a slow cadence (each rail
+    // throttles its own fetch to 5s), reposition ticks between fetches, and
+    // re-match right after a turn ends or a session is joined.
+    refreshTurnRails(sessionId = null, force = false) {
+        for (const [sid, view] of this.views) {
+            if (sessionId && sid !== sessionId) continue;
+            const rail = view.turnRail;
+            if (!rail) continue;
+            if (force) rail.maybeFetch(true);
+            else { rail.maybeFetch(); rail.reposition(); }
+        }
+    }
+
     disposeView(sessionId) {
         const view = this.views.get(sessionId);
         if (!view) return;
         this.views.delete(sessionId);
+        if (view.turnRail) view.turnRail.dispose();
         if (view.socket) {
             view.socket.onmessage = view.socket.onclose = view.socket.onerror = null;
             try { view.socket.close(); } catch (_) {}
@@ -614,6 +631,11 @@ class ClaudeCodeWebInterface {
             }
         });
         view.terminal = term;
+
+        // The turn rail rides this view's right edge (turn-rail.js): one tick
+        // per question, click to jump. Refresh is driven from
+        // refreshTurnRails() — output activity, joins, and a turn's Stop.
+        if (window.TurnRail) new window.TurnRail(view, this);
 
         view.fitAddon = new FitAddon.FitAddon();
         term.loadAddon(view.fitAddon);
@@ -1771,6 +1793,9 @@ class ClaudeCodeWebInterface {
                     ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} 未在运行，按默认选项启动…\x1b[0m`);
                     this.startClaudeSession(this.startDefaultsOptions());
                 }
+                // Joined a session: pull its question list once (the rail then
+                // rides the interval and the Stop hook).
+                this.refreshTurnRails(message.sessionId, true);
                 break;
                 
             case 'session_left':
@@ -1905,6 +1930,9 @@ class ClaudeCodeWebInterface {
                     this.showPermissionRequestCard(message);
                 }
                 if (this.sessionTabManager) this.sessionTabManager.hookEvent(message.sessionId, message);
+                // A finished turn is when a new question lands in the
+                // transcript — re-match that session's rail right away.
+                if (message.event === 'Stop') this.refreshTurnRails(message.sessionId, true);
                 break;
 
             default:

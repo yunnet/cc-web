@@ -4072,6 +4072,70 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     display: none;
 }
 
+/* The turn rail: one tick per question, over the terminal's right edge
+   (turn-rail.js). The strip itself never takes pointer events — only the
+   ticks — so selection and wheel-scrolling pass straight through. Hidden on
+   a narrow transcript (DSH's ≤900px rule). */
+.turn-rail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.turn-rail.rail-hidden {
+    display: none;
+}
+
+.turn-mark {
+    position: absolute;
+    right: 2px;
+    width: 10px;
+    height: 14px; /* generous hit target around the 2px tick */
+    padding: 0;
+    background: none;
+    border: none;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.turn-mark::after {
+    content: '';
+    display: block;
+    height: 2px;
+    margin-top: 6px;
+    border-radius: 1px;
+    background: var(--text-secondary);
+    opacity: .45;
+}
+
+.turn-mark:hover::after {
+    background: var(--accent);
+    opacity: 1;
+}
+
+.turn-rail-tip {
+    position: fixed;
+    z-index: 12000;
+    max-width: 380px;
+    padding: 8px 11px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+    .turn-mark { width: 18px; right: 0; }
+}
+
 .terminal-view.active {
     display: block;
 }
