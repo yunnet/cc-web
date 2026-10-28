@@ -55,6 +55,10 @@
 | S40 | SPACE-11 | 点搜索图标输入子串 | 输入框展开；非空时 `.spaces-tree` 隐藏、`.search-hit` 平铺且每行含 `任务名 · 空间名` 与状态点；点一行后搜索收起、该任务为 active、其空间展开且行在可视区（`ensureTabVisible` 后 `getBoundingClientRect` 在树容器内）；Esc 收起；乱串无结果显示「没有匹配的任务」 |
 | S41 | SPACE-12 | 量任务行 `.tab-time` 与超宽标题 | 每行 `.tab-time` 非空且匹配 /刚刚\|分钟\|小时\|天\|^\d+\/\d+$/，title 为本地时间串；构造超长名任务，静止时 `.tab-name` `clientWidth < scrollWidth`，`mouseenter` 后 `scrollLeft > 0`，`mouseleave` 后回到 0 |
 | S42 | SPACE-13、SPACE-14 | 触屏模拟点 ⋯；空态 | `(hover:none)` 下 `.tab-menu` `opacity ≥ .5` 可点开 `.pane-session-menu`；全新数据（无空间无任务）`#sidebarEmpty` 可见且 `.spaces-tree` 隐藏 |
+| S43 | SPACE-15 | 对组内第 3 个任务点行内图钉 | 该任务 DOM 序变组内第 1、`.pinned` 类 + 图钉强调色常亮、时间 opacity 0；悬停另一任务：其 `.tab-time` opacity 0→悬停前 .75 与 `.tab-pin` 0→.6 互换且行宽/行高 rect 逐值不变；再点取消回原位 |
+| S44 | SPACE-16 | 点 #sidebarSortBtn 切「最近」 | 按钮带 .active；修改某任务 lastActivity 为最新后该任务（非置顶时）排组首；对行派发 dragover 事件后 DOM 序不变；切回手动恢复拖拽序；刷新后模式保持 |
+| S45 | SPACE-17 | 点 #sidebarCollapseBtn 收起 | `.spaces-sidebar` 宽 56±2px；`.rail-badge` 数=空间数且首字符=空间名首字；当前任务徽标 .current 填充强调色；带运行任务的徽标有 .rail-dot；点徽标后侧栏展开、目标空间展开且组顶在树可视区 |
+| S46 | SPACE-18 | 指针移入/移出任务树，量滚动条 | 指针在外 `::-webkit-scrollbar-thumb` 不可见（用 `.scroll-active` 类断言：无类）；pointerenter 后有类；pointerleave 后 2s 内仍有、2.5s 后无；树内容宽度全程不变 |
 
 ## 基线结果
 

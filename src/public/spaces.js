@@ -23,6 +23,12 @@ class SpacesSidebar {
         // shares, so addTab callers never have to know about spaces.
         this.sessionSpaces = new Map();
         this.collapsed = this.loadCollapsed();
+        // Pinned tasks lead their group in EITHER sort mode (DSH). Per-device
+        // view memory, like the collapsed list — grouping itself stays
+        // server-side.
+        const state = this.loadState();
+        this.pinned = new Set(Array.isArray(state.pinned) ? state.pinned : []);
+        this.sortMode = state.sortMode === 'recent' ? 'recent' : 'manual';
         // Per-space row watermark (DSH's 渐显): how many task rows a group
         // shows. In-memory only — folding a space resets it, a reload forgets.
         this._watermarks = new Map();
@@ -35,10 +41,12 @@ class SpacesSidebar {
     // breadcrumb and the live search results. The tab manager calls this on
     // every state change that crosses a display boundary.
     refresh() {
+        this.orderAllGroups();
         this.applyWatermarks();
         this.updateUngroupedVisibility();
         this.applyEmptyState();
         this.renderSearchResults();
+        this.renderRail();
         this.updateBreadcrumb();
     }
 
@@ -54,12 +62,32 @@ class SpacesSidebar {
     static STATE_KEY = 'cc-web-sidebar-state';
 
     loadCollapsed() {
+        return new Set([...this.loadState().collapsed]);
+    }
+
+    // Everything the sidebar remembers between visits, in one place: which
+    // groups are folded, which tasks are pinned, how groups are sorted.
+    loadState() {
         try {
             const raw = JSON.parse(localStorage.getItem(SpacesSidebar.STATE_KEY) || '{}');
-            return new Set(Array.isArray(raw.collapsed) ? raw.collapsed : []);
+            return {
+                collapsed: Array.isArray(raw.collapsed) ? raw.collapsed : [],
+                pinned: Array.isArray(raw.pinned) ? raw.pinned : [],
+                sortMode: raw.sortMode === 'recent' ? 'recent' : 'manual',
+            };
         } catch (_) {
-            return new Set(); // TAB-25's rule: no localStorage, no crash
+            return { collapsed: [], pinned: [], sortMode: 'manual' }; // TAB-25: no storage, no crash
         }
+    }
+
+    saveState() {
+        try {
+            localStorage.setItem(SpacesSidebar.STATE_KEY, JSON.stringify({
+                collapsed: [...this.collapsed],
+                pinned: [...this.pinned],
+                sortMode: this.sortMode,
+            }));
+        } catch (_) { /* ignore */ }
     }
 
     saveCollapsed() {
@@ -81,7 +109,76 @@ class SpacesSidebar {
         // Folding resets the group's watermark (DSH: a reset watermark still
         // covers the interesting rows — applyWatermarks recomputes).
         if (collapsed) this._watermarks.delete(id);
-        this.saveCollapsed();
+        this.saveState();
+    }
+
+    // ---- pinned tasks & sort mode ------------------------------------------
+
+    isPinned(sessionId) {
+        return this.pinned.has(sessionId);
+    }
+
+    togglePin(sessionId) {
+        if (this.pinned.has(sessionId)) this.pinned.delete(sessionId);
+        else this.pinned.add(sessionId);
+        this.saveState();
+        this.refresh();
+    }
+
+    toggleSortMode() {
+        this.sortMode = this.sortMode === 'recent' ? 'manual' : 'recent';
+        this.saveState();
+        this.updateSortButton();
+        this.refresh();
+    }
+
+    updateSortButton() {
+        const btn = document.getElementById('sidebarSortBtn');
+        if (!btn) return;
+        const recent = this.sortMode === 'recent';
+        btn.classList.toggle('active', recent);
+        btn.setAttribute('aria-pressed', String(recent));
+        btn.title = recent ? '排序：最近更新（点击切为手动）' : '排序：手动（点击切为最近更新）';
+        btn.setAttribute('aria-label', btn.title);
+    }
+
+    // Order the rows inside one group: pinned first, then — in 手动 — the
+    // drag order, in 最近 — strictly by last activity, newest first. The
+    // manual order is rebuilt from the tab manager's tabOrder (what drags
+    // maintain), NOT from this group's current DOM: pinning re-parents rows
+    // for display, and un-pinning must be able to put a task back where the
+    // person left it (DSH: unpinning leaves the saved position unchanged).
+    orderGroupTasks(tasksEl) {
+        const tabs = this.app.sessionTabManager;
+        const rows = [...tasksEl.querySelectorAll('.session-tab')];
+        const posOf = new Map(tabs ? tabs.getOrderedTabIds().map((id, i) => [id, i]) : []);
+        const activity = (row) => {
+            const s = tabs && tabs.activeSessions.get(row.dataset.sessionId);
+            return s ? (s.lastActivity || s.lastAccessed || 0) : 0;
+        };
+        const ordered = [...rows].sort((a, b) => {
+            const pa = this.pinned.has(a.dataset.sessionId) ? 0 : 1;
+            const pb = this.pinned.has(b.dataset.sessionId) ? 0 : 1;
+            if (pa !== pb) return pa - pb;
+            if (this.sortMode === 'recent') return activity(b) - activity(a);
+            return (posOf.get(a.dataset.sessionId) ?? 0) - (posOf.get(b.dataset.sessionId) ?? 0);
+        });
+        if (ordered.some((row, i) => row !== rows[i])) {
+            ordered.forEach(row => tasksEl.appendChild(row));
+        }
+    }
+
+    orderAllGroups() {
+        const tabs = this.app.sessionTabManager;
+        this.tree()?.querySelectorAll('.space-tasks').forEach((el) => {
+            this.orderGroupTasks(el);
+            // The pinned marker lives on the row (accent pin, always lit).
+            if (tabs) {
+                el.querySelectorAll('.session-tab').forEach((row) => {
+                    row.classList.toggle('pinned', this.pinned.has(row.dataset.sessionId));
+                });
+            }
+        });
     }
 
     // ---- data -----------------------------------------------------------
@@ -178,6 +275,8 @@ class SpacesSidebar {
         // Search (DSH): a collapsed header action that expands an input; a
         // non-blank query replaces the grouped tree with one flat result list.
         document.getElementById('sidebarSearchBtn')?.addEventListener('click', () => this.toggleSearch());
+        document.getElementById('sidebarSortBtn')?.addEventListener('click', () => this.toggleSortMode());
+        this.updateSortButton();
         const searchInput = document.getElementById('sidebarSearchInput');
         searchInput?.addEventListener('input', () => {
             this._searchQuery = searchInput.value;
@@ -192,6 +291,27 @@ class SpacesSidebar {
         document.getElementById('newSpaceHiddenToggle')?.addEventListener('change', () => {
             if (this._nsPath) this.nsBrowse(this._nsPath);
         });
+
+        document.getElementById('railAddBtn')?.addEventListener('click', () => {
+            document.body.classList.remove('sidebar-hidden');
+            this.openNewSpaceDialog();
+        });
+
+        // Quiet scrollbars (DSH): a thumb only while the pointer is in the
+        // column, lingering 2s after it leaves. The width is reserved at all
+        // times, so rows never move when a thumb appears.
+        for (const el of [document.getElementById('spacesTree'), document.getElementById('sidebarSearchResults')]) {
+            if (!el) continue;
+            let linger = null;
+            el.addEventListener('pointerenter', () => {
+                clearTimeout(linger);
+                el.classList.add('scroll-active');
+            });
+            el.addEventListener('pointerleave', () => {
+                clearTimeout(linger);
+                linger = setTimeout(() => el.classList.remove('scroll-active'), 2000);
+            });
+        }
     }
 
     // The folder picker inside #newSpaceModal: the same /api/folders data and
@@ -389,6 +509,54 @@ class SpacesSidebar {
         // and let switchToTab → ensureTabVisible land the row in view.
         if (spaceId && this.isCollapsed(spaceId)) this.setCollapsed(spaceId, false);
         await this.app.sessionTabManager.switchToTab(sessionId);
+    }
+
+    // ---- the 56px rail (folded sidebar, DSH) ------------------------------
+    //
+    // Folding no longer blanks the sidebar: every space keeps a badge (its
+    // name's first character); the current task's space fills with the
+    // accent; a space holding a running / awaiting / unread-✓ task carries a
+    // status dot. A click expands the sidebar and lands on that space.
+
+    renderRail() {
+        const rail = document.getElementById('sidebarRail');
+        if (!rail) return;
+        const list = rail.querySelector('.rail-badges');
+        if (!list) return;
+        const tabs = this.app.sessionTabManager;
+        list.innerHTML = '';
+        if (!this.spaces.length) return;
+
+        const currentSpace = tabs && tabs.activeTabId ? this.sessionSpace(tabs.activeTabId) : null;
+        for (const space of this.spaces) {
+            const badge = document.createElement('button');
+            badge.type = 'button';
+            badge.className = 'rail-badge' + (space.id === currentSpace ? ' current' : '');
+            badge.textContent = [...space.name][0] || '·';
+            badge.title = space.name;
+            let dot = '';
+            if (tabs) {
+                for (const [sid, tab] of tabs.tabs) {
+                    if (this.sessionSpace(sid) !== space.id) continue;
+                    if (tab.hasAttribute('data-awaiting')) { dot = 'awaiting'; break; }
+                    if (tab.hasAttribute('data-working') || tab.hasAttribute('data-done')) dot = dot || 'busy';
+                }
+            }
+            if (dot) {
+                const d = document.createElement('span');
+                d.className = `rail-dot ${dot}`;
+                badge.appendChild(d);
+            }
+            badge.addEventListener('click', () => this.expandAtSpace(space.id));
+            list.appendChild(badge);
+        }
+    }
+
+    expandAtSpace(spaceId) {
+        document.body.classList.remove('sidebar-hidden');
+        if (spaceId && this.isCollapsed(spaceId)) this.setCollapsed(spaceId, false);
+        const group = this.tree()?.querySelector(`.space-group[data-space="${cssEscape(spaceId)}"]`);
+        group?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     // ---- empty states -----------------------------------------------------

@@ -235,8 +235,103 @@ body {
     border-right: 1px solid var(--border);
 }
 
+/* Folded = the 56px rail, not a blank strip: badges stay clickable and say
+   where things are happening. */
 body.sidebar-hidden .spaces-sidebar {
+    width: 56px;
+    min-width: 56px;
+    transition: width 0.2s ease;
+}
+
+body.sidebar-hidden .sidebar-head,
+body.sidebar-hidden .sidebar-search,
+body.sidebar-hidden .spaces-tree,
+body.sidebar-hidden .search-results,
+body.sidebar-hidden .sidebar-empty,
+body.sidebar-hidden .sidebar-foot {
+    display: none !important;
+}
+
+body.sidebar-hidden .sidebar-rail {
+    display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.sidebar-hidden .spaces-sidebar { transition: none; }
+}
+
+.sidebar-rail {
     display: none;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    padding: 10px 0;
+}
+
+.rail-badges {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px 0;
+    width: 100%;
+    scrollbar-width: none;
+}
+
+.rail-badges::-webkit-scrollbar { display: none; }
+
+.rail-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    padding: 0;
+}
+
+.rail-badge:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.rail-badge.current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.rail-dot {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-secondary);
+    background: var(--success);
+}
+
+.rail-dot.awaiting {
+    background: #f59e0b;
+}
+
+.rail-add {
+    font-weight: 400;
+    margin-top: 8px;
 }
 
 .sidebar-head {
@@ -277,11 +372,30 @@ body.sidebar-hidden .spaces-sidebar {
     overflow-x: hidden;
     padding: 4px 8px 8px;
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.spaces-tree.scroll-active {
     scrollbar-color: var(--border) transparent;
 }
 
-.spaces-tree::-webkit-scrollbar { width: 4px; }
-.spaces-tree::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: 2px; }
+/* Quiet scrollbars (DSH): the thumb is a pointer affordance — transparent
+   while nobody points at the column, drawn while they do and for 2s after
+   (.scroll-active, set by spaces.js). The 4px track is reserved at all times,
+   so revealing a thumb never reflows the rows. */
+.spaces-tree::-webkit-scrollbar,
+.search-results::-webkit-scrollbar { width: 4px; }
+
+.spaces-tree::-webkit-scrollbar-thumb,
+.search-results::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 2px;
+}
+
+.spaces-tree.scroll-active::-webkit-scrollbar-thumb,
+.search-results.scroll-active::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+}
 
 .space-group { margin-bottom: 6px; }
 .space-group.hidden-group { display: none; }
@@ -413,6 +527,12 @@ body.sidebar-hidden .spaces-sidebar {
     color: var(--accent);
 }
 
+/* The sort toggle reads as engaged in 最近 mode (the non-default one). */
+.sidebar-icon-btn.active {
+    opacity: 1;
+    color: var(--accent);
+}
+
 /* Search: slides in under the head; a query swaps the tree for the flat hit
    list (.spaces-tree.searching). */
 .sidebar-search {
@@ -538,12 +658,57 @@ body.sidebar-hidden .spaces-sidebar {
 /* The task row's trailing bits: relative time (tertiary, tooltip carries the
    absolute moment), the ⋯ menu and the × — hover-revealed on desktop,
    always visible where there is no hover (touch). */
+/* Pin: the slot is always laid out (zero-jitter discipline); hover fades the
+   time out and the pin in — same slots, no reflow. A pinned task's pin is
+   always lit in the accent colour. */
+.tab-pin {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: opacity 0.15s;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.session-tab:hover .tab-pin {
+    opacity: .6;
+}
+
+.session-tab.pinned .tab-pin {
+    opacity: 1;
+    color: var(--accent);
+}
+
+.tab-pin:hover {
+    opacity: 1 !important;
+    background-color: var(--border);
+}
+
 .tab-time {
     flex-shrink: 0;
     font-size: 10.5px;
     color: var(--text-secondary);
     opacity: .75;
     white-space: nowrap;
+    transition: opacity 0.15s;
+}
+
+/* The pin takes over the time's slot on hover — both stay in the layout, so
+   nothing moves. */
+.session-tab:hover .tab-time {
+    opacity: 0;
+}
+
+.session-tab.pinned .tab-time {
+    opacity: 0;
 }
 
 .tab-menu {

@@ -167,6 +167,16 @@
                 <div class="sidebar-head">
                     <span class="sidebar-title">空间</span>
                     <span class="sidebar-head-actions">
+                        <button class="sidebar-icon-btn" id="sidebarSortBtn" title="排序：手动（点击切为最近更新）" aria-label="排序方式" aria-pressed="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M11 5h10"/>
+                                <path d="M11 9h7"/>
+                                <path d="M11 15h10"/>
+                                <path d="M11 19h7"/>
+                                <path d="M3 8l3-3 3 3"/>
+                                <path d="M6 5v14"/>
+                            </svg>
+                        </button>
                         <button class="sidebar-icon-btn" id="sidebarSearchBtn" title="搜索任务 / 空间" aria-label="搜索任务 / 空间">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <circle cx="11" cy="11" r="7"/>
@@ -191,6 +201,18 @@
                 <div class="sidebar-empty" id="sidebarEmpty" hidden>
                     <p>还没有空间</p>
                     <p class="sidebar-empty-hint">点下方「＋ 新建空间」，把任务按工作目录归组</p>
+                </div>
+                <!-- The 56px rail shown while the sidebar is folded: every
+                     space keeps a badge (spaces.js renders them), so a folded
+                     column still tells you where things are happening. -->
+                <div class="sidebar-rail" id="sidebarRail" aria-label="空间轨道">
+                    <div class="rail-badges"></div>
+                    <button class="rail-badge rail-add" id="railAddBtn" type="button" title="新建空间" aria-label="新建空间">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                    </button>
                 </div>
                 <div class="sidebar-foot">
                     <button class="sidebar-new-space" id="newSpaceBtn" title="Create a space bound to a working directory">
