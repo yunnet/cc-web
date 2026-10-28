@@ -51,6 +51,10 @@
 | S36 | SPACE-09 | 空间行「+」打开新建任务对话框 | 路径栏 readOnly 且值=空间目录；#folderUpBtn/#newTabBrowseBtn/#newTabRecent 都 `display:none`；名称框预填 `task N` 且 `dataset.userEdited === 'false'` |
 | S37 | SPACE-05、MOB-11 | 390 宽视口点 #sidebarToggleBtn | 抽屉 transform 从 `matrix(1,0,0,1,-300,0)` 变 `matrix(1,0,0,1,0,0)`，#sidebarBackdrop 可见；点任一任务后 transform 回 -300 且遮罩隐藏 |
 | S38 | SPACE-05、TERM-31 | Start 覆盖层打开时（会话未启动）点侧边栏任务 | 点击生效（`elementFromPoint` 命中任务行而非遮罩）；390 宽时抽屉同样可点 |
+| S39 | SPACE-10 | 12 任务×3 空间种子，量每组可见行数 | 每组默认 5 行可见（其余 `.wm-hidden` 存在但 `display:none`）；对第 8 行任务 `setTabWorking(id,true,'x')` 后该行变为可见；点「显示更多」后行数 +5 或全显；「收起」回到 5；折叠再展开回到 5 |
+| S40 | SPACE-11 | 点搜索图标输入子串 | 输入框展开；非空时 `.spaces-tree` 隐藏、`.search-hit` 平铺且每行含 `任务名 · 空间名` 与状态点；点一行后搜索收起、该任务为 active、其空间展开且行在可视区（`ensureTabVisible` 后 `getBoundingClientRect` 在树容器内）；Esc 收起；乱串无结果显示「没有匹配的任务」 |
+| S41 | SPACE-12 | 量任务行 `.tab-time` 与超宽标题 | 每行 `.tab-time` 非空且匹配 /刚刚\|分钟\|小时\|天\|^\d+\/\d+$/，title 为本地时间串；构造超长名任务，静止时 `.tab-name` `clientWidth < scrollWidth`，`mouseenter` 后 `scrollLeft > 0`，`mouseleave` 后回到 0 |
+| S42 | SPACE-13、SPACE-14 | 触屏模拟点 ⋯；空态 | `(hover:none)` 下 `.tab-menu` `opacity ≥ .5` 可点开 `.pane-session-menu`；全新数据（无空间无任务）`#sidebarEmpty` 可见且 `.spaces-tree` 隐藏 |
 
 ## 基线结果
 

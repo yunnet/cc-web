@@ -23,7 +23,23 @@ class SpacesSidebar {
         // shares, so addTab callers never have to know about spaces.
         this.sessionSpaces = new Map();
         this.expanded = this.loadExpanded();
+        // Per-space row watermark (DSH's 渐显): how many task rows a group
+        // shows. In-memory only — folding a space resets it, a reload forgets.
+        this._watermarks = new Map();
+        this._searchQuery = '';
         this.setupDom();
+    }
+
+    // One entry for everything that changes what the sidebar should be
+    // showing right now: watermark re-evaluation, group visibility, the
+    // breadcrumb and the live search results. The tab manager calls this on
+    // every state change that crosses a display boundary.
+    refresh() {
+        this.applyWatermarks();
+        this.updateUngroupedVisibility();
+        this.applyEmptyState();
+        this.renderSearchResults();
+        this.updateBreadcrumb();
     }
 
     // ---- persistence of the per-device bits (expanded groups) -------------
@@ -135,6 +151,18 @@ class SpacesSidebar {
 
         document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeDrawer());
         document.getElementById('newSpaceBtn')?.addEventListener('click', () => this.openNewSpaceDialog());
+
+        // Search (DSH): a collapsed header action that expands an input; a
+        // non-blank query replaces the grouped tree with one flat result list.
+        document.getElementById('sidebarSearchBtn')?.addEventListener('click', () => this.toggleSearch());
+        const searchInput = document.getElementById('sidebarSearchInput');
+        searchInput?.addEventListener('input', () => {
+            this._searchQuery = searchInput.value;
+            this.refresh();
+        });
+        searchInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); this.clearSearch(); }
+        });
         document.getElementById('newSpaceBrowseBtn')?.addEventListener('click', () => this.toggleNewSpaceBrowser());
         document.getElementById('newSpaceUpBtn')?.addEventListener('click', () => this.nsUp());
         document.getElementById('newSpacePickBtn')?.addEventListener('click', () => this.nsPick());
@@ -258,6 +286,101 @@ class SpacesSidebar {
         document.getElementById('newSpaceBrowser').hidden = true;
         this.setNewSpaceError(null);
         document.getElementById('newSpaceName').focus();
+    }
+
+    // ---- search -----------------------------------------------------------
+    //
+    // Case-insensitive substring over task names and space names — pure
+    // client-side filtering of what is already loaded (content search would
+    // need a server API; deliberately out of P1). A hit row mirrors its
+    // task's status dot; opening one clears the search, expands the owning
+    // space and lands on the row, exactly like DSH.
+
+    toggleSearch() {
+        const bar = document.getElementById('sidebarSearchBar');
+        if (!bar) return;
+        const opening = bar.hidden;
+        bar.hidden = !opening;
+        if (opening) {
+            const input = document.getElementById('sidebarSearchInput');
+            if (input) { input.focus(); input.select(); }
+        } else {
+            this.clearSearch();
+        }
+    }
+
+    clearSearch() {
+        this._searchQuery = '';
+        const input = document.getElementById('sidebarSearchInput');
+        if (input) input.value = '';
+        const bar = document.getElementById('sidebarSearchBar');
+        if (bar) bar.hidden = true;
+        this.refresh();
+    }
+
+    renderSearchResults() {
+        const box = document.getElementById('sidebarSearchResults');
+        const tree = this.tree();
+        if (!box || !tree) return;
+        const q = this._searchQuery.trim().toLowerCase();
+        if (!q) {
+            box.hidden = true;
+            tree.classList.remove('searching');
+            return;
+        }
+        tree.classList.add('searching');
+        box.hidden = false;
+
+        const tabs = this.app.sessionTabManager;
+        box.innerHTML = '';
+        let count = 0;
+        if (tabs) {
+            for (const [sessionId, session] of tabs.activeSessions) {
+                const spaceId = this.sessionSpace(sessionId);
+                const space = spaceId ? this.spaceById(spaceId) : null;
+                const spaceName = space ? space.name : '未分组';
+                const name = (session && session.name) || 'Session';
+                if (!name.toLowerCase().includes(q) && !spaceName.toLowerCase().includes(q)) continue;
+                count++;
+                const row = document.createElement('div');
+                row.className = 'search-hit';
+                const tabEl = tabs.tabs.get(sessionId);
+                const dotCls = tabEl ? ((tabEl.querySelector('.tab-status')?.className || '').replace('tab-status', '').trim()) : '';
+                row.innerHTML = `
+                    <span class="tab-status ${dotCls}"></span>
+                    <span class="search-hit-name">${escapeHtml(name)}</span>
+                    <span class="search-hit-space">${escapeHtml(spaceName)}</span>
+                `;
+                row.addEventListener('click', () => this.openSearchHit(sessionId, spaceId));
+                box.appendChild(row);
+            }
+        }
+        if (count === 0) {
+            box.innerHTML = '<div class="nsb-empty">没有匹配的任务</div>';
+        }
+    }
+
+    async openSearchHit(sessionId, spaceId) {
+        this.clearSearch();
+        // Expand the owning space (a hidden group defeats the scroll-into-view)
+        // and let switchToTab → ensureTabVisible land the row in view.
+        if (spaceId && this.knownCollapsed(spaceId)) this.toggleCollapsed(spaceId);
+        await this.app.sessionTabManager.switchToTab(sessionId);
+    }
+
+    // ---- empty states -----------------------------------------------------
+
+    // Nothing at all (fresh install): the tree becomes one guiding hint
+    // instead of a lone empty 未分组 group. An expanded space with no tasks
+    // gets its grey （空） from CSS (:empty) — no JS needed for that one.
+    applyEmptyState() {
+        const tree = this.tree();
+        const empty = document.getElementById('sidebarEmpty');
+        if (!tree || !empty) return;
+        const tabs = this.app.sessionTabManager;
+        const nothing = this.spaces.length === 0 && (!tabs || tabs.tabs.size === 0);
+        empty.hidden = !nothing;
+        tree.classList.toggle('tree-empty', nothing);
     }
 
     // ---- new space dialog (#newSpaceModal) --------------------------------
@@ -469,8 +592,7 @@ class SpacesSidebar {
             }
         }
 
-        this.updateUngroupedVisibility();
-        this.updateBreadcrumb();
+        this.refresh();
     }
 
     buildGroup(space) {
@@ -578,7 +700,14 @@ class SpacesSidebar {
         if (!id) return;
         const group = this.tree()?.querySelector(`.space-group[data-space="${cssEscape(id)}"]`);
         const willCollapse = !this.expanded.has(id);
-        if (willCollapse) this.expanded.delete(id); else this.expanded.add(id);
+        if (willCollapse) {
+            this.expanded.delete(id);
+            // Folding resets the group's watermark (DSH: a reset watermark
+            // still covers the interesting rows — applyWatermarks recomputes).
+            this._watermarks.delete(id);
+        } else {
+            this.expanded.add(id);
+        }
         group?.classList.toggle('collapsed', willCollapse);
         try {
             const raw = JSON.parse(localStorage.getItem(SpacesSidebar.STATE_KEY) || '{}');
@@ -679,6 +808,90 @@ class SpacesSidebar {
         ungrouped.classList.toggle('hidden-group', !has && spacesExist);
     }
 
+    // ---- watermark (DSH's 渐显) ------------------------------------------
+    //
+    // A group lists its first N task rows (5 by default) so one busy space
+    // cannot flood the sidebar. Rows that MATTER are always kept visible:
+    // running, awaiting approval, unread ✓, or the task you are on — the
+    // watermark rises to cover the last such row within the first 50. It
+    // never falls on its own; 显示更多 raises it, 收起 (and folding the
+    // space) resets it.
+
+    static WATERMARK_DEFAULT = 5;
+    static WATERMARK_SCAN = 50;
+
+    taskIsInteresting(tabEl, sessionId) {
+        if (sessionId === this.app.sessionTabManager.activeTabId) return true;
+        if (tabEl.hasAttribute('data-working') || tabEl.hasAttribute('data-awaiting')
+            || tabEl.hasAttribute('data-done')) return true;
+        const session = this.app.sessionTabManager.activeSessions.get(sessionId);
+        return !!(session && (session.status === 'active' || session.unreadOutput));
+    }
+
+    applyWatermarks() {
+        const tree = this.tree();
+        const tabs = this.app.sessionTabManager;
+        if (!tree || !tabs) return;
+
+        for (const group of tree.querySelectorAll('.space-group')) {
+            const id = group.dataset.space || '';
+            const tasksEl = group.querySelector('.space-tasks');
+            const rows = [...tasksEl.querySelectorAll('.session-tab')];
+            const moreRow = this.moreRowFor(group);
+
+            if (rows.length === 0) { moreRow.remove(); continue; }
+
+            // What must stay visible: the stored watermark, RAISED to the
+            // last interesting row in the first 50 (never lowered by one —
+            // an early interesting row must not shrink the default 5).
+            let wanted = this._watermarks.get(id) || SpacesSidebar.WATERMARK_DEFAULT;
+            let scan = 0;
+            for (const row of rows) {
+                if (++scan > SpacesSidebar.WATERMARK_SCAN) break;
+                if (this.taskIsInteresting(row, row.dataset.sessionId)) wanted = Math.max(wanted, scan);
+            }
+            this._watermarks.set(id, wanted);
+
+            rows.forEach((row, i) => row.classList.toggle('wm-hidden', i >= wanted));
+            if (wanted >= rows.length) {
+                if (wanted > SpacesSidebar.WATERMARK_DEFAULT) {
+                    moreRow.textContent = '收起';
+                    moreRow.hidden = false;
+                } else {
+                    moreRow.remove();
+                }
+            } else {
+                moreRow.textContent = `显示更多（还有 ${rows.length - wanted} 个）`;
+                moreRow.hidden = false;
+            }
+        }
+    }
+
+    // The per-group 显示更多 / 收起 row, created on demand right after the
+    // task list.
+    moreRowFor(group) {
+        let el = group.querySelector('.space-more');
+        if (!el) {
+            el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'space-more';
+            group.querySelector('.space-tasks').after(el);
+            el.addEventListener('click', () => {
+                const id = group.dataset.space || '';
+                const count = group.querySelectorAll('.space-tasks .session-tab').length;
+                const current = this._watermarks.get(id) || SpacesSidebar.WATERMARK_DEFAULT;
+                if (current >= count) {
+                    this._watermarks.delete(id);           // 收起 resets
+                } else {
+                    const remaining = count - current;
+                    this._watermarks.set(id, current + (remaining <= 5 ? remaining : 5));
+                }
+                this.applyWatermarks();
+            });
+        }
+        return el;
+    }
+
     // ---- breadcrumb -----------------------------------------------------
 
     // The header's 空间 · 任务 · 目录 line. One writer, called on tab switches
@@ -732,14 +945,14 @@ class SpacesSidebar {
 
     // Called by session-manager on every tab switch: expand the space the task
     // lives in (a task reached by Alt+N in a collapsed space must show), close
-    // the drawer on narrow screens, refresh the breadcrumb.
+    // the drawer on narrow screens, refresh the breadcrumb and watermark.
     setActive(sessionId) {
         const spaceId = this.sessionSpace(sessionId);
         if (spaceId && !this.expanded.has(spaceId) && this.knownCollapsed(spaceId)) {
             this.toggleCollapsed(spaceId); // expand
         }
         if (this.isNarrow()) this.closeDrawer();
-        this.updateBreadcrumb();
+        this.refresh();
     }
 
     // Moving a task between spaces (context menu → 移动到空间…).

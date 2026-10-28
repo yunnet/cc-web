@@ -166,14 +166,31 @@
             <aside class="spaces-sidebar" id="spacesSidebar" aria-label="Spaces and tasks">
                 <div class="sidebar-head">
                     <span class="sidebar-title">空间</span>
-                    <button class="sidebar-collapse" id="sidebarCollapseBtn" title="Hide the sidebar" aria-label="Hide the sidebar">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="15 18 9 12 15 6"/>
-                        </svg>
-                    </button>
+                    <span class="sidebar-head-actions">
+                        <button class="sidebar-icon-btn" id="sidebarSearchBtn" title="搜索任务 / 空间" aria-label="搜索任务 / 空间">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="11" cy="11" r="7"/>
+                                <line x1="21" y1="21" x2="16.5" y2="16.5"/>
+                            </svg>
+                        </button>
+                        <button class="sidebar-collapse" id="sidebarCollapseBtn" title="Hide the sidebar" aria-label="Hide the sidebar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                        </button>
+                    </span>
+                </div>
+                <div class="sidebar-search" id="sidebarSearchBar" hidden>
+                    <input type="text" id="sidebarSearchInput" placeholder="搜索任务 / 空间" autocomplete="off" spellcheck="false">
                 </div>
                 <div class="spaces-tree" id="spacesTree">
                     <!-- Space groups render here (spaces.js) -->
+                </div>
+                <!-- A non-blank search replaces the tree with this flat list. -->
+                <div class="search-results" id="sidebarSearchResults" hidden></div>
+                <div class="sidebar-empty" id="sidebarEmpty" hidden>
+                    <p>还没有空间</p>
+                    <p class="sidebar-empty-hint">点下方「＋ 新建空间」，把任务按工作目录归组</p>
                 </div>
                 <div class="sidebar-foot">
                     <button class="sidebar-new-space" id="newSpaceBtn" title="Create a space bound to a working directory">

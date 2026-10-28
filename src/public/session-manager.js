@@ -283,6 +283,36 @@ class SessionTabManager {
         }
     }
 
+    // The trailing relative time on every task row: 刚刚 / N 分钟 / N 小时 /
+    // N 天 / M/D. Words, never a timestamp — the absolute moment lives in the
+    // tooltip.
+    static relativeTime(from) {
+        const ms = Date.now() - (from || 0);
+        if (ms < 60000) return '刚刚';
+        const minutes = Math.floor(ms / 60000);
+        if (minutes < 60) return `${minutes} 分钟`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} 小时`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days} 天`;
+        const t = new Date(from);
+        return `${t.getMonth() + 1}/${t.getDate()}`;
+    }
+
+    updateRowTime(tabEl, session) {
+        const el = tabEl.querySelector('.tab-time');
+        if (!el) return;
+        const from = session ? (session.lastActivity || session.lastAccessed || 0) : 0;
+        el.textContent = SessionTabManager.relativeTime(from);
+        el.title = from ? new Date(from).toLocaleString() : '';
+    }
+
+    updateRowTimes() {
+        for (const [sessionId, tab] of this.tabs) {
+            this.updateRowTime(tab, this.activeSessions.get(sessionId));
+        }
+    }
+
     updateTabHistory(sessionId) {
         this.tabHistory = this.tabHistory.filter(id => id !== sessionId && this.tabs.has(id));
         this.tabHistory.unshift(sessionId);
@@ -298,6 +328,12 @@ class SessionTabManager {
     async init() {
         this.setupTabBar();
         this.setupKeyboardShortcuts();
+        // The row's trailing "3 分钟" (DSH's row detail). One minute is as
+        // precise as the wording gets, so one shared timer for every row —
+        // skipped while the page is hidden.
+        this._timeTimer = setInterval(() => {
+            if (!document.hidden) this.updateRowTimes();
+        }, 60000);
         const reconcile = await this.reconcileSessions();
         
         // Show notification permission prompt after a slight delay
@@ -607,6 +643,14 @@ class SessionTabManager {
                 <span class="tab-status ${status}"></span>
                 <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
             </div>
+            <span class="tab-time" title=""></span>
+            <button class="tab-menu" type="button" title="任务菜单">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="5" cy="12" r="1.6"/>
+                    <circle cx="12" cy="12" r="1.6"/>
+                    <circle cx="19" cy="12" r="1.6"/>
+                </svg>
+            </button>
             <span class="tab-close" title="删除任务">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
@@ -614,12 +658,33 @@ class SessionTabManager {
                 </svg>
             </span>
         `;
-        
+
         // Tab click handler
         tab.addEventListener('click', async (e) => {
-            if (!e.target.closest('.tab-close')) {
+            if (!e.target.closest('.tab-close') && !e.target.closest('.tab-menu')) {
                 await this.switchToTab(sessionId);
             }
+        });
+
+        // ⋯ — the context menu, reachable without a right button (touch; on
+        // desktop it appears with the row's hover). Same menu right-click opens.
+        tab.querySelector('.tab-menu').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            this.openTabContextMenu(sessionId, Math.min(r.left, window.innerWidth - 240), r.bottom);
+        });
+
+        // A title wider than its row reveals on hover: the name scrolls to its
+        // far edge and back to the ellipsis (DSH's row behaviour).
+        tab.addEventListener('mouseenter', () => {
+            const name = tab.querySelector('.tab-name');
+            if (name && name.scrollWidth > name.clientWidth) {
+                name.scrollTo({ left: name.scrollWidth, behavior: 'smooth' });
+            }
+        });
+        tab.addEventListener('mouseleave', () => {
+            const name = tab.querySelector('.tab-name');
+            if (name) name.scrollTo({ left: 0 });
         });
         
         // Close button handler
@@ -673,9 +738,9 @@ class SessionTabManager {
 
         if (this.sidebar) {
             this.sidebar.noteSession(sessionId, effectiveSpaceId);
-            this.sidebar.updateUngroupedVisibility();
-            this.sidebar.updateBreadcrumb();
+            this.sidebar.refresh();
         }
+        this.updateRowTime(tab, this.activeSessions.get(sessionId));
 
         // If this is the first tab and autoSwitch is enabled, make it active
         if (this.tabs.size === 1 && autoSwitch) {
@@ -1004,6 +1069,9 @@ class SessionTabManager {
         const base = nameEl.dataset.baseTitle;
         const next = topic && topic !== 'Claude Code' ? (base ? `${base} · ${topic}` : topic) : base;
         if (nameEl.title !== next) nameEl.title = next;
+        // Working/not-working moves a task across the watermark's
+        // "interesting" line — re-evaluate what each space shows.
+        this.sidebar?.refresh();
     }
 
     // Claude stopped working (◐ → ✳). That is not yet "finished": waiting for
@@ -1081,6 +1149,8 @@ class SessionTabManager {
         if (done) tab.dataset.done = '';
         else delete tab.dataset.done;
         if (this.claudeInterface && this.claudeInterface.updatePageTitle) this.claudeInterface.updatePageTitle();
+        // ✓ appearing (or leaving) changes what the watermark must keep visible.
+        this.sidebar?.refresh();
     }
 
     // Claude is waiting for a permission answer (the permission_prompt hook)
@@ -1107,6 +1177,8 @@ class SessionTabManager {
         } else {
             delete tab.dataset.awaiting;
         }
+        // 待批准 outranks ✓, and both matter to the watermark.
+        this.sidebar?.refresh();
     }
 
     // Coming back to the page: what is on screen now has been seen.
@@ -1169,8 +1241,9 @@ class SessionTabManager {
                 }
             }
 
-            // The breadcrumb dot mirrors the active tab's dot.
-            if (sessionId === this.activeTabId && this.sidebar) this.sidebar.updateBreadcrumb();
+            // The breadcrumb dot mirrors the active tab's dot, and the active
+            // row is on the watermark's interesting list.
+            if (sessionId === this.activeTabId && this.sidebar) this.sidebar.refresh();
         }
     }
     

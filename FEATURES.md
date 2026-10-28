@@ -104,6 +104,11 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
 | SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
 | SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用；**空间目录打不开时禁用两个启动键并给出中文原因与补救指引**（防止任务静默落到其它目录/错误空间） | `file:src/public/app.js` | — |
+| SPACE-10 | 每空间任务**水位线渐显**（借鉴 DSH）：默认只列前 5 个任务，超出部分隐藏（DOM 保留不丢）；正在运行/待批准/未读 ✓/当前任务自动抬升水位线保证可见（扫描前 50）；组尾「显示更多（还有 N 个）」每次 +5（剩 ≤5 全显）、「收起」复位；折叠空间即复位；不持久化（刷新重置） | `file:src/public/spaces.js` | — |
+| SPACE-11 | 侧栏**搜索**（借鉴 DSH）：标题行搜索图标展开输入框；非空查询把分组树替换为平铺命中列表（任务名/空间名子串、大小写不敏感；行内带状态点 + `任务名 · 空间名`）；点结果=清空收起搜索、切到该任务、展开所属空间并滚动到行；Esc 收起；无结果显示「没有匹配的任务」 | `control:sidebarSearchBtn` `control:sidebarSearchInput` | — |
+| SPACE-12 | 任务行**行尾相对时间**（刚刚/N 分钟/N 小时/N 天/M/D，三级灰字，悬停 title 见绝对时刻，60 秒粒度统一刷新、页面隐藏时跳过）；**超宽标题悬停滚动**到尾部完整显示、移开回到省略号截断（借鉴 DSH） | `file:src/public/session-manager.js` | — |
+| SPACE-13 | 任务行内 **⋯ 菜单按钮**：桌面悬停显示、触屏（hover:none）常显，点开与右键相同的菜单（Close Others / 移动到空间…）——触屏原先只能靠右键，无从打开 | `js-control:session-manager.js:任务菜单` | — |
+| SPACE-14 | 空态：全新安装（无空间无任务）侧栏显示居中引导「还没有空间 → 点下方＋新建空间」；展开的空间若无任务显示灰字「（空）」；搜索无结果有专属空态 | `file:src/public/spaces.js` | — |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |
