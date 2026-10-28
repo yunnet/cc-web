@@ -339,13 +339,22 @@ body.sidebar-hidden .spaces-sidebar {
     text-align: right;
 }
 
+/* The +/× slot is ALWAYS laid out and hover only flips visibility: a
+   display:none→flex pop-in squeezed the dir subtitle (134→86px) AND bumped
+   the head's height (28→32px), shoving everything below — the sidebar
+   jittered as the pointer swept the heads (measured live on 32352). */
 .space-actions {
-    display: none;
+    display: flex;
     gap: 2px;
     flex-shrink: 0;
+    visibility: hidden;
 }
 
-.space-head:hover .space-actions { display: flex; }
+.space-head:hover .space-actions { visibility: visible; }
+
+@media (hover: none) and (pointer: coarse) {
+    .space-actions { visibility: visible; }
+}
 
 .space-action {
     width: 20px;
