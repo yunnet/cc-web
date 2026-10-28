@@ -1851,6 +1851,29 @@ body.sidebar-hidden .sidebar-rail {
     display: flex;
 }
 
+/* Settings is a long form: the start-options row (three selects) and the
+   plan-dirs input never fit the generic 400px shell. A 640px card — the same
+   width as 新建空间 — with the three selects stretching one equal-width row
+   instead of the centered fixed-width cramp. Scoped: .modal-content is
+   shared by every other modal. */
+.settings-modal .modal-content {
+    width: 640px;
+}
+
+.settings-start-options {
+    justify-content: stretch;
+}
+
+.settings-start-options .start-option {
+    flex: 1;
+    min-width: 0;
+}
+
+.settings-start-options .start-option select {
+    width: 100%;
+    min-width: 0;
+}
+
 .modal-content {
     background-color: var(--bg-secondary);
     border-radius: 12px;
