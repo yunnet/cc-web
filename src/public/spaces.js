@@ -22,7 +22,7 @@ class SpacesSidebar {
         // rows, create responses and PATCH moves — one index every call site
         // shares, so addTab callers never have to know about spaces.
         this.sessionSpaces = new Map();
-        this.expanded = this.loadExpanded();
+        this.collapsed = this.loadCollapsed();
         // Per-space row watermark (DSH's 渐显): how many task rows a group
         // shows. In-memory only — folding a space resets it, a reload forgets.
         this._watermarks = new Map();
@@ -42,23 +42,46 @@ class SpacesSidebar {
         this.updateBreadcrumb();
     }
 
-    // ---- persistence of the per-device bits (expanded groups) -------------
+    // ---- persistence of the per-device bits (collapsed groups) -------------
+    //
+    // ONE list is the truth: the ids a person folded. The DOM's .collapsed
+    // class is the live copy of it. (The previous model tracked an `expanded`
+    // set beside it and derived the toggle direction from "not in expanded" —
+    // which is true for a FOLDED group too, so a folded group could never be
+    // unfolded. Reproduced live on 32352: cgs-master folded once, chevron
+    // dead from then on.)
 
     static STATE_KEY = 'cc-web-sidebar-state';
 
-    loadExpanded() {
+    loadCollapsed() {
         try {
             const raw = JSON.parse(localStorage.getItem(SpacesSidebar.STATE_KEY) || '{}');
-            return new Set(Array.isArray(raw.expanded) ? raw.expanded : []);
+            return new Set(Array.isArray(raw.collapsed) ? raw.collapsed : []);
         } catch (_) {
             return new Set(); // TAB-25's rule: no localStorage, no crash
         }
     }
 
-    saveExpanded() {
+    saveCollapsed() {
         try {
-            localStorage.setItem(SpacesSidebar.STATE_KEY, JSON.stringify({ expanded: [...this.expanded] }));
+            localStorage.setItem(SpacesSidebar.STATE_KEY, JSON.stringify({ collapsed: [...this.collapsed] }));
         } catch (_) { /* ignore */ }
+    }
+
+    isCollapsed(id) {
+        return this.collapsed.has(id);
+    }
+
+    setCollapsed(id, collapsed) {
+        if (!id) return;
+        if (collapsed) this.collapsed.add(id);
+        else this.collapsed.delete(id);
+        const group = this.tree()?.querySelector(`.space-group[data-space="${cssEscape(id)}"]`);
+        group?.classList.toggle('collapsed', collapsed);
+        // Folding resets the group's watermark (DSH: a reset watermark still
+        // covers the interesting rows — applyWatermarks recomputes).
+        if (collapsed) this._watermarks.delete(id);
+        this.saveCollapsed();
     }
 
     // ---- data -----------------------------------------------------------
@@ -364,7 +387,7 @@ class SpacesSidebar {
         this.clearSearch();
         // Expand the owning space (a hidden group defeats the scroll-into-view)
         // and let switchToTab → ensureTabVisible land the row in view.
-        if (spaceId && this.knownCollapsed(spaceId)) this.toggleCollapsed(spaceId);
+        if (spaceId && this.isCollapsed(spaceId)) this.setCollapsed(spaceId, false);
         await this.app.sessionTabManager.switchToTab(sessionId);
     }
 
@@ -681,42 +704,17 @@ class SpacesSidebar {
         // 未分组 is never collapsed away — it is the fallback every task lands
         // in; hiding it could look like tasks vanished.
         if (id === '') return;
-        const collapsed = !this.expanded.has(id) && this.hasEverRendered(id);
-        // First render: spaces start expanded (an all-collapsed sidebar on
-        // upgrade day reads as "my tasks are gone"). After a manual collapse
-        // the id leaves `expanded` and gains a marker in localStorage.
-        group.classList.toggle('collapsed', !this.expanded.has(id) && this.knownCollapsed(id));
+        group.classList.toggle('collapsed', this.isCollapsed(id));
     }
 
-    hasEverRendered() { return this._rendered; }
-    knownCollapsed(id) {
-        try {
-            const raw = JSON.parse(localStorage.getItem(SpacesSidebar.STATE_KEY) || '{}');
-            return Array.isArray(raw.collapsed) && raw.collapsed.includes(id);
-        } catch (_) { return false; }
-    }
-
+    // The chevron/head click. Direction comes from what the group IS showing
+    // right now — the DOM class, the live copy of the collapsed list — so the
+    // toggle always flips, whichever state it starts from.
     toggleCollapsed(id) {
         if (!id) return;
         const group = this.tree()?.querySelector(`.space-group[data-space="${cssEscape(id)}"]`);
-        const willCollapse = !this.expanded.has(id);
-        if (willCollapse) {
-            this.expanded.delete(id);
-            // Folding resets the group's watermark (DSH: a reset watermark
-            // still covers the interesting rows — applyWatermarks recomputes).
-            this._watermarks.delete(id);
-        } else {
-            this.expanded.add(id);
-        }
-        group?.classList.toggle('collapsed', willCollapse);
-        try {
-            const raw = JSON.parse(localStorage.getItem(SpacesSidebar.STATE_KEY) || '{}');
-            const collapsed = new Set(Array.isArray(raw.collapsed) ? raw.collapsed : []);
-            if (willCollapse) collapsed.add(id); else collapsed.delete(id);
-            raw.collapsed = [...collapsed];
-            raw.expanded = [...this.expanded];
-            localStorage.setItem(SpacesSidebar.STATE_KEY, JSON.stringify(raw));
-        } catch (_) { /* ignore */ }
+        const isFolded = group ? group.classList.contains('collapsed') : this.isCollapsed(id);
+        this.setCollapsed(id, !isFolded);
     }
 
     renameSpace(space, head) {
@@ -948,9 +946,7 @@ class SpacesSidebar {
     // the drawer on narrow screens, refresh the breadcrumb and watermark.
     setActive(sessionId) {
         const spaceId = this.sessionSpace(sessionId);
-        if (spaceId && !this.expanded.has(spaceId) && this.knownCollapsed(spaceId)) {
-            this.toggleCollapsed(spaceId); // expand
-        }
+        if (spaceId && this.isCollapsed(spaceId)) this.setCollapsed(spaceId, false);
         if (this.isNarrow()) this.closeDrawer();
         this.refresh();
     }
