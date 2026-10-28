@@ -302,7 +302,9 @@ class SessionTabManager {
     updateRowTime(tabEl, session) {
         const el = tabEl.querySelector('.tab-time');
         if (!el) return;
-        const from = session ? (session.lastActivity || session.lastAccessed || 0) : 0;
+        // lastActivity only — lastAccessed is a viewing artifact (refresh
+        // would otherwise reset every row to 刚刚, the reported bug).
+        const from = session ? session.lastActivity : 0;
         el.textContent = SessionTabManager.relativeTime(from);
         el.title = from ? new Date(from).toLocaleString() : '';
     }
@@ -377,7 +379,7 @@ class SessionTabManager {
         const serverIds = server.map(s => s.id);
         const addTabsFor = (ids) => ids.forEach(id => {
             const sv = byId.get(id);
-            if (sv) this.addTab(sv.id, sv.name, sv.active ? 'active' : 'idle', sv.workingDir, false);
+            if (sv) this.addTab(sv.id, sv.name, sv.active ? 'active' : 'idle', sv.workingDir, false, undefined, sv.lastActivity);
         });
 
         // No sessions on the server at all → let init show the folder picker
@@ -593,7 +595,7 @@ class SessionTabManager {
             sessions.forEach((session, index) => {
                 console.log('[SessionManager.loadSessions] Adding tab for:', session.id);
                 // Don't auto-switch when loading existing sessions
-                this.addTab(session.id, session.name, session.active ? 'active' : 'idle', session.workingDir, false);
+                this.addTab(session.id, session.name, session.active ? 'active' : 'idle', session.workingDir, false, undefined, session.lastActivity);
                 // Set initial timestamps based on order (older sessions get older timestamps)
                 const sessionData = this.activeSessions.get(session.id);
                 if (sessionData) {
@@ -610,7 +612,7 @@ class SessionTabManager {
         }
     }
 
-    addTab(sessionId, sessionName, status = 'idle', workingDir = null, autoSwitch = true, spaceId = undefined) {
+    addTab(sessionId, sessionName, status = 'idle', workingDir = null, autoSwitch = true, spaceId = undefined, lastActivity = null) {
         // Which space group this task belongs to: the explicit argument when
         // the caller knows (create flow), else the index spaces.js keeps from
         // /api/sessions/list — so panels that open an existing session as a
@@ -747,7 +749,11 @@ class SessionTabManager {
             workingDir: workingDir,
             spaceId: effectiveSpaceId,
             lastAccessed: Date.now(),
-            lastActivity: Date.now(),
+            // The conversation's real last-activity stamp, straight from the
+            // server's session record when the tab comes from its list — the
+            // row time is "how long since anything happened in this task"
+            // (DSH's semantics), never "how long since THIS page loaded".
+            lastActivity: lastActivity ? new Date(lastActivity).getTime() : Date.now(),
             unreadOutput: false,
             hasError: false
         });
