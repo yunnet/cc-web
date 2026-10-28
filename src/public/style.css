@@ -989,12 +989,30 @@ body.sidebar-hidden .sidebar-rail {
 
 /* Task rows in the sidebar: the same .session-tab as always, reshaped from
    the old horizontal bar's chip into a full-width row. */
+/* Task rows: plain text at rest — no grey box until the pointer arrives
+   (user ask, 2026-10-29); the border stays, transparent, so the hover box
+   appears without moving a pixel (zero-jitter discipline). The active task
+   keeps the accent fill. */
 .spaces-sidebar .session-tab {
     border-radius: 6px;
     min-width: 0;
     max-width: none;
     width: 100%;
     padding: 6px 8px;
+    background: transparent;
+    border-color: transparent;
+}
+
+.spaces-sidebar .session-tab:hover:not(.active) {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+}
+
+/* The scoped boxless rule above (later in the file, same specificity) would
+   flatten the active fill too — restate it, scoped, and it wins again. */
+.spaces-sidebar .session-tab.active {
+    background-color: var(--accent);
+    border-color: var(--accent);
 }
 
 .tab-settings {
