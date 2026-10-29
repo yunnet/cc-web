@@ -23,6 +23,12 @@ class TurnRail {
         this.app = app;
         this.marks = [];     // [{i, text, row}] — the buffer's question lines
         this._hideTimer = null;
+        // The highlight a click CHOSE. The viewport-derived guess is wrong in
+        // exactly the case clicks happen for: the next question less than
+        // half a screen below takes the "current" title, and the periodic
+        // viewport recompute would flip a click's choice right back. The lock
+        // holds until the reader actually scrolls away from it.
+        this._currentLock = null;
 
         this.el = document.createElement('div');
         this.el.className = 'turn-rail';
@@ -35,10 +41,26 @@ class TurnRail {
         // two elements).
         this.el.addEventListener('pointerenter', () => this.openList());
         this.el.addEventListener('pointerleave', () => this.scheduleHide());
+
+        // Follow the reader: while the list is open, scrolling the terminal
+        // moves the highlight along (throttled — a wheel gesture fires a lot).
+        try {
+            this._scrollDisp = view.terminal.onScroll(() => this.onTermScroll());
+        } catch (_) { /* a build without onScroll: the interval still follows */ }
+    }
+
+    onTermScroll() {
+        if (this._scrollThrottle) return;
+        this._scrollThrottle = setTimeout(() => {
+            this._scrollThrottle = null;
+            if (this.listEl && this.listEl.isConnected) this.highlightCurrent();
+        }, 120);
     }
 
     dispose() {
         clearTimeout(this._hideTimer);
+        clearTimeout(this._scrollThrottle);
+        try { this._scrollDisp?.dispose?.(); } catch (_) {}
         this.closeList();
         this.el.remove();
         if (this.view.turnRail === this) this.view.turnRail = null;
@@ -118,13 +140,18 @@ class TurnRail {
 
     // ---- the question list -------------------------------------------------
 
-    // Which question the reader is on: the last anchor at or above the
-    // viewport's middle. Above the first anchor, the first question is
-    // current (that is where reading began).
+    // Which question the reader is on: a click's own choice while its target
+    // is still what the viewport shows (within a screen of the lock), else
+    // the last anchor at or above the viewport's middle. Above the first
+    // anchor, the first question is current (that is where reading began).
     currentMark() {
         if (!this.marks.length) return null;
         const term = this.view.terminal;
         const buf = term.buffer.active;
+        if (this._currentLock) {
+            if (Math.abs(buf.viewportY - this._currentLock.row) <= term.rows) return this._currentLock;
+            this._currentLock = null; // the reader moved on
+        }
         const center = buf.viewportY + Math.floor(term.rows / 2);
         let current = this.marks[0];
         for (const m of this.marks) {
@@ -177,8 +204,11 @@ class TurnRail {
             row.title = m.text;
             row.dataset.markIndex = String(m.i);
             row.addEventListener('click', () => {
-                this.jump(m.row);
+                // The highlight is the click's own choice, applied THIS tick —
+                // not something the viewport gets to re-derive a beat later.
+                this._currentLock = m;
                 this.highlightCurrent();
+                this.jump(m.row);
             });
             list.appendChild(row);
         }
