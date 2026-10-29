@@ -4089,17 +4089,34 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 /* The turn rail: one tick per question, over the terminal's right edge
-   (turn-rail.js). The strip takes pointer events — hovering it opens the
-   question list (the 14px column is the rail's to keep; DSH's rail sits in
-   its own column the same way). Hidden on a narrow transcript (DSH's ≤900px
-   rule). */
+   (turn-rail.js). 18px of hover zone — a 14px strip read as "not very
+   responsive" because half the hovers missed it — with a faint track line
+   appearing under the pointer so the strip announces itself. The strip takes
+   pointer events: hovering it opens the question list. Hidden on a narrow
+   transcript (DSH's ≤900px rule). */
 .turn-rail {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
-    width: 14px;
+    width: 18px;
     z-index: 5;
+}
+
+.turn-rail::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 8px;
+    width: 1px;
+    background: var(--border);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.turn-rail:hover::before {
+    opacity: 0.5;
 }
 
 .turn-rail.rail-hidden {
@@ -4173,12 +4190,13 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     background: var(--bg-tertiary);
 }
 
-/* The question the viewport is on: accent text plus a quiet tint, so the
-   list opens telling you where you already are. */
+/* The question the viewport is on: bright green, bar and all — the grey-ish
+   tint it had read as just another row (user ask, 2026-10-29). */
 .turn-rail-row.current {
-    color: var(--accent);
-    background: var(--bg-tertiary);
+    color: var(--success);
+    background: rgba(63, 185, 80, 0.12);
     font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--success);
 }
 
 .turn-rail-list-empty {
