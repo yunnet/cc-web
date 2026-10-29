@@ -1,64 +1,47 @@
-// turn-rail.js — the right-edge anchors of a conversation: one mark per
-// question, hover previews it, click jumps the terminal there. (DSH's turn
-// rail, on a real terminal.)
+// turn-rail.js — the right-edge anchors of a conversation (DSH's turn rail,
+// on a real terminal): a minimap strip of ticks, one per question, and a
+// question LIST that opens on hover — the row matching where you are looking
+// is highlighted and focused, clicking any row jumps there.
 //
-// The marks ARE the terminal: Claude's TUI renders every submitted question
-// as a line starting with ❯ (or >), so the buffer is scanned for those lines
-// and each becomes an anchor at its own row — no matching against a separate
-// list, so nothing can fail to match (a transcript-matching version was
-// tried first and returned zero anchors for exactly the sessions the rail is
-// FOR: long agentic runs whose early turns had already been trimmed out of
-// the replayed output buffer). Redraws reprint the same question on new rows;
-// the LAST occurrence of each text wins, so repeats collapse to one mark.
+// The anchors ARE the terminal: Claude's TUI renders every submitted
+// question as a line starting with ❯ (or >), so the buffer is scanned for
+// those lines and each becomes an anchor at its own row — no matching against
+// a separate list, so nothing can fail to match (a transcript-matching
+// version was tried first and returned zero anchors for exactly the sessions
+// the rail is FOR: long agentic runs whose early turns had already been
+// trimmed out of the replayed output buffer). Redraws reprint the same
+// question on new rows; the LAST occurrence of each text wins.
 //
 // Honest limits, by design: questions whose rendering no longer survives in
-// the buffer (older than the replayed tail after a reload) get no mark, and
-// the live turn's own ❯ — the input box — sits below the scan ceiling and
-// never anchors. The rail hides when the terminal area is 900px wide or less
-// (DSH's rule).
+// the buffer get no tick; the live turn's own ❯ — the input box — sits below
+// the scan ceiling and never anchors. The rail hides when the terminal area
+// is 900px wide or less (DSH's rule).
 
 class TurnRail {
     constructor(view, app) {
         this.view = view;
         this.app = app;
         this.marks = [];     // [{i, text, row}] — the buffer's question lines
+        this._hideTimer = null;
+
         this.el = document.createElement('div');
         this.el.className = 'turn-rail';
         this.el.setAttribute('aria-hidden', 'true');
         view.el.appendChild(this.el);
         view.turnRail = this;
+
+        // Hovering the strip opens the question list; the list itself keeps
+        // the hover alive (a shared hide timer bridges the gap between the
+        // two elements).
+        this.el.addEventListener('pointerenter', () => this.openList());
+        this.el.addEventListener('pointerleave', () => this.scheduleHide());
     }
 
     dispose() {
-        this.hideTooltip();
+        clearTimeout(this._hideTimer);
+        this.closeList();
         this.el.remove();
         if (this.view.turnRail === this) this.view.turnRail = null;
-    }
-
-    // The shared tooltip: one element for every rail (it follows the pointer).
-    static tooltipEl() {
-        let el = document.getElementById('turnRailTip');
-        if (!el) {
-            el = document.createElement('div');
-            el.id = 'turnRailTip';
-            el.className = 'turn-rail-tip';
-            el.hidden = true;
-            document.body.appendChild(el);
-        }
-        return el;
-    }
-
-    showTooltip(text, x, y) {
-        const tip = TurnRail.tooltipEl();
-        tip.textContent = text;
-        tip.hidden = false;
-        tip.style.left = `${Math.max(8, x - tip.offsetWidth - 18)}px`;
-        tip.style.top = `${Math.min(window.innerHeight - tip.offsetHeight - 8, Math.max(8, y - 14))}px`;
-    }
-
-    hideTooltip() {
-        const tip = document.getElementById('turnRailTip');
-        if (tip) tip.hidden = true;
     }
 
     static normalize(text) {
@@ -112,24 +95,105 @@ class TurnRail {
                 e.stopPropagation();
                 this.jump(m.row);
             });
-            btn.addEventListener('mouseenter', (e) => this.showTooltip(m.text, e.clientX, e.clientY));
-            btn.addEventListener('mousemove', (e) => this.showTooltip(m.text, e.clientX, e.clientY));
-            btn.addEventListener('mouseleave', () => this.hideTooltip());
             this.el.appendChild(btn);
         }
+        if (this.listEl && this.listEl.isConnected) this.renderList();
     }
 
     // Cheap pass between full scans: scrollback rows never move, so the ticks
-    // only need their heights re-derived against the current buffer length.
+    // only need their heights re-derived against the current buffer length —
+    // and an open list re-derives which question the viewport is on.
     reposition() {
         const term = this.view.terminal;
         if (!term || !this.el.isConnected) return;
-        const total = Math.max(1, term.buffer.active.length);
+        const buf = term.buffer.active;
+        const total = Math.max(1, buf.length);
         const buttons = this.el.querySelectorAll('.turn-mark');
         this.marks.forEach((m, i) => {
             const btn = buttons[i];
             if (btn) btn.style.top = `${(m.row / total) * 100}%`;
         });
+        if (this.listEl && this.listEl.isConnected) this.highlightCurrent();
+    }
+
+    // ---- the question list -------------------------------------------------
+
+    // Which question the reader is on: the last anchor at or above the
+    // viewport's middle. Above the first anchor, the first question is
+    // current (that is where reading began).
+    currentMark() {
+        if (!this.marks.length) return null;
+        const term = this.view.terminal;
+        const buf = term.buffer.active;
+        const center = buf.viewportY + Math.floor(term.rows / 2);
+        let current = this.marks[0];
+        for (const m of this.marks) {
+            if (m.row <= center) current = m;
+            else break;
+        }
+        return current;
+    }
+
+    openList() {
+        clearTimeout(this._hideTimer);
+        if (!this.listEl || !this.listEl.isConnected) {
+            const list = document.createElement('div');
+            list.className = 'turn-rail-list';
+            list.setAttribute('aria-hidden', 'true');
+            list.addEventListener('pointerenter', () => clearTimeout(this._hideTimer));
+            list.addEventListener('pointerleave', () => this.scheduleHide());
+            this.view.el.appendChild(list);
+            this.listEl = list;
+            this.renderList();
+        }
+    }
+
+    scheduleHide() {
+        clearTimeout(this._hideTimer);
+        this._hideTimer = setTimeout(() => this.closeList(), 250);
+    }
+
+    closeList() {
+        if (this.listEl) {
+            this.listEl.remove();
+            this.listEl = null;
+        }
+    }
+
+    renderList() {
+        const list = this.listEl;
+        if (!list) return;
+        list.innerHTML = '';
+        if (!this.marks.length) {
+            list.innerHTML = '<div class="turn-rail-list-empty">这个会话里还没有留下提问</div>';
+            return;
+        }
+        const current = this.currentMark();
+        for (const m of this.marks) {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'turn-rail-row' + (current && m.i === current.i ? ' current' : '');
+            row.textContent = m.text;
+            row.title = m.text;
+            row.dataset.markIndex = String(m.i);
+            row.addEventListener('click', () => {
+                this.jump(m.row);
+                this.highlightCurrent();
+            });
+            list.appendChild(row);
+        }
+        // Focus the current question: the list opens already scrolled to
+        // where the reader is.
+        const cur = list.querySelector('.turn-rail-row.current');
+        if (cur) cur.scrollIntoView({ block: 'center' });
+    }
+
+    highlightCurrent() {
+        const list = this.listEl;
+        if (!list || !list.isConnected) return;
+        const current = this.currentMark();
+        const rows = list.querySelectorAll('.turn-rail-row');
+        rows.forEach(r => r.classList.toggle('current', current ? Number(r.dataset.markIndex) === current.i : false));
     }
 
     jump(row) {
