@@ -4125,9 +4125,9 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 
 .turn-mark {
     position: absolute;
-    right: 2px;
-    width: 10px;
-    height: 14px; /* generous hit target around the 2px tick */
+    right: 1px;
+    width: 14px;
+    height: 14px; /* generous hit target around the tick itself */
     padding: 0;
     background: none;
     border: none;
@@ -4135,14 +4135,16 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     cursor: pointer;
 }
 
+/* The tick: 4px of bar, plainly visible from across the room (user ask,
+   2026-10-29: the old 2px/45% hairline read as invisible). */
 .turn-mark::after {
     content: '';
     display: block;
-    height: 2px;
-    margin-top: 6px;
-    border-radius: 1px;
+    height: 4px;
+    margin-top: 5px;
+    border-radius: 2px;
     background: var(--text-secondary);
-    opacity: .45;
+    opacity: .85;
 }
 
 .turn-mark:hover::after {
@@ -4190,13 +4192,12 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     background: var(--bg-tertiary);
 }
 
-/* The question the viewport is on: bright green, bar and all — the grey-ish
-   tint it had read as just another row (user ask, 2026-10-29). */
+/* The question the viewport is on: accent text plus a quiet tint, so the
+   list opens telling you where you already are. */
 .turn-rail-row.current {
-    color: var(--success);
-    background: rgba(63, 185, 80, 0.12);
+    color: var(--accent);
+    background: var(--bg-tertiary);
     font-weight: 600;
-    box-shadow: inset 2px 0 0 var(--success);
 }
 
 .turn-rail-list-empty {
