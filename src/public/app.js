@@ -2327,9 +2327,15 @@ class ClaudeCodeWebInterface {
     // user's home, or filesystem root. Shown to the user, because otherwise
     // picking one just reopens the folder browser with no explanation.
     nonProjectDirReason(dir) {
-        if (this.baseFolder && dir === this.baseFolder) return `${dir} 是本服务的启动目录，不是工程目录，请选择一个工程目录。`;
-        if (this.homeDir && dir === this.homeDir) return `${dir} 是你的主目录，不是工程目录，请选择一个工程目录。`;
-        if (dir === '/') return '根目录 / 不是工程目录，请选择一个工程目录。';
+        // Windows paths ignore case and may arrive with either slash, so
+        // D:\Users\me and d:/users/me/ are the same folder.
+        const same = (a, b) => {
+            const norm = (p) => /^[A-Za-z]:/.test(p) ? p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase() : p;
+            return norm(a) === norm(b);
+        };
+        if (this.baseFolder && same(dir, this.baseFolder)) return `${dir} 是本服务的启动目录，不是工程目录，请选择一个工程目录。`;
+        if (this.homeDir && same(dir, this.homeDir)) return `${dir} 是你的主目录，不是工程目录，请选择一个工程目录。`;
+        if (dir === '/' || /^[A-Za-z]:[\\/]?$/.test(dir)) return `根目录 ${dir} 不是工程目录，请选择一个工程目录。`;
         return null;
     }
 

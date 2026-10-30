@@ -1,0 +1,14 @@
+# Line endings are pinned here, not left to each clone's core.autocrlf:
+# a CRLF in scripts/ccw or a #!-script breaks it on macOS/Linux, and cmd.exe
+# misparses a batch file with bare LF.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

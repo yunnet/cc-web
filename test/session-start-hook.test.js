@@ -60,9 +60,11 @@ describe('SessionStart hook: following Claude when it forks its own session', fu
         hookScript: '/x/cc-hook.js', hookPort: 4242, hookToken: 'tok'
       });
       assert.ok(s.hooks && Array.isArray(s.hooks.SessionStart), 'SessionStart must be registered');
-      const cmd = s.hooks.SessionStart[0].hooks[0].command;
-      assert.strictEqual(cmd, s.hooks.PreToolUse[0].hooks[0].command,
+      const hook = s.hooks.SessionStart[0].hooks[0];
+      assert.deepStrictEqual(hook, s.hooks.PreToolUse[0].hooks[0],
         'one relay script, one command — SessionStart must not invent a second wiring');
+      // Shell form on POSIX, exec form (`command` + `args`) on Windows.
+      const cmd = [hook.command, ...(hook.args || [])].join(' ');
       assert.ok(cmd.includes('--port 4242') && cmd.includes(CCW_ID));
     });
 

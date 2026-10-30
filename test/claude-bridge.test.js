@@ -132,6 +132,14 @@ describe('ClaudeBridge', function() {
   });
 
   describe('buildInjectedSettings', function() {
+    // The hook's shape depends on the platform, so each branch is pinned here
+    // rather than left to whatever OS runs the suite.
+    const onPlatform = (platform, fn) => {
+      const original = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: platform });
+      try { return fn(); } finally { Object.defineProperty(process, 'platform', original); }
+    };
+
     it('should always route notifications to the terminal bell', function() {
       const s = bridge.buildInjectedSettings('sess-1', {});
       assert.strictEqual(s.preferredNotifChannel, 'terminal_bell');
@@ -146,11 +154,11 @@ describe('ClaudeBridge', function() {
     });
 
     it('should register a PreToolUse(ExitPlanMode) hook when relay params are present', function() {
-      const s = bridge.buildInjectedSettings('sess-abc', {
+      const s = onPlatform('linux', () => bridge.buildInjectedSettings('sess-abc', {
         hookScript: '/opt/app/bin/cc-hook.js',
         hookPort: 32353,
         hookToken: 'tok-xyz'
-      });
+      }));
       assert(s.hooks && Array.isArray(s.hooks.PreToolUse));
       const group = s.hooks.PreToolUse[0];
       assert.strictEqual(group.matcher, 'ExitPlanMode');
@@ -194,13 +202,30 @@ describe('ClaudeBridge', function() {
     });
 
     it('should single-quote-escape argv to avoid shell injection', function() {
-      const s = bridge.buildInjectedSettings("a'b; rm -rf /", {
+      const s = onPlatform('linux', () => bridge.buildInjectedSettings("a'b; rm -rf /", {
         hookScript: '/bin/cc-hook.js', hookPort: 1, hookToken: 't'
-      });
+      }));
       const cmd = s.hooks.PreToolUse[0].hooks[0].command;
       // The dangerous session id is wrapped/escaped, not left bare.
       assert(!cmd.includes("a'b; rm -rf /"), 'raw dangerous string is not present unescaped');
       assert(cmd.includes(`'a'\\''b; rm -rf /'`), 'session id is single-quote escaped');
+    });
+
+    it('should use the exec form on Windows, where the hook shell may be PowerShell', function() {
+      // PowerShell rejects the POSIX line (a quoted path then arguments), so on
+      // Windows the relay is spawned directly: no shell, nothing to quote.
+      const s = onPlatform('win32', () => bridge.buildInjectedSettings("a'b; rm -rf /", {
+        hookScript: 'C:\\Program Files\\cc-web\\bin\\cc-hook.js', hookPort: 32353, hookToken: 'tok-xyz'
+      }));
+      const hook = s.hooks.PreToolUse[0].hooks[0];
+      assert.strictEqual(hook.type, 'command');
+      assert.strictEqual(hook.command, process.execPath);
+      assert.deepStrictEqual(hook.args,
+        ['C:\\Program Files\\cc-web\\bin\\cc-hook.js', '--port', '32353', '--session', "a'b; rm -rf /"]);
+      assert(!JSON.stringify(hook).includes('tok-xyz'), 'the token stays in the environment');
+      for (const event of ['SessionStart', 'Notification', 'Stop']) {
+        assert.deepStrictEqual(s.hooks[event][0].hooks[0], hook, `${event} uses the same relay`);
+      }
     });
   });
 
@@ -240,7 +265,8 @@ describe('ClaudeBridge', function() {
       });
       assert.strictEqual(s.preferredNotifChannel, 'terminal_bell');
       assert.strictEqual(s.theme, 'light-ansi');
-      assert.ok(s.hooks.PreToolUse[0].hooks[0].command.includes('cc-hook.js'));
+      // Shell form puts the script in `command`, the Windows exec form in `args`.
+      assert.ok(JSON.stringify(s.hooks.PreToolUse[0].hooks[0]).includes('cc-hook.js'));
     });
   });
 

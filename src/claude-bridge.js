@@ -1,6 +1,7 @@
 const { spawn } = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const claudeTheme = require('./utils/claude-theme');
 
 class ClaudeBridge {
@@ -10,12 +11,16 @@ class ClaudeBridge {
   }
 
   findClaudeCommand() {
+    if (process.platform === 'win32') return this.findWindowsClaudeCommand();
     const possibleCommands = [
       '/home/ec2-user/.claude/local/claude',
       'claude',
       'claude-code',
       path.join(process.env.HOME || '/', '.claude', 'local', 'claude'),
       path.join(process.env.HOME || '/', '.local', 'bin', 'claude'),
+      // Homebrew on Apple Silicon. Not on the PATH a launchd/GUI-started
+      // server inherits, so `which` alone would miss it.
+      '/opt/homebrew/bin/claude',
       '/usr/local/bin/claude',
       '/usr/bin/claude'
     ];
@@ -35,7 +40,46 @@ class ClaudeBridge {
     return 'claude';
   }
 
+  // node-pty on Windows (ConPTY) needs a real executable: a bare `claude`
+  // fails with "Cannot create process, error code: 2", and the npm shim
+  // `claude.cmd` is a batch file, which would put cmd.exe between us and the
+  // PTY. So resolve to claude.exe — the native installer's, the npm global
+  // package's, or the package next to whichever npm shim is on PATH.
+  findWindowsClaudeCommand() {
+    const home = process.env.USERPROFILE || os.homedir();
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const npmPackageExe = (dir) => path.join(dir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+    const candidates = [
+      path.join(home, '.local', 'bin', 'claude.exe'),
+      path.join(home, '.claude', 'local', 'claude.exe'),
+      npmPackageExe(path.join(appData, 'npm')),
+      ...this.whereAll('claude.exe'),
+      ...this.whereAll('claude.cmd').map((shim) => npmPackageExe(path.dirname(shim)))
+    ];
+
+    for (const cmd of candidates) {
+      if (fs.existsSync(cmd)) {
+        console.log(`Found Claude command at: ${cmd}`);
+        return cmd;
+      }
+    }
+
+    console.error('Claude command not found, using default "claude.exe"');
+    return 'claude.exe';
+  }
+
+  // Every match `where` finds on PATH, or [] when there is none.
+  whereAll(command) {
+    try {
+      return require('child_process').execFileSync('where', [command], { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    } catch (error) {
+      return [];
+    }
+  }
+
   commandExists(command) {
+    if (process.platform === 'win32') return this.whereAll(command).length > 0;
     try {
       require('child_process').execFileSync('which', [command], { stdio: 'ignore' });
       return true;
@@ -536,11 +580,24 @@ class ClaudeBridge {
       // on the spawned Claude, inherited by its hooks), NOT on the command line:
       // argv is world-readable via /proc/<pid>/cmdline, whereas /proc/<pid>/environ
       // is owner-only. port/session are non-secret and stay as argv.
-      const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-      const command = `${q(process.execPath)} ${q(hookScript)} --port ${Number(hookPort)} --session ${q(sessionId)}`;
+      let relay;
+      if (process.platform === 'win32') {
+        // Claude on Windows runs a shell-form hook through Git Bash, or through
+        // PowerShell when there is none — and PowerShell refuses the POSIX line
+        // below (a quoted path followed by arguments is a parse error; measured
+        // on 2.1.304: "SessionStart:startup hook error"). The exec form
+        // (`command` + `args`) is spawned with no shell at all, so there is no
+        // quoting left to get wrong.
+        const args = [hookScript, '--port', String(Number(hookPort)), '--session', String(sessionId)];
+        relay = { type: 'command', command: process.execPath, args };
+      } else {
+        const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+        const command = `${q(process.execPath)} ${q(hookScript)} --port ${Number(hookPort)} --session ${q(sessionId)}`;
+        relay = { type: 'command', command };
+      }
       settings.hooks = {
         PreToolUse: [
-          { matcher: 'ExitPlanMode', hooks: [{ type: 'command', command }] }
+          { matcher: 'ExitPlanMode', hooks: [relay] }
         ],
         // Claude's conversation id is not ours to assume. We bind ours with
         // --session-id, but `/clear` starts a NEW transcript inside the same
@@ -551,7 +608,7 @@ class ClaudeBridge {
         // hear about the move. (`/compact` does not fork on this version — the
         // summary is appended to the same file.)
         SessionStart: [
-          { matcher: '*', hooks: [{ type: 'command', command }] }
+          { matcher: '*', hooks: [relay] }
         ],
         // Claude is waiting for a permission answer, so a tab nobody is looking
         // at can say so. The matcher is the notification type: only
@@ -560,7 +617,7 @@ class ClaudeBridge {
         // together with the bell, as {message: "Claude needs your permission",
         // notification_type: "permission_prompt"}.
         Notification: [
-          { matcher: 'permission_prompt', hooks: [{ type: 'command', command }] }
+          { matcher: 'permission_prompt', hooks: [relay] }
         ],
         // The turn is over — Claude finished answering. Measured on 2.1.278: it
         // fires the moment the title turns ✳ on a real answer, and NOT while
@@ -569,7 +626,7 @@ class ClaudeBridge {
         // it tells "finished" from "waiting" without a grace period. It carries
         // `last_assistant_message`, Claude's final reply.
         Stop: [
-          { hooks: [{ type: 'command', command }] }
+          { hooks: [relay] }
         ]
       };
     }
