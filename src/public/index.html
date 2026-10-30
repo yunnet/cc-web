@@ -680,11 +680,16 @@
                         </div>
                     </div>
 
-                    <div class="nt-section nt-row">
+                    <!-- The name gets the whole first row — it is the one
+                         field a person types into; the three launch selects
+                         flow on their own row below (user ask, 2026-10-30). -->
+                    <div class="nt-section">
                         <label class="start-option nt-name">
                             <span>标签名称（可不填）</span>
                             <input type="text" id="sessionName" placeholder="默认用目录名">
                         </label>
+                    </div>
+                    <div class="nt-section nt-row">
                         <label class="start-option">
                             <span>模型</span>
                             <!-- Same values as #claudeModelSelect in the Start prompt,

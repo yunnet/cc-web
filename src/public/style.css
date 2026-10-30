@@ -4293,7 +4293,8 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 .new-tab-modal .nt-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .new-tab-modal .nt-row { flex-direction: row; flex-wrap: wrap; gap: 12px; }
-.new-tab-modal .nt-name { flex: 1 1 200px; }
+/* The name field's own row: full width, not one flex item among the selects. */
+.new-tab-modal .nt-name { display: flex; flex-direction: column; gap: 4px; width: 100%; box-sizing: border-box; }
 .new-tab-modal .start-option input {
     padding: 8px 10px;
     background: var(--bg-primary);
