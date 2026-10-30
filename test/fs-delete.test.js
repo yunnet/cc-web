@@ -104,9 +104,14 @@ describe('file explorer: deleteEntry', function () {
   it('protects the filesystem root and the home directory', function () {
     // NEVER call deleteEntry on these: if the guard ever regressed, this test
     // would itself delete them. The check alone is enough to hold the rule.
-    assert.strictEqual(server.protectedDirHit('/'), '/');
+    // `/` on POSIX, the current drive's root (e.g. C:\) on Windows.
+    const fsRoot = path.parse(path.resolve('/')).root;
+    assert.strictEqual(server.protectedDirHit(fsRoot), fsRoot);
     assert.strictEqual(server.protectedDirHit(fs.realpathSync(os.homedir())), fs.realpathSync(os.homedir()));
     assert.ok(server.protectedDirHit(path.dirname(fs.realpathSync(os.homedir()))), 'the folder holding home');
+    if (process.platform === 'win32') {
+      assert.ok(server.protectedDirHit(os.homedir().toLowerCase()), 'case is no way around it on Windows');
+    }
     assert.strictEqual(server.protectedDirHit(path.join(root, 'a.txt')), null, 'an ordinary file is not protected');
   });
 

@@ -29,6 +29,9 @@ describe('instance lock', function () {
     it('writes 0600 — the token is in this file', function () {
       // argv put the token in /proc/<pid>/cmdline at mode 444. If this file is
       // not 0600 the move buys nothing, so assert the number.
+      // Windows has no mode bits (stat reports 666); there the data dir sits
+      // under the user's profile, whose ACL already keeps other users out.
+      if (process.platform === 'win32') return this.skip();
       const p = lock.writeLock({ port: 32353, authToken: 'secret-token', sourceDir: '/src' });
       assert.ok(p, 'a path was returned');
       const mode = fs.statSync(p).mode & 0o777;
@@ -99,10 +102,12 @@ describe('instance lock', function () {
     it('treats a recycled pid as dead, not alive', function () {
       // The trap this guards: pids are recycled. Asking only "does this pid
       // exist" keeps a dead instance's record forever once its pid is reused.
-      // pid 1 always exists and is never our server.
-      assert.strictEqual(lock.isLockLive({ pid: 1, port: 32353 }, { portInUse: false }), false,
+      // Our parent always exists and is never our server (pid 1 would do on
+      // Linux, but Windows has no pid 1).
+      const pid = process.ppid;
+      assert.strictEqual(lock.isLockLive({ pid, port: 32353 }, { portInUse: false }), false,
         'existing pid + port not listening = stale');
-      assert.strictEqual(lock.isLockLive({ pid: 1, port: 32353 }, { portInUse: true }), true);
+      assert.strictEqual(lock.isLockLive({ pid, port: 32353 }, { portInUse: true }), true);
     });
 
     it('calls a vanished pid dead', function () {

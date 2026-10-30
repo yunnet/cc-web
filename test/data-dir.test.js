@@ -11,11 +11,15 @@ describe('data-dir', function () {
   let home;
   let dataDir;
   let realHome;
+  let realProfile;
 
   beforeEach(function () {
     realHome = process.env.HOME;
+    realProfile = process.env.USERPROFILE;
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-data-dir-'));
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     delete process.env.CCW_DATA_DIR;
     // require caching would carry the previous test's failedMoves set; reload
     // so each case starts clean (same isolation as instance-lock.test.js).
@@ -26,6 +30,8 @@ describe('data-dir', function () {
   afterEach(function () {
     if (realHome === undefined) delete process.env.HOME;
     else process.env.HOME = realHome;
+    if (realProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = realProfile;
     try { fs.rmSync(home, { recursive: true, force: true }); } catch (_) {}
   });
 
@@ -42,6 +48,8 @@ describe('data-dir', function () {
 
   it('defaults to ~/.cc-web/data and creates the base 0700', function () {
     assert.strictEqual(dataDir(), target());
+    // Windows has no mode bits; the profile's ACL does that job there.
+    if (process.platform === 'win32') return;
     const mode = fs.statSync(path.join(home, '.cc-web')).mode & 0o777;
     assert.strictEqual(mode, 0o700, `expected base 0700, got ${mode.toString(8)}`);
   });

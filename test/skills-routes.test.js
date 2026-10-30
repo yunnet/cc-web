@@ -57,6 +57,7 @@ describe('skills API', function() {
   let dataDir;
   let workDir;
   let prevHome;
+  let prevProfile;
   let prevData;
 
   beforeEach(function() {
@@ -66,8 +67,11 @@ describe('skills API', function() {
     fs.mkdirSync(dataDir, { recursive: true });
     fs.mkdirSync(workDir, { recursive: true });
     prevHome = process.env.HOME;
+    prevProfile = process.env.USERPROFILE;
     prevData = process.env.CCW_DATA_DIR;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     process.env.HOME = tmp;
+    process.env.USERPROFILE = tmp;
     process.env.CCW_DATA_DIR = dataDir;
     skills.clearCatalogCache();
 
@@ -79,6 +83,7 @@ describe('skills API', function() {
 
   afterEach(function() {
     if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
     if (prevData === undefined) delete process.env.CCW_DATA_DIR; else process.env.CCW_DATA_DIR = prevData;
     fs.rmSync(tmp, { recursive: true, force: true });
   });

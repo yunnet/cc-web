@@ -15,8 +15,19 @@ const pty = require('node-pty');
 describe('node-pty contract', function () {
   this.timeout(30000);
 
-  const SHELL = process.platform === 'win32' ? 'powershell.exe' : 'bash';
-  const ARGS = process.platform === 'win32' ? [] : ['--norc', '--noprofile'];
+  const WIN = process.platform === 'win32';
+  const SHELL = WIN ? 'powershell.exe' : 'bash';
+  const ARGS = WIN ? ['-NoLogo', '-NoProfile'] : ['--norc', '--noprofile'];
+  // The same three commands in each shell's own language.
+  const CMD = WIN ? {
+    lines: (n, line, end) => `1..${n} | ForEach-Object { "${line('$_')}" }; ${end}\r`,
+    size: '"SIZE=$($Host.UI.RawUI.WindowSize.Width),$($Host.UI.RawUI.WindowSize.Height)"\r',
+    marker: (a, b) => `"${a}"+"${b}"`
+  } : {
+    lines: (n, line, end) => `for i in $(seq 1 ${n}); do echo "${line('$i')}"; done; ${end}\r`,
+    size: 'echo SIZE=$COLUMNS,$LINES\r',
+    marker: (a, b) => `echo "${a}""${b}"`
+  };
 
   function spawnShell(opts = {}) {
     return pty.spawn(SHELL, ARGS, {
@@ -67,7 +78,7 @@ describe('node-pty contract', function () {
     // The shell echoes the command line straight back, so a marker written
     // literally would be "seen" before a single line of output arrives. Split it
     // so the echo reads BURST""DONE and only the real output says BURSTDONE.
-    proc.write(`for i in $(seq 1 ${N}); do echo "L$i-0123456789abcdef"; done; echo "BURST""DONE"\r`);
+    proc.write(CMD.lines(N, (i) => `L${i}-0123456789abcdef`, CMD.marker('BURST', 'DONE')));
     const out = await until(proc, 'BURSTDONE');
 
     const seen = [];
@@ -84,7 +95,7 @@ describe('node-pty contract', function () {
   it('carries a resize through to the child process', async function () {
     proc = spawnShell();
     proc.resize(100, 30);
-    proc.write('echo SIZE=$COLUMNS,$LINES\r');
+    proc.write(CMD.size);
     const out = await until(proc, 'SIZE=100,30');
     assert.ok(/SIZE=100,30/.test(out), 'the child sees the new size');
   });
@@ -97,7 +108,7 @@ describe('node-pty contract', function () {
     let duringPause = 0;
     let paused = false;
     proc.onData(d => { bytes += d.length; if (paused) duringPause += d.length; });
-    proc.write('for i in $(seq 1 200000); do echo "pad-$i-padpadpadpad"; done\r');
+    proc.write(CMD.lines(200000, (i) => `pad-${i}-padpadpadpad`, ''));
 
     await new Promise(r => setTimeout(r, 600));
     assert.ok(bytes > 0, 'data was flowing before the pause');

@@ -39,16 +39,21 @@ const LIST_JSON = JSON.stringify([
 describe('skills — reading what is installed', function() {
   let tmp;
   let prevHome;
+  let prevProfile;
 
   beforeEach(function() {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-skills-'));
     prevHome = process.env.HOME;
+    prevProfile = process.env.USERPROFILE;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     process.env.HOME = tmp;
+    process.env.USERPROFILE = tmp;
     skills.clearCatalogCache();
   });
 
   afterEach(function() {
     if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -96,12 +101,21 @@ describe('skills — reading what is installed', function() {
       if (typeof process.getuid === 'function' && process.getuid() === 0) return this.skip(); // root can delete anything
       const root = path.join(tmp, 'skills');
       const dir = writeSkill(root, 'locked', '---\nname: locked\n---');
-      fs.chmodSync(dir, 0o555);
+      // Windows ignores a directory's mode; an ACL deny is what locks it there.
+      const { execFileSync } = require('child_process');
+      const me = os.userInfo().username;
+      if (process.platform === 'win32') execFileSync('icacls', [dir, '/deny', `${me}:(WD)`], { stdio: 'ignore' });
+      else fs.chmodSync(dir, 0o555);
       try {
+        // An elevated Windows process holds the backup/restore privileges, which
+        // libuv's opens use to walk straight past the deny — Windows' root.
+        const probe = path.join(dir, 'probe');
+        try { fs.writeFileSync(probe, ''); fs.unlinkSync(probe); return this.skip(); } catch (_) { /* locked, as intended */ }
         const row = skills.listDirSkills(root, 'user').find((r) => r.name === 'locked');
         assert.strictEqual(row.readOnly, true, 'a skill owned by someone else must not offer an uninstall button');
       } finally {
-        fs.chmodSync(dir, 0o755);
+        if (process.platform === 'win32') execFileSync('icacls', [dir, '/remove:d', me], { stdio: 'ignore' });
+        else fs.chmodSync(dir, 0o755);
       }
     });
 

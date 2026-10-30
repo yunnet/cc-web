@@ -169,7 +169,14 @@ class ClaudeCodeWebServer {
 
   spaceIdForDir(dir) {
     if (!dir) return null;
-    const space = this.spaces.find((s) => s.dir === dir);
+    // Resolved on both sides, and case-blind on Windows: there d:\work, D:\work
+    // and D:/work/ are one folder, and the working dir arrives resolved anyway.
+    const key = (p) => {
+      const r = path.resolve(p);
+      return process.platform === 'win32' ? r.toLowerCase() : r;
+    };
+    const want = key(dir);
+    const space = this.spaces.find((s) => key(s.dir) === want);
     return space ? space.id : null;
   }
   
@@ -2206,7 +2213,14 @@ class ClaudeCodeWebServer {
   // on `/` and the home directory without ever calling a delete on them.
   protectedDirHit(target) {
     const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
-    const within = (inner, outer) => inner === outer || inner.startsWith(outer.endsWith(path.sep) ? outer : outer + path.sep);
+    // Windows paths ignore case: c:\users\me must not slip past C:\Users\me.
+    const key = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+    const within = (inner, outer) => {
+      inner = key(inner);
+      outer = key(outer);
+      return inner === outer || inner.startsWith(outer.endsWith(path.sep) ? outer : outer + path.sep);
+    };
+    target = path.resolve(target);
     const protectedDirs = [path.parse(target).root, os.homedir(), this.baseFolder]
       .concat([...this.claudeSessions.values()].map(s => s && s.workingDir))
       .filter(Boolean).map(real);

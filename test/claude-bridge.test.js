@@ -95,7 +95,9 @@ describe('ClaudeBridge', function() {
       // is offline and local, and skips where claude is not installed.
       let help;
       try {
-        help = require('child_process').execFileSync('claude', ['--help'], { encoding: 'utf8', timeout: 20000 });
+        // The bridge's own lookup: a bare `claude` misses the npm install on
+        // Windows, where only claude.exe can be spawned without a shell.
+        help = require('child_process').execFileSync(bridge.claudeCommand, ['--help'], { encoding: 'utf8', timeout: 20000 });
       } catch (_) {
         this.skip(); // no claude on this machine
       }
@@ -117,7 +119,7 @@ describe('ClaudeBridge', function() {
       // our list; a new alias Claude gained is caught by review, not here.
       let help;
       try {
-        help = require('child_process').execFileSync('claude', ['--help'], { encoding: 'utf8', timeout: 20000 });
+        help = require('child_process').execFileSync(bridge.claudeCommand, ['--help'], { encoding: 'utf8', timeout: 20000 });
       } catch (_) {
         this.skip(); // no claude on this machine
       }

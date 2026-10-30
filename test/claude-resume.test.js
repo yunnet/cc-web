@@ -27,15 +27,19 @@ describe('resuming a Claude conversation in a new session', function() {
   let workDir;
   let prevData;
   let prevHome;
+  let prevProfile;
 
   beforeEach(function() {
     prevData = process.env.CCW_DATA_DIR;
     prevHome = process.env.HOME;
+    prevProfile = process.env.USERPROFILE;
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-data-'));
     home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-home-')));
     workDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-work-')));
     process.env.CCW_DATA_DIR = dataDir;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
 
     const projectDir = path.join(home, '.claude', 'projects', claudeHistory.projectDirName(workDir));
     fs.mkdirSync(projectDir, { recursive: true });
@@ -52,6 +56,7 @@ describe('resuming a Claude conversation in a new session', function() {
     server = null;
     if (prevData === undefined) delete process.env.CCW_DATA_DIR; else process.env.CCW_DATA_DIR = prevData;
     if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
     for (const d of [dataDir, home, workDir]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }
   });
 

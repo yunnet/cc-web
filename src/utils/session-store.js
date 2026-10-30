@@ -150,6 +150,22 @@ class SessionStore {
         };
     }
 
+    // rename() over a file. On Windows that fails with EPERM/EBUSY/EACCES
+    // while another handle — an overlapping save's rename, a virus scanner —
+    // briefly holds the target; POSIX has no such window. Retry with a short
+    // backoff there, the way graceful-fs does, instead of dropping the save.
+    static async renameOver(from, to) {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await fs.rename(from, to);
+            } catch (error) {
+                const transient = process.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(error.code);
+                if (!transient || attempt >= 10) throw error;
+                await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+            }
+        }
+    }
+
     async writeOne(id, session) {
         if (!isValidSessionId(id)) return false;
         const target = this.sessionFile(id);
@@ -163,7 +179,7 @@ class SessionStore {
         try {
             await fs.mkdir(this.sessionsDir, { recursive: true, mode: 0o700 });
             await fs.writeFile(tmp, JSON.stringify(this.toRecord(id, session), null, 2));
-            await fs.rename(tmp, target);
+            await SessionStore.renameOver(tmp, target);
             return true;
         } catch (error) {
             try { await fs.unlink(tmp); } catch (_) { /* nothing to clean up */ }

@@ -252,7 +252,19 @@ function projectSkillsDir(workingDir) {
 // machine are owned by root while cc-web runs as the user, so "uninstall" would
 // be a button that always fails. The panel greys it out instead, with a reason.
 function isWritable(dir) {
-  try { fs.accessSync(dir, fs.constants.W_OK); return true; } catch (_) { return false; }
+  if (process.platform !== 'win32') {
+    try { fs.accessSync(dir, fs.constants.W_OK); return true; } catch (_) { return false; }
+  }
+  // On Windows access() reads only the read-only attribute, never the ACL that
+  // actually decides, so ask by trying.
+  const probe = path.join(dir, `.ccw-write-probe-${process.pid}`);
+  try {
+    fs.writeFileSync(probe, '', { flag: 'wx' });
+    fs.unlinkSync(probe);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 // One `<dir>/<name>/SKILL.md` per skill. Anything else in there is not a skill
@@ -311,11 +323,18 @@ function pluginSkills(installPath) {
 function runCli(claudeCommand, args, opts = {}) {
   const timeoutMs = opts.timeoutMs || READ_TIMEOUT_MS;
   const cwd = opts.cwd && isDirectory(opts.cwd) ? opts.cwd : undefined;
+  // A claude that is a JS entry point (npm's cli.js) runs under this node:
+  // Windows honours no #! line, and this needs no shell on any platform.
+  let file = claudeCommand || 'claude';
+  if (/\.[cm]?js$/i.test(file) && fs.existsSync(file)) {
+    args = [file, ...args];
+    file = process.execPath;
+  }
   return new Promise((resolve) => {
     let timer = null;
     let timedOut = false;
     const child = execFile(
-      claudeCommand || 'claude',
+      file,
       args,
       { maxBuffer: MAX_BUFFER, windowsHide: true, cwd, env: { ...process.env } },
       (error, stdout, stderr) => {

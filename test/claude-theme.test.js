@@ -11,16 +11,20 @@ const claudeTheme = require('../src/utils/claude-theme');
 // without sticking, so the contrast of what we ship is asserted here: invisible
 // should fail a test run, not wait to be noticed on a phone.
 //
-// Every test runs against a temp HOME — os.homedir() honours $HOME on Linux —
-// so nothing here can touch the real ~/.claude/themes/.
+// Every test runs against a temp HOME — os.homedir() honours $HOME on POSIX and
+// %USERPROFILE% on Windows — so nothing here can touch the real ~/.claude/themes/.
 function withHome(dir, fn) {
   const prev = process.env.HOME;
+  const prevProfile = process.env.USERPROFILE;
   process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
   try {
     return fn();
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = prevProfile;
   }
 }
 
@@ -126,7 +130,10 @@ describe('cc-web Claude themes', function () {
 
   it('falls back rather than throwing when the home directory is read-only', function () {
     const locked = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-theme-ro-'));
-    fs.chmodSync(locked, 0o555);
+    // Windows has no read-only directories (chmod only flips a file's
+    // read-only bit), so there a FILE named .claude makes the write fail.
+    if (process.platform === 'win32') fs.writeFileSync(path.join(locked, '.claude'), '');
+    else fs.chmodSync(locked, 0o555);
     try {
       const written = withHome(locked, () => claudeTheme.ensureThemes());
       assert.deepStrictEqual(written, {}, 'nothing should be reported as written');

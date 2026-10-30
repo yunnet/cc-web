@@ -179,7 +179,15 @@ describe('scrollback chunk setting', function () {
     // value while the caller was told it had failed — a disagreement that only
     // showed up at the next restart.
     const before = server.sessionStore.maxOutputChunks;
-    fs.chmodSync(dataDir, 0o555);
+    // Windows has no read-only directories, so there a DIRECTORY sitting where
+    // the settings file goes makes the rename fail instead.
+    const target = server.scrollbackFile();
+    if (process.platform === 'win32') {
+      fs.rmSync(target, { force: true });
+      fs.mkdirSync(target);
+    } else {
+      fs.chmodSync(dataDir, 0o555);
+    }
     try {
       const res = mockRes();
       server.setScrollback({ body: { bytes: 2 * 1024 * 1024 } }, res);
@@ -187,7 +195,8 @@ describe('scrollback chunk setting', function () {
       assert.strictEqual(server.sessionStore.maxOutputChunks, before,
         'a rejected save must not have moved the running value');
     } finally {
-      fs.chmodSync(dataDir, 0o755);
+      if (process.platform === 'win32') fs.rmSync(target, { recursive: true, force: true });
+      else fs.chmodSync(dataDir, 0o755);
     }
   });
 

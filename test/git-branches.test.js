@@ -344,7 +344,9 @@ describe('git pull', function () {
     theirs = path.join(root, 'theirs');
 
     execFileSync('git', ['init', '-q', '--bare', bare], { stdio: 'pipe' });
-    execFileSync('git', ['clone', '-q', bare, mine], { stdio: 'pipe' });
+    // autocrlf pinned off: a Windows user's global `true` would check f.txt
+    // out as v2\r\n and the byte comparisons below would measure that instead.
+    execFileSync('git', ['clone', '-q', '-c', 'core.autocrlf=false', bare, mine], { stdio: 'pipe' });
     git(mine, 'config', 'user.email', 'test@example.com');
     git(mine, 'config', 'user.name', 'Test');
     fs.writeFileSync(path.join(mine, 'f.txt'), 'v1\n');
@@ -352,7 +354,7 @@ describe('git pull', function () {
     git(mine, 'commit', '-qm', 'first');
     git(mine, 'push', '-q', '-u', 'origin', 'HEAD');
 
-    execFileSync('git', ['clone', '-q', bare, theirs], { stdio: 'pipe' });
+    execFileSync('git', ['clone', '-q', '-c', 'core.autocrlf=false', bare, theirs], { stdio: 'pipe' });
     git(theirs, 'config', 'user.email', 'other@example.com');
     git(theirs, 'config', 'user.name', 'Other');
   });
@@ -431,22 +433,34 @@ describe('git pull', function () {
     // Groups are not an option here, and the experiment that ruled them out is
     // recorded in git-branches.js: detached did not make the child a group
     // leader, and killing the real pgid took down the test runner itself.
+    // A parent with two children, built from node rather than `bash -c 'sleep &'`:
+    // Git Bash on Windows emulates fork, so its backgrounded sleeps are left with
+    // no live Windows parent and no tree exists to find.
+    const spawnTree = () => execFile(process.execPath, ['-e',
+      "const { spawn } = require('child_process');" +
+      "for (let i = 0; i < 2; i++) spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });" +
+      'setTimeout(() => {}, 30000);'], () => {});
+    const SETTLE_MS = 1500;
+
     it('collects a process and its descendants', function (done) {
-      const child = execFile('bash', ['-c', 'sleep 30 & sleep 30 & wait'], () => {});
+      this.timeout(15000);
+      const child = spawnTree();
       setTimeout(() => {
         const tree = gitb.processTree(child.pid);
-        assert.ok(tree.length >= 3, `expected the shell and both sleeps, got ${tree.length}`);
+        assert.ok(tree.length >= 3, `expected the parent and both children, got ${tree.length}`);
         assert.strictEqual(tree[0], child.pid);
         assert.ok(!tree.includes(process.pid), 'and it must never contain us');
         gitb.killTree(child.pid);
         done();
-      }, 400);
+      }, SETTLE_MS);
     });
 
     it('leaves nothing behind, and leaves us alive', function (done) {
-      const child = execFile('bash', ['-c', 'sleep 30 & sleep 30 & wait'], () => {});
+      this.timeout(15000);
+      const child = spawnTree();
       setTimeout(() => {
         const killed = gitb.killTree(child.pid);
+        assert.ok(killed.length >= 3, `the children too, not just the parent (got ${killed.length})`);
         setTimeout(() => {
           for (const pid of killed) {
             let alive = true;
@@ -461,7 +475,7 @@ describe('git pull', function () {
           assert.strictEqual(selfAlive, true, 'the caller must survive');
           done();
         }, 500);
-      }, 400);
+      }, SETTLE_MS);
     });
   });
 });

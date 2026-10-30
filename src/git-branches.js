@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 // Shared with src/skills.js, which reads a SKILL.md frontmatter the same way.
 const { readPrefix } = require('./utils/read-prefix');
 
@@ -158,29 +158,20 @@ function readStatus(repoPath) {
   });
 }
 
-// Every descendant of a pid, deepest last, read from /proc.
+// Every descendant of a pid, deepest last.
 //
-// Linux-only by design. This project already leans on /proc elsewhere (the
-// instance registry probes liveness through it) and it is a self-hosted tool,
-// not a portable product. Where /proc is absent this returns just the pid, and
-// the caller degrades to killing the direct child — no worse than before.
+// Linux reads /proc. macOS has no /proc, so it asks `ps` once for the whole
+// pid→ppid table; Windows asks CIM for the same table plus each process's
+// start time, because Windows recycles pids freely and a long-dead parent's
+// pid may now be ours — a "child" older than its parent is someone else's.
+// If none of that works this returns just the pid, and the caller degrades to
+// killing the direct child.
 function processTree(pid) {
+  const childrenOf = fs.existsSync('/proc/self/task') ? procChildren : tableChildren(readProcessTable());
   const found = [pid];
   const queue = [pid];
   while (queue.length) {
-    const current = queue.shift();
-    let kids = [];
-    try {
-      // One entry per thread; a process's children can be listed under any of
-      // them, so read them all.
-      const tasks = fs.readdirSync(`/proc/${current}/task`);
-      for (const task of tasks) {
-        const raw = fs.readFileSync(`/proc/${current}/task/${task}/children`, 'utf8');
-        kids = kids.concat(raw.split(/\s+/).filter(Boolean).map(Number));
-      }
-    } catch (_) {
-      // Process exited between listing and reading, or no /proc at all.
-    }
+    const kids = childrenOf(queue.shift());
     for (const kid of kids) {
       if (Number.isInteger(kid) && kid > 0 && !found.includes(kid)) {
         found.push(kid);
@@ -189,6 +180,55 @@ function processTree(pid) {
     }
   }
   return found;
+}
+
+function procChildren(pid) {
+  let kids = [];
+  try {
+    // One entry per thread; a process's children can be listed under any of
+    // them, so read them all.
+    for (const task of fs.readdirSync(`/proc/${pid}/task`)) {
+      const raw = fs.readFileSync(`/proc/${pid}/task/${task}/children`, 'utf8');
+      kids = kids.concat(raw.split(/\s+/).filter(Boolean).map(Number));
+    }
+  } catch (_) {
+    // Process exited between listing and reading.
+  }
+  return kids;
+}
+
+// [{pid, ppid, started}] for every process, or [] when it cannot be read.
+// `started` is only known on Windows, where it is needed.
+function readProcessTable() {
+  try {
+    if (process.platform === 'win32') {
+      const script = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate.Ticks }";
+      const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+        { encoding: 'utf8', windowsHide: true, timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] });
+      return parseTable(out);
+    }
+    return parseTable(execFileSync('ps', ['-A', '-o', 'pid=,ppid='],
+      { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }));
+  } catch (_) {
+    return [];
+  }
+}
+
+function parseTable(out) {
+  return out.split(/\r?\n/).map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(([pid, ppid]) => Number.isInteger(pid) && Number.isInteger(ppid))
+    .map(([pid, ppid, started]) => ({ pid, ppid, started: Number.isFinite(started) ? started : null }));
+}
+
+function tableChildren(table) {
+  const byPid = new Map(table.map((p) => [p.pid, p]));
+  return (pid) => {
+    const parent = byPid.get(pid);
+    return table
+      .filter((p) => p.ppid === pid && p.pid !== pid)
+      .filter((p) => !parent || parent.started == null || p.started == null || p.started >= parent.started)
+      .map((p) => p.pid);
+  };
 }
 
 // Kill a process and everything it spawned.
