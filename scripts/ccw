@@ -20,7 +20,7 @@
 #      finds the LISTENER on the port with `ss` and signals that pid, nothing
 #      else.
 #   2. The dev instance must be started with CCW_DATA_DIR. Without it both
-#      servers share ~/.claude-code-web and the second one refuses to start:
+#      servers share ~/.cc-web/data and the second one refuses to start:
 #      "Two servers sharing a data directory read and write each other's
 #      sessions."
 #   3. Restarting the stable instance from a Claude session that RUNS inside it
@@ -32,20 +32,32 @@ set -uo pipefail
 
 # --- local deployment ---------------------------------------------------------
 # Machine-specific. Edit here if a path or token file moves.
+#
+# Tokens, logs and data all live under ~/.cc-web, the layout
+# src/utils/data-dir.js resolves. Files from the old layout (~/.ccweb-token-*,
+# ~/.claude-code-web-dev) are moved in once, on a start, while the instance is
+# down; the stable data directory is the server's own default and the server
+# migrates it itself.
+
+CCW_HOME=$HOME/.cc-web
 
 STABLE_PORT=32352
 STABLE_DIR=/data/work/gongxinyun/ts/claude-code-web
-STABLE_AUTH=/home/myhi/.ccweb-token-32352
+STABLE_AUTH=$CCW_HOME/token-32352
+STABLE_AUTH_OLD=$HOME/.ccweb-token-32352
 STABLE_PLANS=/data/work/gongxinyun/ts/.claude/plans,/data/work/gongxinyun/work/cgs-master/.claude/plans
-STABLE_DATA=          # empty = the default ~/.claude-code-web
+STABLE_DATA=          # empty = the server's default ~/.cc-web/data
+STABLE_DATA_OLD=
 
 DEV_PORT=32353
 DEV_DIR=/data/work/gongxinyun/ts/cc-web
-DEV_AUTH=/home/myhi/.ccweb-token-32353
+DEV_AUTH=$CCW_HOME/token-32353
+DEV_AUTH_OLD=$HOME/.ccweb-token-32353
 DEV_PLANS=/data/work/gongxinyun/ts/.claude/plans
-DEV_DATA=/home/myhi/.claude-code-web-dev
+DEV_DATA=$CCW_HOME/data-dev
+DEV_DATA_OLD=$HOME/.claude-code-web-dev
 
-LOG_DIR=${CCW_LOG_DIR:-/tmp/ccw-logs}
+LOG_DIR=${CCW_LOG_DIR:-$CCW_HOME}
 STOP_TIMEOUT=15       # seconds to wait for a clean exit before SIGKILL
 START_TIMEOUT=25      # seconds to wait for the port to answer
 
@@ -61,9 +73,11 @@ die()  { printf '%s✗%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
 load() {
   case "$1" in
     stable|32352) cfg_name=stable; cfg_port=$STABLE_PORT; cfg_dir=$STABLE_DIR
-                  cfg_auth=$STABLE_AUTH; cfg_plans=$STABLE_PLANS; cfg_data=$STABLE_DATA ;;
+                  cfg_auth=$STABLE_AUTH; cfg_plans=$STABLE_PLANS; cfg_data=$STABLE_DATA
+                  cfg_auth_old=$STABLE_AUTH_OLD; cfg_data_old=$STABLE_DATA_OLD ;;
     dev|32353)    cfg_name=dev;    cfg_port=$DEV_PORT;    cfg_dir=$DEV_DIR
-                  cfg_auth=$DEV_AUTH;    cfg_plans=$DEV_PLANS;    cfg_data=$DEV_DATA ;;
+                  cfg_auth=$DEV_AUTH;    cfg_plans=$DEV_PLANS;    cfg_data=$DEV_DATA
+                  cfg_auth_old=$DEV_AUTH_OLD;    cfg_data_old=$DEV_DATA_OLD ;;
     *) die "unknown instance '$1' (use: stable | dev | all)" ;;
   esac
   cfg_log="$LOG_DIR/ccw-$cfg_name.log"
@@ -109,11 +123,27 @@ do_status() {
   printf '  %s运行中%s pid=%s  已跑 %s  HTTP %s  claude 子进程 %s\n' "$c_grn" "$c_off" "$pid" "$uptime" "$health" "$kids"
   printf '  磁盘代码 v%s   %s\n' "$version" "$cfg_dir"
   [ "$rundir" != "$cfg_dir" ] && warn "  运行目录与配置不符: $rundir"
-  printf '  数据目录 %s\n' "${data:-$HOME/.claude-code-web (默认)}"
+  printf '  数据目录 %s\n' "${data:-$CCW_HOME/data (默认)}"
   printf '  启动于 %s\n' "$started"
   # The version on disk is not the version running: the process loaded its code
   # at startup. Frontend files are read per request, so they ARE live.
   printf '  %s注意：磁盘上的版本不等于运行中的版本——服务端改动要重启才生效%s\n' "$c_dim" "$c_off"
+}
+
+# Move the old layout's token file and data directory into ~/.cc-web. Printed
+# as one line, like start_cmd, so the detached restart runs it after the kill:
+# moving a data directory out from under a running server would fork its store.
+# Never overwrites — an existing new path wins and the old one is left alone.
+adopt_cmd() {
+  local cmd
+  cmd=$(printf 'mkdir -p %q && chmod 700 %q' "$CCW_HOME" "$CCW_HOME")
+  local pair old new
+  for pair in "$cfg_auth_old|$cfg_auth" "$cfg_data_old|$cfg_data"; do
+    old=${pair%%|*}; new=${pair#*|}
+    [ -n "$old" ] && [ -n "$new" ] || continue
+    cmd+=$(printf '; { [ -e %q ] || [ ! -e %q ] || mv %q %q; }' "$new" "$old" "$old" "$new")
+  done
+  printf '%s' "$cmd"
 }
 
 start_cmd() {
@@ -135,6 +165,7 @@ do_start() {
   [ -d "$cfg_dir" ] || die "$cfg_name 的目录不存在: $cfg_dir"
   mkdir -p "$LOG_DIR"
 
+  eval "$(adopt_cmd)"
   eval "$(start_cmd)"
   local waited=0
   while [ "$waited" -lt "$START_TIMEOUT" ]; do
@@ -189,6 +220,7 @@ do_restart() {
       for i in \$(seq 1 $STOP_TIMEOUT); do kill -0 $pid 2>/dev/null || break; sleep 1; done
       kill -0 $pid 2>/dev/null && kill -9 $pid 2>/dev/null
       sleep 2
+      $(adopt_cmd)
       $(start_cmd)
     " >> "$cfg_log" 2>&1 < /dev/null &
     return 0

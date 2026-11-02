@@ -7,11 +7,15 @@
 #   .\scripts\ccw.ps1 logs    [-Port 32352]
 #   .\scripts\ccw.ps1 token   [-Port 32352]
 #
-# The Windows counterpart of scripts/ccw (bash, Linux paths). The token lives in
-# %USERPROFILE%\.ccweb-token-<port> (made on first start) and reaches the server
-# through CCWEB_AUTH, not argv, so it stays the same across restarts. A port
-# other than 32352 gets its own data directory (CCW_DATA_DIR), because two
-# servers sharing one refuse to start.
+# The Windows counterpart of scripts/ccw (bash, Linux paths). Everything lives
+# under %USERPROFILE%\.cc-web, the layout src/utils/data-dir.js resolves:
+#   token-<port>          made on first start; reaches the server through
+#                         CCWEB_AUTH, not argv, so it survives restarts
+#   cc-web-<port>.log     stdout + stderr
+#   data\                 32352's data (the server's own default)
+#   data-<port>\          any other port (CCW_DATA_DIR), because two servers
+#                         sharing one refuse to start
+# A token from the old %USERPROFILE%\.ccweb-token-<port> is moved in once.
 
 param(
   [Parameter(Position = 0)]
@@ -23,9 +27,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$TokenFile = Join-Path $env:USERPROFILE ".ccweb-token-$Port"
-$DataDir = if ($Port -eq 32352) { Join-Path $env:USERPROFILE '.claude-code-web' } else { Join-Path $env:USERPROFILE ".claude-code-web-$Port" }
-$LogFile = Join-Path $DataDir "cc-web-$Port.log"
+$BaseDir = Join-Path $env:USERPROFILE '.cc-web'
+$TokenFile = Join-Path $BaseDir "token-$Port"
+$LegacyTokenFile = Join-Path $env:USERPROFILE ".ccweb-token-$Port"
+# 32352 sets no CCW_DATA_DIR and lets the server pick (and migrate) its default.
+$DataDir = if ($Port -eq 32352) { Join-Path $BaseDir 'data' } else { Join-Path $BaseDir "data-$Port" }
+$LogFile = Join-Path $BaseDir "cc-web-$Port.log"
 
 function Get-ListenerPid {
   $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -34,6 +41,10 @@ function Get-ListenerPid {
 }
 
 function Get-Token {
+  New-Item -ItemType Directory -Force $BaseDir | Out-Null
+  if (-not (Test-Path $TokenFile) -and (Test-Path $LegacyTokenFile)) {
+    Move-Item $LegacyTokenFile $TokenFile
+  }
   if (-not (Test-Path $TokenFile)) {
     $bytes = New-Object byte[] 24
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -50,7 +61,9 @@ function Start-Server {
     Write-Host 'Installing dependencies...'
     Push-Location $Root; try { npm install } finally { Pop-Location }
   }
-  New-Item -ItemType Directory -Force $DataDir | Out-Null
+  # Only a CCW_DATA_DIR instance needs its directory made here; creating
+  # data\ ahead of the server would skip its migration of ~/.claude-code-web.
+  if ($Port -ne 32352) { New-Item -ItemType Directory -Force $DataDir | Out-Null }
 
   $env:CCWEB_AUTH = Get-Token
   if ($Port -ne 32352) { $env:CCW_DATA_DIR = $DataDir }

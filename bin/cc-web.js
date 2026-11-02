@@ -124,7 +124,7 @@ async function main() {
       console.log('   (Use without --disable-auth flag for security in production)');
     } else {
       console.log('\n🔐 AUTHENTICATION ENABLED');
-      if (options.auth) {
+      if (options.authFile || process.env.CCWEB_AUTH || options.auth) {
         console.log('   Using provided authentication token');
       } else {
         console.log('   Generated random authentication token:');
