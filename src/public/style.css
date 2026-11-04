@@ -645,6 +645,10 @@ body.sidebar-hidden .sidebar-rail {
     font-size: 12.5px;
 }
 
+/* display:flex above outranks the UA's [hidden] rule: without this the hint
+   stays up next to a full tree and its flex:1 takes half the column. */
+.sidebar-empty[hidden] { display: none; }
+
 .sidebar-empty-hint {
     font-size: 11px;
     opacity: .75;

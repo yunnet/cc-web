@@ -303,3 +303,12 @@ describe('TERM-33 back to the newest screen', function () {
     assert.ok(/\.scroll-bottom-btn\[hidden\] \{\s*display: none;/.test(css));
   });
 });
+
+describe('SPACE-05 the fresh-install hint leaves when there is something to show', function () {
+  it('a hidden .sidebar-empty is really gone — its display:flex would beat [hidden]', function () {
+    // Without this rule the hint stays visible beside a populated tree and,
+    // being flex:1 like the tree, takes half the sidebar's height.
+    const css = fs.readFileSync(path.join(PUB, 'style.css'), 'utf8');
+    assert.ok(/\.sidebar-empty\[hidden\]\s*\{\s*display:\s*none/.test(css));
+  });
+});
