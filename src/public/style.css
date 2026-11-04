@@ -349,23 +349,6 @@ body.sidebar-hidden .sidebar-rail {
     color: var(--text-secondary);
 }
 
-.sidebar-collapse {
-    width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0;
-    opacity: .6;
-}
-
-.sidebar-collapse:hover { opacity: 1; color: var(--text-primary); }
-
 .spaces-tree {
     flex: 1;
     overflow-y: auto;

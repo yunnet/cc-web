@@ -259,15 +259,13 @@ class SpacesSidebar {
     // ---- DOM ------------------------------------------------------------
 
     setupDom() {
+        // The header toggle is the one control for both directions, at both
+        // widths (user 2026-11-04: the in-sidebar collapse button was removed).
         const toggle = document.getElementById('sidebarToggleBtn');
         toggle?.addEventListener('click', () => this.toggleDrawer());
-
-        const collapse = document.getElementById('sidebarCollapseBtn');
-        collapse?.addEventListener('click', () => {
-            document.body.classList.add('sidebar-hidden');
-            // Returning needs a control that is not inside the thing that
-            // disappeared — the header toggle serves for both widths.
-        });
+        this.updateToggleState();
+        // Crossing 768px swaps which state the button reports (fold vs drawer).
+        window.addEventListener('resize', () => this.updateToggleState());
 
         document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeDrawer());
         document.getElementById('newSpaceBtn')?.addEventListener('click', () => this.openNewSpaceDialog());
@@ -294,6 +292,7 @@ class SpacesSidebar {
 
         document.getElementById('railAddBtn')?.addEventListener('click', () => {
             document.body.classList.remove('sidebar-hidden');
+            this.updateToggleState();
             this.openNewSpaceDialog();
         });
 
@@ -554,6 +553,7 @@ class SpacesSidebar {
 
     expandAtSpace(spaceId) {
         document.body.classList.remove('sidebar-hidden');
+        this.updateToggleState();
         if (spaceId && this.isCollapsed(spaceId)) this.setCollapsed(spaceId, false);
         const group = this.tree()?.querySelector(`.space-group[data-space="${cssEscape(spaceId)}"]`);
         group?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -698,19 +698,34 @@ class SpacesSidebar {
         return window.innerWidth <= 768;
     }
 
+    // Desktop: show / fold to the rail. Narrow: open / close the drawer.
     toggleDrawer() {
         const sidebar = document.getElementById('spacesSidebar');
         if (!sidebar) return;
-        if (document.body.classList.contains('sidebar-hidden')) {
-            // The header toggle is also how a hidden sidebar comes back.
-            document.body.classList.remove('sidebar-hidden');
+        if (!this.isNarrow()) {
+            document.body.classList.toggle('sidebar-hidden');
+            this.updateToggleState();
             return;
         }
-        if (!this.isNarrow()) return;
+        // A sidebar folded on desktop must not stay folded inside the drawer.
+        document.body.classList.remove('sidebar-hidden');
         const opening = !sidebar.classList.contains('drawer-open');
         sidebar.classList.toggle('drawer-open', opening);
         const backdrop = document.getElementById('sidebarBackdrop');
         if (backdrop) backdrop.hidden = !opening;
+        this.updateToggleState();
+    }
+
+    // aria-expanded and the tooltip follow what the next click will do.
+    updateToggleState() {
+        const toggle = document.getElementById('sidebarToggleBtn');
+        const sidebar = document.getElementById('spacesSidebar');
+        if (!toggle || !sidebar) return;
+        const open = this.isNarrow()
+            ? sidebar.classList.contains('drawer-open')
+            : !document.body.classList.contains('sidebar-hidden');
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.title = open ? '收起侧边栏' : '展开侧边栏';
     }
 
     closeDrawer() {
@@ -718,6 +733,7 @@ class SpacesSidebar {
         sidebar?.classList.remove('drawer-open');
         const backdrop = document.getElementById('sidebarBackdrop');
         if (backdrop) backdrop.hidden = true;
+        this.updateToggleState();
     }
 
     tree() {

@@ -57,7 +57,7 @@
 | S42 | SPACE-13、SPACE-14 | 触屏模拟点 ⋯；空态 | `(hover:none)` 下 `.tab-menu` `opacity ≥ .5` 可点开 `.pane-session-menu`；全新数据（无空间无任务）`#sidebarEmpty` 可见且 `.spaces-tree` 隐藏 |
 | S43 | SPACE-15 | 对组内第 3 个任务点行内图钉 | 该任务 DOM 序变组内第 1、`.pinned` 类 + 图钉强调色常亮、时间 opacity 0；悬停另一任务：其 `.tab-time` opacity 0→悬停前 .75 与 `.tab-pin` 0→.6 互换且行宽/行高 rect 逐值不变；再点取消回原位 |
 | S44 | SPACE-16 | 点 #sidebarSortBtn 切「最近」 | 按钮带 .active；修改某任务 lastActivity 为最新后该任务（非置顶时）排组首；对行派发 dragover 事件后 DOM 序不变；切回手动恢复拖拽序；刷新后模式保持 |
-| S45 | SPACE-17 | 点 #sidebarCollapseBtn 收起 | `.spaces-sidebar` 宽 56±2px；`.rail-badge` 数=空间数且首字符=空间名首字；当前任务徽标 .current 填充强调色；带运行任务的徽标有 .rail-dot；点徽标后侧栏展开、目标空间展开且组顶在树可视区 |
+| S45 | SPACE-17 | 桌面宽度点 #sidebarToggleBtn 收起（再点一次展开回原宽，aria-expanded 随之 false/true） | `.spaces-sidebar` 宽 56±2px；`.rail-badge` 数=空间数且首字符=空间名首字；当前任务徽标 .current 填充强调色；带运行任务的徽标有 .rail-dot；点徽标后侧栏展开、目标空间展开且组顶在树可视区 |
 | S46 | SPACE-18 | 指针移入/移出任务树，量滚动条 | 指针在外 `::-webkit-scrollbar-thumb` 不可见（用 `.scroll-active` 类断言：无类）；pointerenter 后有类；pointerleave 后 2s 内仍有、2.5s 后无；树内容宽度全程不变 |
 | S47 | TERM-48 | 有多轮问答的会话，量轨道 | `.turn-mark` 数 ≥ 实际提问数（缓冲内）；行号 `rail.marks` 单调递增；悬停 `.turn-rail-tip` 含提问文本；点击后 `viewportY = min(target, buf.length - rows)` ±4；视口压到终端区 ≤900px 后 `.rail-hidden` |
 

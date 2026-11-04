@@ -312,3 +312,22 @@ describe('SPACE-05 the fresh-install hint leaves when there is something to show
     assert.ok(/\.sidebar-empty\[hidden\]\s*\{\s*display:\s*none/.test(css));
   });
 });
+
+describe('SPACE-05 one header toggle opens and closes the sidebar', function () {
+  const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(PUB, 'spaces.js'), 'utf8');
+
+  it('the in-sidebar collapse button is gone (user 2026-11-04)', function () {
+    assert.ok(!html.includes('sidebarCollapseBtn'));
+  });
+
+  it('on desktop the toggle folds as well as unfolds', function () {
+    // It used to only bring a hidden sidebar back; hiding needed the other button.
+    const body = /toggleDrawer\(\)\s*\{([\s\S]*?)\n    \}/.exec(js)[1];
+    assert.ok(/!this\.isNarrow\(\)[\s\S]*?classList\.toggle\('sidebar-hidden'\)/.test(body));
+  });
+
+  it('aria-expanded follows the state', function () {
+    assert.ok(/setAttribute\('aria-expanded'/.test(js));
+  });
+});
