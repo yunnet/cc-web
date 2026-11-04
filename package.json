@@ -11,7 +11,7 @@
     "dev": "node bin/cc-web.js --dev",
     "test": "mocha test/*.test.js --exit",
     "release:pr": "bash scripts/release-pr.sh",
-    "ccw": "bash scripts/ccw"
+    "ccw": "node scripts/ccw-run.js"
   },
   "keywords": [
     "claude",

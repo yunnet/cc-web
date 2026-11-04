@@ -7,6 +7,10 @@
 #   ccw stop    [stable|dev|all]
 #   ccw restart [stable|dev|all]
 #   ccw logs    [stable|dev]     tail the instance's log
+#   ccw token   [stable|dev]     print the instance's token (made if missing)
+#
+# Linux and macOS. Under Git Bash / MSYS on Windows it hands over to ccw.ps1,
+# which takes the same commands and instance names.
 #
 # "stable" and "dev" are named, not typed as ports, because the two differ in
 # more than a number — different source trees, different tokens, different data
@@ -17,21 +21,33 @@
 #
 #   1. `pkill -f "port 32352"` matches the shell that ran it. Killing an
 #      instance that way takes your own terminal with it (seen: exit 144). This
-#      finds the LISTENER on the port with `ss` and signals that pid, nothing
-#      else.
+#      finds the LISTENER on the port (`ss` on Linux, `lsof` on macOS) and
+#      signals that pid, nothing else.
 #   2. The dev instance must be started with CCW_DATA_DIR. Without it both
 #      servers share ~/.cc-web/data and the second one refuses to start:
 #      "Two servers sharing a data directory read and write each other's
 #      sessions."
 #   3. Restarting the stable instance from a Claude session that RUNS inside it
 #      kills the shell doing the restarting, half way through. When that is
-#      detected the work is handed to a detached session (setsid) so it finishes
-#      after this process is gone.
+#      detected the work is handed to a detached session (setsid; perl's
+#      POSIX::setsid on macOS, which has no setsid(1)) so it finishes after
+#      this process is gone.
 
 set -uo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SELF_DIR=$(cd "$SCRIPT_DIR/.." && pwd)    # the checkout this script came from
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass \
+      -File "$(cygpath -w "$SCRIPT_DIR/ccw.ps1")" "$@" ;;
+esac
+
 # --- local deployment ---------------------------------------------------------
-# Machine-specific. Edit here if a path or token file moves.
+# Machine-specific. Edit here, or override any of these in ~/.cc-web/ccw.conf
+# (sourced below) so a pull never conflicts with a local path. A source tree
+# that does not exist on this machine falls back to this script's checkout.
 #
 # Tokens, logs and data all live under ~/.cc-web, the layout
 # src/utils/data-dir.js resolves. Files from the old layout (~/.ccweb-token-*,
@@ -61,6 +77,11 @@ LOG_DIR=${CCW_LOG_DIR:-$CCW_HOME}
 STOP_TIMEOUT=15       # seconds to wait for a clean exit before SIGKILL
 START_TIMEOUT=25      # seconds to wait for the port to answer
 
+# shellcheck source=/dev/null
+[ -f "$CCW_HOME/ccw.conf" ] && . "$CCW_HOME/ccw.conf"
+[ -d "$STABLE_DIR" ] || STABLE_DIR=$SELF_DIR
+[ -d "$DEV_DIR" ]    || DEV_DIR=$SELF_DIR
+
 # --- plumbing -----------------------------------------------------------------
 
 c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
@@ -86,7 +107,37 @@ load() {
 # The pid LISTENING on a port — never a pattern match against a command line,
 # which is what makes `pkill -f` eat the caller.
 pid_on_port() {
-  ss -lptnH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2
+  if command -v ss >/dev/null 2>&1; then
+    ss -lptnH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2
+  else
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -1
+  fi
+}
+
+# /proc is Linux-only; macOS answers the same questions through ps and lsof.
+ppid_of() {
+  if [ -r "/proc/$1/status" ]; then
+    awk '/^PPid:/{print $2}' "/proc/$1/status" 2>/dev/null
+  else
+    ps -o ppid= -p "$1" 2>/dev/null | tr -d ' '
+  fi
+}
+
+cwd_of() {
+  if [ -e "/proc/$1/cwd" ]; then
+    readlink "/proc/$1/cwd" 2>/dev/null
+  else
+    lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1
+  fi
+}
+
+# A variable from a running process's environment (own processes only).
+env_of() {
+  if [ -r "/proc/$1/environ" ]; then
+    tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null | sed -n "s/^$2=//p"
+  else
+    ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1
+  fi
 }
 
 # Is `pid` an ancestor of this script? (i.e. would killing it kill us)
@@ -94,9 +145,20 @@ is_ancestor() {
   local target=$1 p=$$
   while [ -n "$p" ] && [ "$p" != "1" ] && [ "$p" != "0" ]; do
     [ "$p" = "$target" ] && return 0
-    p=$(awk '/^PPid:/{print $2}' "/proc/$p/status" 2>/dev/null)
+    p=$(ppid_of "$p")
   done
   return 1
+}
+
+# Run a shell command in a new session, out of reach of whatever kills ours.
+detach() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash -c "$1" &
+  elif command -v perl >/dev/null 2>&1; then
+    perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' bash -c "$1" &
+  else
+    nohup bash -c "$1" &
+  fi
 }
 
 port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
@@ -115,14 +177,14 @@ do_status() {
   fi
   local started; started=$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//')
   local uptime;  uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
-  local rundir;  rundir=$(readlink "/proc/$pid/cwd" 2>/dev/null)
-  local data;    data=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CCW_DATA_DIR=//p')
+  local rundir;  rundir=$(cwd_of "$pid")
+  local data;    data=$(env_of "$pid" CCW_DATA_DIR)
   local kids;    kids=$(pgrep -P "$pid" 2>/dev/null | wc -l)
   local health;  health=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:$cfg_port/" 2>/dev/null)
 
   printf '  %s运行中%s pid=%s  已跑 %s  HTTP %s  claude 子进程 %s\n' "$c_grn" "$c_off" "$pid" "$uptime" "$health" "$kids"
   printf '  磁盘代码 v%s   %s\n' "$version" "$cfg_dir"
-  [ "$rundir" != "$cfg_dir" ] && warn "  运行目录与配置不符: $rundir"
+  [ -n "$rundir" ] && [ "$rundir" != "$cfg_dir" ] && warn "  运行目录与配置不符: $rundir"
   printf '  数据目录 %s\n' "${data:-$CCW_HOME/data (默认)}"
   printf '  启动于 %s\n' "$started"
   # The version on disk is not the version running: the process loaded its code
@@ -134,6 +196,8 @@ do_status() {
 # as one line, like start_cmd, so the detached restart runs it after the kill:
 # moving a data directory out from under a running server would fork its store.
 # Never overwrites — an existing new path wins and the old one is left alone.
+# A token file still missing after that is generated, so a fresh machine
+# starts instead of dying on --auth-file.
 adopt_cmd() {
   local cmd
   cmd=$(printf 'mkdir -p %q && chmod 700 %q' "$CCW_HOME" "$CCW_HOME")
@@ -143,6 +207,8 @@ adopt_cmd() {
     [ -n "$old" ] && [ -n "$new" ] || continue
     cmd+=$(printf '; { [ -e %q ] || [ ! -e %q ] || mv %q %q; }' "$new" "$old" "$old" "$new")
   done
+  cmd+=$(printf "; { [ -s %q ] || ( umask 077; node -e \"process.stdout.write(require('crypto').randomBytes(24).toString('hex'))\" > %q ); }" \
+    "$cfg_auth" "$cfg_auth")
   printf '%s' "$cmd"
 }
 
@@ -152,8 +218,10 @@ start_cmd() {
   # `CCW_DATA_DIR=x cd dir && node …` applies the variable to `cd` and the
   # server starts without it — which is exactly the "two servers sharing a data
   # directory" refusal this script exists to prevent. Caught by testing it.
-  local data_env=''
-  [ -n "$cfg_data" ] && data_env="CCW_DATA_DIR=$(printf '%q' "$cfg_data") "
+  # Always assigned, empty for stable: a Claude running inside the dev instance
+  # inherits dev's CCW_DATA_DIR, and a stable started from there must not.
+  local data_env
+  data_env="CCW_DATA_DIR=$(printf '%q' "$cfg_data") "
   printf 'cd %q && %snohup node bin/cc-web.js --no-open --port %s --auth-file %q --plans-dir %q >> %q 2>&1 &' \
     "$cfg_dir" "$data_env" "$cfg_port" "$cfg_auth" "$cfg_plans" "$cfg_log"
 }
@@ -188,7 +256,7 @@ do_stop() {
   if is_ancestor "$pid"; then
     warn "$cfg_name (pid=$pid) 是当前进程的祖先——停掉它会一并杀掉你正在用的会话"
     warn "这一步交给脱离出去的 shell 执行，本进程随后会被终止"
-    setsid bash -c "kill $pid" >/dev/null 2>&1 < /dev/null &
+    detach "kill $pid" >/dev/null 2>&1 < /dev/null
     return 0
   fi
 
@@ -215,14 +283,14 @@ do_restart() {
   if [ -n "$pid" ] && is_ancestor "$pid"; then
     warn "你正在 $cfg_name (pid=$pid) 里面——重启会杀掉当前会话"
     say  "已交给后台执行：停止 → 等端口释放 → 启动。会话会按原 id --resume 恢复。"
-    setsid bash -c "
+    detach "
       kill $pid 2>/dev/null
       for i in \$(seq 1 $STOP_TIMEOUT); do kill -0 $pid 2>/dev/null || break; sleep 1; done
       kill -0 $pid 2>/dev/null && kill -9 $pid 2>/dev/null
       sleep 2
       $(adopt_cmd)
       $(start_cmd)
-    " >> "$cfg_log" 2>&1 < /dev/null &
+    " >> "$cfg_log" 2>&1 < /dev/null
     return 0
   fi
 
@@ -237,11 +305,18 @@ do_logs() {
   tail -f "$cfg_log"
 }
 
+do_token() {
+  load "$1"
+  eval "$(adopt_cmd)"
+  head -1 "$cfg_auth"
+}
+
 # --- dispatch -----------------------------------------------------------------
 
 cmd=${1:-status}
 target=${2:-all}
 [ "$cmd" = "logs" ] && [ "$target" = "all" ] && target=dev   # tail needs one file
+[ "$cmd" = "token" ] && [ "$target" = "all" ] && target=stable
 
 expand() { [ "$1" = "all" ] && echo "stable dev" || echo "$1"; }
 
@@ -251,7 +326,8 @@ case "$cmd" in
   stop)    for i in $(expand "$target"); do do_stop    "$i"; done ;;
   restart) for i in $(expand "$target"); do do_restart "$i"; done ;;
   logs)    do_logs "$target" ;;
+  token)   do_token "$target" ;;
   -h|--help|help)
-    sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "未知命令 '$cmd'（可用: status | start | stop | restart | logs）" ;;
+    sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "未知命令 '$cmd'（可用: status | start | stop | restart | logs | token）" ;;
 esac
