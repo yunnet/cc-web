@@ -39,7 +39,8 @@ Use `--disable-auth` to turn it off (local development only).
 
 ### Accounts
 
-Signed in, the menu shows who you are and an **账号** (account) panel: change your
+Signed in, your name sits at the right end of the header; click it for the **账号**
+(account) panel: change your
 password (your other devices are signed out, this one stays), see the browsers
 signed in as you and sign any of them out, or sign out here.
 

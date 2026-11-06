@@ -427,7 +427,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| ACC-01 | 菜单顶部显示「已登录：用户名（管理员 / 普通用户）」；登录用户的菜单里多「账号」，管理员再多「用户管理」；用令牌访问或关闭认证时都不显示 | `control:accountBtnMobile` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
+| ACC-01 | 页头最右边显示当前用户（人像图标 + 用户名，手机上只留图标、44px 触控区），点它弹出「账号」窗口（标题带用户名，下面写角色）；管理员的菜单里有「用户管理」；用令牌访问或关闭认证时都不显示（用户 2026-11-06：「个人账号，不应该放在setting弹窗，应该在Header的右上角」） | `control:accountHeaderBtn` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
 | ACC-02 | 用户管理（管理员）：列出所有用户（角色、停用、待改密码、可浏览目录、登录设备数、运行中会话数、最近使用）；新建用户时选角色，服务端生成一次性临时密码，只在这一次显示、可复制；设为管理员 / 普通用户、停用 / 启用、重置密码（新临时密码）、删除都带确认；非管理员调 `/api/admin/*` 一律 403 | `control:closeUsersBtn` `control:usersTabUsers` `control:usersNewName` `control:usersNewRole` `control:usersCreateBtn` `key:account.js:Escape` `route:GET /api/admin/users` `route:POST /api/admin/users` `route:PATCH /api/admin/users/:id` `route:POST /api/admin/users/:id/reset-password` `route:DELETE /api/admin/users/:id` `file:src/account-routes.js` | `test/account-admin.test.js` |
 | ACC-03 | 首次登录强制改密码：管理员新建或重置出来的临时密码登录后，弹出不能关闭的「请先修改密码」框（当前密码 + 新密码两次，可选退出登录）；改好之前服务端拒绝其他所有请求和 WebSocket | `route:POST /api/auth/password` | `test/account-admin.test.js` |
 | ACC-04 | 停用、删除、重置密码立即生效：吊销对方全部登录、断开对方的 WebSocket、停止对方正在运行的 Claude（会话本身保留）；删除账号只删账号，数据目录 `<uid>/` 留在磁盘上；不能停用、删除、降级、重置自己，也不能让系统里没有可用的管理员 | `route:DELETE /api/admin/users/:id` | `test/account-admin.test.js` |

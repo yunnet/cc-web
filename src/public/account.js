@@ -1,8 +1,8 @@
 // Account and user management (M4).
 //
-// Two panels behind the menu: 「账号」 for everyone signed in (change your
-// password, see and sign out your devices, sign out), and 「用户管理」 for
-// administrators (users, roles, disable, one-time passwords, browse
+// Two panels: 「账号」 for everyone signed in, opened from the name at the
+// right of the header (change your password, see and sign out your devices,
+// sign out), and 「用户管理」 in the menu for administrators (users, roles, disable, one-time passwords, browse
 // directories, invite links). Both only talk to /api/auth/* and /api/admin/*;
 // the server decides who may do what, the buttons only follow.
 (function () {
@@ -109,7 +109,10 @@
       const modal = $('accountModal');
       if (!modal) return;
       setStatus('accountStatus', '');
-      if (this.me) $('accountTitle').textContent = `账号：${this.me.username}`;
+      if (this.me) {
+        $('accountTitle').textContent = `账号：${this.me.username}`;
+        $('accountRole').textContent = this.me.role === 'admin' ? '管理员' : '普通用户';
+      }
       modal.classList.add('active');
       await this.loadDevices();
     },
@@ -400,7 +403,7 @@
     on('usersTabInvites', 'click', () => users.show('invites'));
     on('usersCreateForm', 'submit', (e) => users.create(e));
     on('invitesCreateForm', 'submit', (e) => users.createInvite(e));
-    on('accountBtnMobile', 'click', () => { closeMenu(); account.open(); });
+    on('accountHeaderBtn', 'click', () => account.open());
     on('usersBtnMobile', 'click', () => { closeMenu(); users.open(); });
 
     // Only a signed-in platform user has an account to show. With the token
@@ -411,12 +414,12 @@
     if (!r.ok || !r.data.user) return;
     const me = r.data.user;
     account.me = me;
-    const label = $('menuUser');
-    if (label) {
-      label.innerHTML = `已登录：<strong>${escapeHtml(me.username)}</strong>（${me.role === 'admin' ? '管理员' : '普通用户'}）`;
-      label.hidden = false;
+    const headerBtn = $('accountHeaderBtn');
+    if (headerBtn) {
+      $('accountHeaderName').textContent = me.username;
+      headerBtn.setAttribute('aria-label', `账号：${me.username}`);
+      headerBtn.hidden = false;
     }
-    if ($('accountBtnMobile')) $('accountBtnMobile').hidden = false;
     if ($('usersBtnMobile')) $('usersBtnMobile').hidden = me.role !== 'admin';
   }
 

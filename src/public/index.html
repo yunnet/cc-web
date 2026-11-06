@@ -154,6 +154,15 @@
                     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
                 </svg>
                 </button>
+                <!-- Who is signed in; opens the 账号 panel (account.js). Shown
+                     only for a signed-in platform user. -->
+                <button class="header-account" id="accountHeaderBtn" type="button" aria-label="账号" hidden>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="8" r="4"/>
+                        <path d="M4 21a8 8 0 0 1 16 0"/>
+                    </svg>
+                    <span class="header-account-name" id="accountHeaderName"></span>
+                </button>
             </div>
         </header>
 
@@ -228,7 +237,6 @@
                 <h2><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 10h.01M16 10h.01M8 16c1.333-1 2.667-1 4 0 1.333 1 2.667 1 4 0"/></svg></span> Claude Code</h2>
                 <button class="close-menu-btn" id="closeMenuBtn">&times;</button>
             </div>
-            <div class="menu-user" id="menuUser" hidden></div>
             <div class="mobile-menu-content">
                 <button id="sessionsBtnMobile" class="mobile-menu-btn">Sessions</button>
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
@@ -236,7 +244,6 @@
                 <button id="clearBtnMobile" class="mobile-menu-btn">Clear Terminal</button>
                 <button id="skillsBtnMobile" class="mobile-menu-btn">Skills</button>
                 <button id="settingsBtnMobile" class="mobile-menu-btn">Settings</button>
-                <button id="accountBtnMobile" class="mobile-menu-btn" hidden>账号</button>
                 <button id="usersBtnMobile" class="mobile-menu-btn" hidden>用户管理</button>
             </div>
             <div class="mobile-menu-footer" id="menuVersion" title="version · port · build id (same build id = same code on both instances)">—</div>
@@ -500,6 +507,7 @@
                     <button class="close-btn" id="closeAccountBtn">&times;</button>
                 </div>
                 <div class="modal-body">
+                    <p class="account-role" id="accountRole"></p>
                     <h3 class="account-section">修改密码</h3>
                     <form class="account-form" id="accountPasswordForm" autocomplete="on">
                         <input type="password" id="accountCurrentPassword" placeholder="当前密码" autocomplete="current-password">

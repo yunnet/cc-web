@@ -4795,14 +4795,59 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 /* --- Account and user management (account.js, M4) --- */
-.menu-user {
-    padding: 0 16px 10px;
-    font-size: 12px;
+
+/* Header, far right: who is signed in. Icon + name; the name goes on phones,
+   the icon stays a full touch target. */
+.header-account {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 160px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background-color: transparent;
     color: var(--text-secondary);
-    overflow-wrap: anywhere;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
 }
 
-.menu-user strong { color: var(--text-primary); font-weight: 600; }
+.header-account[hidden] { display: none; }
+
+.header-account:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.header-account svg { flex-shrink: 0; }
+
+.header-account-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+    .header-account {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        justify-content: center;
+        border: none;
+    }
+    .header-account-name { display: none; }
+    /* Same weight as the folder and branch icons beside it. */
+    .header-account svg { width: 20px; height: 20px; }
+}
+
+.account-role {
+    margin: 0 0 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
 
 .account-modal .modal-content,
 .users-modal .modal-content {
