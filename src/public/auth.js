@@ -1,12 +1,23 @@
 // Authentication module for Claude Code Web
+//
+// Two ways in. A platform user signs in with a username and password and the
+// server sets an HttpOnly login cookie, which every fetch and the WebSocket
+// then carry by themselves — nothing is kept in page storage, and a restart
+// does not sign anyone out. The shared startup token still works: entered once
+// it is exchanged for the same cookie (as the first admin), and while no user
+// exists it is what authorises creating that admin.
 class AuthManager {
     constructor() {
         // Always run consumeUrlToken first so a ?token=… in the URL is stripped
         // even when a token is already stored (otherwise the secret would linger
         // in the address bar / history). A URL token, being explicit, wins.
+        // A token left in sessionStorage by the token-only version is picked up
+        // once and exchanged for a cookie in initialize().
         const urlToken = this.consumeUrlToken();
         this.token = urlToken || sessionStorage.getItem('cc-web-token');
         this.authRequired = false;
+        this.setupRequired = false;
+        this.user = null;
     }
 
     // If the page was opened with ?token=… (a convenience/bookmark form), adopt
@@ -36,6 +47,8 @@ class AuthManager {
             }
             const data = await response.json();
             this.authRequired = data.authRequired;
+            this.setupRequired = !!data.setupRequired;
+            this.user = data.user || null;
             return data;
         } catch (error) {
             console.error('Failed to check auth status:', error);
@@ -45,6 +58,9 @@ class AuthManager {
         }
     }
 
+    // Checks the shared token. When the server also signed this browser in
+    // (`session: true`), the token is no longer needed and is dropped from the
+    // page; otherwise it is kept in memory for the requests that follow.
     async verifyToken(token) {
         try {
             const response = await fetch('/auth-verify', {
@@ -54,26 +70,70 @@ class AuthManager {
                 },
                 body: JSON.stringify({ token })
             });
-            
+
             const data = await response.json();
+            this.lastVerifyError = response.status === 429 ? data.error : null;
             if (data.valid) {
-                this.token = token;
-                sessionStorage.setItem('cc-web-token', token);
+                this.setupRequired = !!data.setupRequired;
+                if (data.session) {
+                    this.token = null;
+                    sessionStorage.removeItem('cc-web-token');
+                } else {
+                    // No cookie came back (no enabled admin to stand for), so
+                    // the token must survive the reload that follows.
+                    this.token = token;
+                    sessionStorage.setItem('cc-web-token', token);
+                }
             }
-            return data.valid;
+            return !!data.valid;
         } catch (error) {
             console.error('Failed to verify token:', error);
             return false;
         }
     }
 
-    showLoginPrompt() {
-        console.log('[Auth] Showing login prompt...');
-        
+    // Resolves { ok } or { ok: false, error } — the message is shown as is.
+    async postJson(url, body) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) return { ok: false, error: data.error || `Request failed (${response.status})` };
+            return { ok: true, data };
+        } catch (_) {
+            return { ok: false, error: 'Could not reach the server' };
+        }
+    }
+
+    async login(username, password) {
+        const result = await this.postJson('/api/auth/login', { username, password });
+        if (result.ok) this.user = result.data.user;
+        return result;
+    }
+
+    async setupAdmin(token, username, password) {
+        const result = await this.postJson('/api/auth/setup', { token, username, password });
+        if (result.ok) {
+            this.user = result.data.user;
+            this.token = null;
+            sessionStorage.removeItem('cc-web-token');
+        }
+        return result;
+    }
+
+    // mode: 'login' (username + password), 'token' (shared startup token) or
+    // 'setup' (create the first administrator). With no argument it picks
+    // setup while no user exists, else login.
+    showLoginPrompt(mode) {
+        if (!mode) mode = this.setupRequired ? (this.token ? 'setup' : 'token') : 'login';
+        console.log('[Auth] Showing login prompt:', mode);
+
         // Remove any existing auth overlay
         const existingOverlay = document.getElementById('auth-overlay');
         if (existingOverlay) {
-            console.log('[Auth] Removing existing overlay');
             existingOverlay.remove();
         }
 
@@ -103,41 +163,72 @@ class AuthManager {
             box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
         `;
 
+        const font = `'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'JetBrains Mono', monospace`;
+        const inputStyle = `
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-primary, #0d1117);
+            border: 1px solid var(--border-color, #30363d);
+            border-radius: 6px;
+            color: var(--text-primary, #f0f6fc);
+            font-family: ${font};
+            font-size: 14px;
+            box-sizing: border-box;
+        `;
+        const labelStyle = 'display: block; color: var(--text-secondary, #8b949e); margin-bottom: 8px; font-size: 14px;';
+        const field = (id, label, type, placeholder, autocomplete) => `
+            <div style="margin-bottom: 16px;">
+                <label for="${id}" style="${labelStyle}">${label}</label>
+                <input type="${type}" id="${id}" placeholder="${placeholder}" autocomplete="${autocomplete}" style="${inputStyle}" required />
+            </div>`;
+        const linkStyle = 'background: none; border: none; padding: 0; color: var(--accent, #58a6ff); cursor: pointer; font-size: 12px; font-family: inherit;';
+
+        const screens = {
+            login: {
+                heading: 'Sign in',
+                intro: 'Sign in with your Claude Code Web account.',
+                fields: field('auth-username', 'Username', 'text', 'Username', 'username')
+                    + field('auth-password', 'Password', 'password', 'Password', 'current-password'),
+                button: 'Sign in',
+                footer: `<button type="button" id="auth-switch" data-mode="token" style="${linkStyle}">Use the access token instead</button>`
+            },
+            token: {
+                heading: 'Authentication Required',
+                intro: this.setupRequired
+                    ? 'No account exists yet. Enter the access token printed when the server started to create the administrator.'
+                    : 'This Claude Code Web instance requires authentication.',
+                fields: field('auth-token', 'Access Token', 'password', 'Enter your access token', 'off'),
+                button: 'Authenticate',
+                footer: this.setupRequired
+                    ? '<p style="color: var(--text-secondary, #8b949e); font-size: 12px; margin: 0;">The access token is printed when the server starts, or read from <code style="background: var(--bg-primary, #0d1117); padding: 2px 4px; border-radius: 3px;">--auth-file</code>.</p>'
+                    : `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">Sign in with username and password</button>`
+            },
+            setup: {
+                heading: 'Create administrator',
+                intro: 'Choose the username and password for the first account. It becomes the administrator.',
+                fields: field('auth-username', 'Username', 'text', '2-32 letters, digits, _ . -', 'username')
+                    + field('auth-password', 'Password', 'password', 'At least 8 characters', 'new-password')
+                    + field('auth-password2', 'Repeat password', 'password', 'Repeat password', 'new-password'),
+                button: 'Create and sign in',
+                footer: ''
+            }
+        };
+        const screen = screens[mode] || screens.login;
+
         loginForm.innerHTML = `
-            <h2 style="color: var(--text-primary, #f0f6fc); margin: 0 0 8px 0; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 8px;">
+            <h2 style="color: var(--text-primary, #f0f6fc); margin: 0 0 8px 0; font-family: ${font}; display: flex; align-items: center; gap: 8px;">
                 <span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="10" width="18" height="11" rx="2"/><path d="M7 10V7a5 5 0 0 1 10 0v3"/></svg></span>
-                Authentication Required
+                ${screen.heading}
             </h2>
             <p style="color: var(--text-secondary, #8b949e); margin: 0 0 24px 0; font-size: 14px;">
-                This Claude Code Web instance requires authentication.
+                ${screen.intro}
             </p>
             <form id="auth-form">
-                <div style="margin-bottom: 16px;">
-                    <label for="auth-token" style="display: block; color: var(--text-secondary, #8b949e); margin-bottom: 8px; font-size: 14px;">
-                        Access Token
-                    </label>
-                    <input 
-                        type="password" 
-                        id="auth-token" 
-                        placeholder="Enter your access token"
-                        style="
-                            width: 100%;
-                            padding: 10px 12px;
-                            background: var(--bg-primary, #0d1117);
-                            border: 1px solid var(--border-color, #30363d);
-                            border-radius: 6px;
-                            color: var(--text-primary, #f0f6fc);
-                            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'JetBrains Mono', monospace;
-                            font-size: 14px;
-                            box-sizing: border-box;
-                        "
-                        autofocus
-                        required
-                    />
-                </div>
+                ${screen.fields}
                 <div id="auth-error" style="color: #f85149; margin-bottom: 16px; font-size: 14px; display: none;"></div>
-                <button 
+                <button
                     type="submit"
+                    id="auth-submit"
                     style="
                         width: 100%;
                         padding: 10px 16px;
@@ -145,7 +236,7 @@ class AuthManager {
                         color: white;
                         border: none;
                         border-radius: 6px;
-                        font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'JetBrains Mono', monospace;
+                        font-family: ${font};
                         font-size: 14px;
                         font-weight: 500;
                         cursor: pointer;
@@ -153,64 +244,97 @@ class AuthManager {
                     "
                     onmouseover="this.style.opacity='0.9'"
                     onmouseout="this.style.opacity='1'"
-                >
-                    Authenticate
-                </button>
+                >${screen.button}</button>
             </form>
-            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color, #30363d);">
-                <p style="color: var(--text-secondary, #8b949e); font-size: 12px; margin: 0;">
-                    The access token was set when starting the server with the <code style="background: var(--bg-primary, #0d1117); padding: 2px 4px; border-radius: 3px;">--auth</code> flag.
-                </p>
-            </div>
+            ${screen.footer ? `<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color, #30363d);">${screen.footer}</div>` : ''}
         `;
 
         overlay.appendChild(loginForm);
         document.body.appendChild(overlay);
 
-        // Handle form submission
         const form = document.getElementById('auth-form');
-        const tokenInput = document.getElementById('auth-token');
+        const submit = document.getElementById('auth-submit');
         const errorDiv = document.getElementById('auth-error');
+        const inputs = Array.from(form.querySelectorAll('input'));
+
+        const switcher = document.getElementById('auth-switch');
+        if (switcher) {
+            switcher.addEventListener('click', () => this.showLoginPrompt(switcher.dataset.mode));
+        }
+
+        const showError = (message) => {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        };
+        const setBusy = (busy, label) => {
+            inputs.forEach((input) => { input.disabled = busy; });
+            submit.disabled = busy;
+            submit.textContent = label;
+        };
+        const done = () => {
+            overlay.remove();
+            window.location.reload();
+        };
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
-            const token = tokenInput.value.trim();
-            if (!token) {
-                errorDiv.textContent = 'Please enter a token';
-                errorDiv.style.display = 'block';
-                return;
+            errorDiv.style.display = 'none';
+            const value = (id) => {
+                const input = document.getElementById(id);
+                return input ? input.value : '';
+            };
+
+            if (mode === 'token') {
+                const token = value('auth-token').trim();
+                if (!token) return showError('Please enter a token');
+                setBusy(true, 'Authenticating...');
+                const valid = await this.verifyToken(token);
+                if (!valid) {
+                    setBusy(false, screen.button);
+                    const tokenInput = document.getElementById('auth-token');
+                    tokenInput.value = '';
+                    tokenInput.focus();
+                    return showError(this.lastVerifyError || 'Invalid token. Please try again.');
+                }
+                if (this.setupRequired) return this.showLoginPrompt('setup');
+                return done();
             }
 
-            // Disable form while checking
-            tokenInput.disabled = true;
-            form.querySelector('button').disabled = true;
-            form.querySelector('button').textContent = 'Authenticating...';
+            const username = value('auth-username').trim();
+            const password = value('auth-password');
+            if (!username || !password) return showError('Please enter a username and password');
 
-            const valid = await this.verifyToken(token);
-            
-            if (valid) {
-                // Success - remove overlay and reload the app
-                overlay.remove();
-                window.location.reload();
-            } else {
-                // Failed - show error
-                errorDiv.textContent = 'Invalid token. Please try again.';
-                errorDiv.style.display = 'block';
-                
-                // Re-enable form
-                tokenInput.disabled = false;
-                tokenInput.value = '';
-                tokenInput.focus();
-                form.querySelector('button').disabled = false;
-                form.querySelector('button').textContent = 'Authenticate';
+            if (mode === 'setup') {
+                if (password !== value('auth-password2')) return showError('The passwords do not match');
+                setBusy(true, 'Creating...');
+                const result = await this.setupAdmin(this.token, username, password);
+                if (!result.ok) {
+                    setBusy(false, screen.button);
+                    // The token was spent or changed (server restarted with a new one).
+                    if (/token/i.test(result.error)) return this.showLoginPrompt('token');
+                    return showError(result.error);
+                }
+                return done();
             }
+
+            setBusy(true, 'Signing in...');
+            const result = await this.login(username, password);
+            if (!result.ok) {
+                setBusy(false, screen.button);
+                const passwordInput = document.getElementById('auth-password');
+                passwordInput.value = '';
+                passwordInput.focus();
+                return showError(result.error);
+            }
+            done();
         });
 
-        // Focus the input
-        tokenInput.focus();
+        // Focus the first input
+        if (inputs[0]) inputs[0].focus();
     }
 
+    // Only the shared token travels in a header. A signed-in browser sends its
+    // login cookie with every same-origin fetch on its own.
     getAuthHeaders() {
         if (!this.token) return {};
         return {
@@ -227,9 +351,9 @@ class AuthManager {
     // URL to open a plan .md in a new tab. Uses the path form
     // `/api/plan/<token>/<encoded-path>` so the URL *ends in `.md`* (the plan
     // path is one percent-encoded segment, slashes as %2F, and there's no query
-    // string) — that's what browser Markdown extensions trigger on. The token
-    // rides the path because a new-tab navigation can't send an Authorization
-    // header. `-` is a placeholder token for the no-auth case (server ignores it).
+    // string) — that's what browser Markdown extensions trigger on. `-` in the
+    // token slot means "no token": a signed-in browser's new tab carries the
+    // login cookie instead, so the secret never sits in the URL.
     getPlanUrl(planPath, sessionId) {
         const token = this.token ? encodeURIComponent(this.token) : '-';
         const sid = sessionId ? encodeURIComponent(sessionId) : '-';
@@ -237,9 +361,9 @@ class AuthManager {
     }
 
     // URL to open an arbitrary file (the file explorer) in a new tab, same path
-    // form as getPlanUrl so the URL ends in the file's real extension. Carries the
-    // long-lived token, so the server serves html/svg as SOURCE on this form —
-    // use getFileTicket() when the file should actually be rendered.
+    // form as getPlanUrl so the URL ends in the file's real extension. It is not
+    // a ticket, so the server serves html/svg as SOURCE on this form — use
+    // getFileTicket() when the file should actually be rendered.
     getFileUrl(filePath) {
         const token = this.token ? encodeURIComponent(this.token) : '-';
         return `/api/fs/file/${token}/${encodeURIComponent(filePath)}`;
@@ -264,29 +388,35 @@ class AuthManager {
         }
     }
 
-    logout() {
+    async logout() {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+        } catch (_) { /* reload anyway: the page asks again if still signed in */ }
         this.token = null;
+        this.user = null;
         sessionStorage.removeItem('cc-web-token');
         window.location.reload();
     }
 
     async initialize() {
         console.log('[Auth] Initializing auth manager...');
-        console.log('[Auth] Current token:', this.token ? 'exists' : 'none');
-        
+
         const status = await this.checkAuthStatus();
         console.log('[Auth] Auth status:', status);
-        
-        if (status.authRequired && !this.token) {
-            // Auth required but no token - show login
-            console.log('[Auth] Auth required but no token - showing login prompt');
-            this.showLoginPrompt();
-            return false;
+
+        if (!status.authRequired) return true;
+
+        if (status.authenticated) {
+            // Signed in by cookie. A leftover token from the token-only version
+            // is no longer needed.
+            this.token = null;
+            sessionStorage.removeItem('cc-web-token');
+            console.log('[Auth] Signed in as', this.user && this.user.username);
+            return true;
         }
-        
-        if (status.authRequired && this.token) {
-            // Verify the stored token is still valid
-            console.log('[Auth] Auth required and token exists - verifying...');
+
+        if (this.token) {
+            // A token from the URL or the token-only version: exchange it.
             const valid = await this.verifyToken(this.token);
             if (!valid) {
                 console.log('[Auth] Token invalid - showing login prompt');
@@ -295,11 +425,16 @@ class AuthManager {
                 this.showLoginPrompt();
                 return false;
             }
+            if (this.setupRequired) {
+                this.showLoginPrompt('setup');
+                return false;
+            }
             console.log('[Auth] Token valid');
+            return true;
         }
-        
-        console.log('[Auth] Authentication successful or not required');
-        return true;
+
+        this.showLoginPrompt();
+        return false;
     }
 }
 

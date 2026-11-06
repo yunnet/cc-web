@@ -29,7 +29,36 @@ npm start
 # Then open: http://localhost:32352/?token=Xr9kM2nQ7w
 ```
 
+The first time you open the page, enter that token and choose a username and
+password: that account becomes the administrator. From then on sign in with the
+username and password. The login is an HttpOnly cookie that lasts 30 days (renewed
+while you use it), so restarting the server or opening a new tab does not sign
+you out. The token keeps working as a fallback sign-in for the administrator.
+
 Use `--disable-auth` to turn it off (local development only).
+
+### Behind a reverse proxy
+
+Sign-in and every write made with the login cookie are refused (403) when the
+browser's `Origin` does not match the `Host` the server sees (or
+`X-Forwarded-Host`). A proxy that rewrites `Host` to the upstream address — nginx
+does by default — therefore breaks login. Pass the original host through:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:32352;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+`X-Forwarded-For` lets the login rate limit tell clients apart, and
+`X-Forwarded-Proto https` marks the login cookie `Secure`. Both are trusted only
+when the request comes from the same machine (the proxy or an ngrok tunnel).
 
 ## Features
 

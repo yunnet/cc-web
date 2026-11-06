@@ -10,6 +10,10 @@ const { v4: uuidv4 } = require('uuid');
 const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const SpaceStore = require('./utils/space-store');
+const UserStore = require('./utils/user-store');
+const AuthManager = require('./utils/auth');
+const { safeEqual } = require('./utils/password');
+const { parseCookies, serializeCookie } = require('./utils/cookies');
 const claudeHistory = require('./utils/claude-history');
 const claudeTheme = require('./utils/claude-theme');
 const { inlineLocalAssets } = require('./utils/inline-assets');
@@ -56,6 +60,14 @@ class ClaudeCodeWebServer {
     // needs both sides in hand.
     this.spaceStore = new SpaceStore();
     this.spaces = [];
+    // Platform users and their login sessions (<dataDir>/platform). Resolved
+    // through dataDirFile on every access, like everything else in the data dir.
+    this.userStore = new UserStore(() => this.dataDirFile('platform'));
+    // Rate limiting for the login and first-admin routes (GAP-01: this class
+    // existed but nothing called it).
+    this.loginLimiter = new AuthManager();
+    // Wrong shared-token guesses per client address (see checkToken).
+    this.tokenFailures = new Map();
     const persistedPlanDirs = this.loadPlanDirs();
     this.planDirs = persistedPlanDirs !== null ? persistedPlanDirs : seededPlanDirs;
     this.app = express();
@@ -333,6 +345,146 @@ class ClaudeCodeWebServer {
     return { ok: false };
   }
 
+  // --- Authentication --------------------------------------------------------
+  // Two credentials are accepted: a platform user's login cookie, and the shared
+  // startup token (header for REST, query for the WebSocket, path segment for
+  // plan/file links). The token stands for the first admin, and is also what
+  // creates that admin when no user exists yet.
+
+  authEnabled() {
+    return !this.noAuth && !!this.auth;
+  }
+
+  // Cookies are not scoped by port, so stable (32352) and dev (32353) on one
+  // host would overwrite each other's login under a shared name.
+  cookieName() {
+    return `ccw_sid_${this.port}`;
+  }
+
+  // The shared token, checked with a guess limit: after 10 wrong tokens in a
+  // minute from one address, that address is refused even the right one until
+  // the minute has passed. 'none' (no token, or the `-` placeholder in a link)
+  // is not a guess and is not counted. Returns 'ok' | 'none' | 'bad' | 'blocked'.
+  checkToken(req, value) {
+    if (typeof value !== 'string' || !value || value === '-') return 'none';
+    const now = Date.now();
+    const addr = this.clientAddress(req);
+    if (this.tokenFailures.size > 5000) {
+      for (const [k, times] of this.tokenFailures) {
+        if (!times.some((t) => now - t < 60000)) this.tokenFailures.delete(k);
+      }
+    }
+    const recent = (this.tokenFailures.get(addr) || []).filter((t) => now - t < 60000);
+    if (recent.length >= 10) {
+      this.tokenFailures.set(addr, recent);
+      return 'blocked';
+    }
+    if (this.tokenMatches(value)) return 'ok';
+    recent.push(now);
+    this.tokenFailures.set(addr, recent);
+    return 'bad';
+  }
+
+  tokenMatches(value) {
+    if (!this.auth || typeof value !== 'string' || !value) return false;
+    const token = value.startsWith('Bearer ') ? value.slice(7) : value;
+    return safeEqual(token, this.auth);
+  }
+
+  // { session, user } for a request carrying a live login cookie, else null.
+  // Given `res`, re-sends the cookie when the server slid the expiry forward,
+  // so the browser's 30 days slide with it instead of running out from sign-in.
+  cookieLogin(req, res) {
+    const sid = parseCookies(req && req.headers && req.headers.cookie)[this.cookieName()];
+    const login = sid ? this.userStore.getLoginSession(sid) : null;
+    if (login && login.refreshed && res && !res.headersSent) {
+      res.setHeader('Set-Cookie', this.sessionCookie(req, sid, UserStore.SESSION_TTL_MS / 1000));
+    }
+    return login;
+  }
+
+  // Behind ngrok or a local reverse proxy every request arrives from loopback;
+  // only then, where nobody remote can forge them, are forwarded headers used.
+  static fromLoopback(req) {
+    const remote = (req && req.socket && req.socket.remoteAddress) || '';
+    return remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+  }
+
+  static firstHeaderValue(req, name) {
+    return String((req && req.headers && req.headers[name]) || '').split(',')[0].trim();
+  }
+
+  clientAddress(req) {
+    const forwarded = ClaudeCodeWebServer.firstHeaderValue(req, 'x-forwarded-for');
+    if (forwarded && ClaudeCodeWebServer.fromLoopback(req)) return forwarded;
+    return (req && req.socket && req.socket.remoteAddress) || 'unknown';
+  }
+
+  // Served over https directly, or by a local proxy / ngrok tunnel that says so.
+  isSecureRequest(req) {
+    if (this.useHttps) return true;
+    return ClaudeCodeWebServer.fromLoopback(req)
+      && ClaudeCodeWebServer.firstHeaderValue(req, 'x-forwarded-proto') === 'https';
+  }
+
+  // No Origin header (curl, same-origin GET in some browsers) is allowed; one
+  // naming another host is not. X-Forwarded-Host covers a reverse proxy that
+  // rewrites Host.
+  sameOrigin(req) {
+    const origin = req && req.headers && req.headers.origin;
+    if (!origin) return true;
+    let host;
+    try { host = new URL(origin).host; } catch (_) { return false; }
+    const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    return host === req.headers.host || (!!forwarded && host === forwarded);
+  }
+
+  sessionCookie(req, value, maxAgeSec) {
+    return serializeCookie(this.cookieName(), value, {
+      maxAge: maxAgeSec,
+      httpOnly: true,
+      sameSite: 'Strict',
+      secure: this.isSecureRequest(req),
+    });
+  }
+
+  startLoginSession(req, res, user) {
+    const sid = this.userStore.createLoginSession(user.id, {
+      ua: req.headers['user-agent'] || '',
+      ip: this.clientAddress(req),
+    });
+    res.setHeader('Set-Cookie', this.sessionCookie(req, sid, UserStore.SESSION_TTL_MS / 1000));
+    return sid;
+  }
+
+  // 10 attempts a minute per client address, and 50 per username so a spread
+  // of addresses cannot grind one account either. The username budget is the
+  // larger one, and a request the address limit already refused does not spend
+  // it, so one noisy client cannot lock an account out for everyone else.
+  allowLoginAttempt(req, username) {
+    if (this.loginLimiter.rateLimiter.size > 5000) this.loginLimiter.cleanupRateLimit();
+    if (!this.loginLimiter.rateLimit(`ip:${this.clientAddress(req)}`, 10, 60000)) return false;
+    return this.loginLimiter.rateLimit(`user:${String(username || '').toLowerCase()}`, 50, 60000);
+  }
+
+  // Browsers cannot set headers on a WebSocket, so it is the login cookie
+  // (same origin only) or the shared token in the query.
+  verifyWebSocketClient(info) {
+    if (!this.authEnabled()) return true;
+    const login = this.cookieLogin(info.req);
+    if (login && this.sameOrigin(info.req)) {
+      info.req.ccwUser = login.user;
+      info.req.ccwLoginId = login.session.id;
+      return true;
+    }
+    const url = new URL(info.req.url, 'ws://localhost');
+    if (this.checkToken(info.req, url.searchParams.get('token')) === 'ok') {
+      info.req.ccwUser = this.userStore.firstAdmin();
+      return true;
+    }
+    return false;
+  }
+
   validatePath(targetPath) {
     if (!targetPath) {
       return { valid: false, error: 'Path is required' };
@@ -388,29 +540,103 @@ class ClaudeCodeWebServer {
       });
     });
 
-    // Auth status endpoint - always accessible
+    // Auth status endpoint - always accessible. `user` / `setupRequired` were
+    // added with platform users; the original two fields keep their meaning.
     this.app.get('/auth-status', (req, res) => {
-      res.json({ 
-        authRequired: !this.noAuth && !!this.auth,
-        authenticated: false 
+      const authRequired = this.authEnabled();
+      const login = authRequired ? this.cookieLogin(req, res) : null;
+      res.json({
+        authRequired,
+        authenticated: !!login,
+        user: login ? UserStore.publicUser(login.user) : null,
+        setupRequired: authRequired && !this.userStore.hasUsers(),
       });
     });
 
-    // Auth verify endpoint - check if token is valid
+    // Auth verify endpoint - check if the shared token is valid. On success it
+    // also signs the browser in as the first admin (when one exists), so a
+    // token typed once survives restarts like a password login does.
     this.app.post('/auth-verify', (req, res) => {
-      if (this.noAuth || !this.auth) {
+      if (!this.authEnabled()) {
         return res.json({ valid: true }); // No auth required
       }
-      
-      const { token } = req.body;
-      const valid = token === this.auth;
-      
-      if (valid) {
-        res.json({ valid: true });
-      } else {
-        res.status(401).json({ valid: false, error: 'Invalid token' });
+
+      const { token } = req.body || {};
+      const check = this.checkToken(req, token);
+      if (check === 'blocked') {
+        return res.status(429).json({ valid: false, error: 'Too many attempts. Please wait a minute and try again.' });
       }
+      if (check !== 'ok') {
+        return res.status(401).json({ valid: false, error: 'Invalid token' });
+      }
+      const admin = this.userStore.firstAdmin();
+      if (admin) this.startLoginSession(req, res, admin);
+      res.json({
+        valid: true,
+        session: !!admin,
+        setupRequired: !this.userStore.hasUsers(),
+      });
     });
+
+    // Platform-user login. Registered before the global auth middleware: these
+    // are how a browser without credentials gets some.
+    this.app.post('/api/auth/login', ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+      if (!this.authEnabled()) return res.status(400).json({ error: 'Authentication is disabled' });
+      if (!this.sameOrigin(req)) return res.status(403).json({ error: 'Cross-origin request refused' });
+      const { username, password } = req.body || {};
+      if (!this.allowLoginAttempt(req, username)) {
+        return res.status(429).json({ error: 'Too many attempts. Please wait a minute and try again.' });
+      }
+      const user = await this.userStore.verifyLogin(username, password);
+      if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+      this.startLoginSession(req, res, user);
+      res.json({ user: UserStore.publicUser(user) });
+    }));
+
+    this.app.post('/api/auth/logout', (req, res) => {
+      if (!this.sameOrigin(req)) return res.status(403).json({ error: 'Cross-origin request refused' });
+      const sid = parseCookies(req.headers.cookie)[this.cookieName()];
+      const loginId = sid ? this.userStore.deleteLoginSession(sid) : null;
+      // An open socket outlives the cookie that opened it; close the ones this
+      // login opened so signing out actually ends terminal access.
+      if (loginId) {
+        for (const info of this.webSocketConnections.values()) {
+          if (info.loginId === loginId && info.ws) {
+            try { info.ws.close(4001, 'Signed out'); } catch (_) { /* already closing */ }
+          }
+        }
+      }
+      res.setHeader('Set-Cookie', this.sessionCookie(req, '', 0));
+      res.json({ ok: true });
+    });
+
+    this.app.get('/api/auth/me', (req, res) => {
+      const login = this.authEnabled() ? this.cookieLogin(req, res) : null;
+      if (!login) return res.status(401).json({ error: 'Unauthorized' });
+      res.json({ user: UserStore.publicUser(login.user) });
+    });
+
+    // First admin. Only while no user exists, and only for whoever holds the
+    // startup token — the same secret that guarded the instance until now.
+    this.app.post('/api/auth/setup', ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+      if (!this.authEnabled()) return res.status(400).json({ error: 'Authentication is disabled' });
+      if (!this.sameOrigin(req)) return res.status(403).json({ error: 'Cross-origin request refused' });
+      if (this.userStore.hasUsers()) return res.status(409).json({ error: 'An administrator already exists' });
+      const { token, username, password } = req.body || {};
+      if (!this.allowLoginAttempt(req, 'setup')) {
+        return res.status(429).json({ error: 'Too many attempts. Please wait a minute and try again.' });
+      }
+      if (!this.tokenMatches(token)) return res.status(401).json({ error: 'Invalid token' });
+      let user;
+      try {
+        user = await this.userStore.createUser({ username, password, role: 'admin', onlyIfNoUsers: true });
+      } catch (error) {
+        return res.status(error.status || 500).json({ error: error.message });
+      }
+      console.log(`[auth] administrator "${user.username}" created`);
+      this.startLoginSession(req, res, user);
+      res.json({ user: UserStore.publicUser(user) });
+    }));
 
     // Claude Code hook relay endpoint. bin/cc-hook.js (invoked by Claude via the
     // hooks injected in claude-bridge) POSTs its event JSON here; we forward it
@@ -443,18 +669,27 @@ class ClaudeCodeWebServer {
     // file's real extension so the browser renders it natively (images/text/pdf).
     this.app.get('/api/fs/file/:token/:file', (req, res) => this.serveFile(req, res));
 
-    if (!this.noAuth && this.auth) {
+    if (this.authEnabled()) {
       this.app.use((req, res, next) => {
-        // Header-only: the token must not travel in the query string (it would
-        // leak into access logs, browser history, and Referer). All browser
-        // REST calls send the Authorization header; the page itself is served by
-        // express.static before this middleware; the WebSocket authenticates
-        // separately in verifyClient (browsers can't set headers on a WS, so it
-        // keeps its query token there).
-        const auth = req.headers.authorization;
-        if (auth !== `Bearer ${this.auth}` && auth !== this.auth) {
-          return res.status(401).json({ error: 'Unauthorized' });
+        // A login cookie, or the shared token in the Authorization header.
+        // Header-only for the token: it must not travel in the query string (it
+        // would leak into access logs, browser history, and Referer). The page
+        // itself is served by express.static before this middleware; the
+        // WebSocket authenticates separately in verifyClient.
+        const login = this.cookieLogin(req, res);
+        if (login) {
+          // A cookie rides along on cross-site requests too; refuse writes
+          // that a page on another origin started.
+          if (req.method !== 'GET' && req.method !== 'HEAD' && !this.sameOrigin(req)) {
+            return res.status(403).json({ error: 'Cross-origin request refused' });
+          }
+          req.user = login.user;
+          return next();
         }
+        const check = this.checkToken(req, req.headers.authorization);
+        if (check === 'blocked') return res.status(429).json({ error: 'Too many attempts' });
+        if (check !== 'ok') return res.status(401).json({ error: 'Unauthorized' });
+        req.user = this.userStore.firstAdmin();
         next();
       });
     }
@@ -1060,14 +1295,7 @@ class ClaudeCodeWebServer {
 
     this.wss = new WebSocket.Server({ 
       server,
-      verifyClient: (info) => {
-        if (!this.noAuth && this.auth) {
-          const url = new URL(info.req.url, 'ws://localhost');
-          const token = url.searchParams.get('token');
-          return token === this.auth;
-        }
-        return true;
-      }
+      verifyClient: (info) => this.verifyWebSocketClient(info)
     });
 
     this.wss.on('connection', (ws, req) => {
@@ -1120,6 +1348,8 @@ class ClaudeCodeWebServer {
       id: wsId,
       ws,
       claudeSessionId: null,
+      // Which login opened this socket, so signing out can close it.
+      loginId: req.ccwLoginId || null,
       created: new Date()
     };
     this.webSocketConnections.set(wsId, wsInfo);
@@ -1907,10 +2137,12 @@ class ClaudeCodeWebServer {
     // plugin-friendly path form (`/api/plan/:token/:file`). Express has already
     // decoded the path params.
     const params = req.params || {};
-    if (!this.noAuth && this.auth) {
+    if (this.authEnabled()) {
       const token = params.token !== undefined ? params.token : req.query.token;
-      if (token !== `Bearer ${this.auth}` && token !== this.auth) {
-        return res.status(401).json({ error: 'Unauthorized' });
+      if (!this.cookieLogin(req)) {
+        const check = this.checkToken(req, token);
+        if (check === 'blocked') return res.status(429).json({ error: 'Too many attempts' });
+        if (check !== 'ok') return res.status(401).json({ error: 'Unauthorized' });
       }
     }
 
@@ -2283,11 +2515,10 @@ class ClaudeCodeWebServer {
     // Auth is decided before any fs call so an unauthenticated caller can't probe
     // for file existence through the status code.
     const ticket = this.takeFileTicket(params.token);
-    if (!ticket && !this.noAuth && this.auth) {
-      const token = params.token;
-      if (token !== `Bearer ${this.auth}` && token !== this.auth) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+    if (!ticket && this.authEnabled() && !this.cookieLogin(req)) {
+      const check = this.checkToken(req, params.token);
+      if (check === 'blocked') return res.status(429).json({ error: 'Too many attempts' });
+      if (check !== 'ok') return res.status(401).json({ error: 'Unauthorized' });
     }
     const raw = params.file;
     if (typeof raw !== 'string' || raw.length === 0 || raw.indexOf('\0') !== -1) {

@@ -175,6 +175,11 @@ async function main() {
       } else {
         console.log(`   Enter this token when prompted: \x1b[1m\x1b[33m${authToken}\x1b[0m`);
       }
+      try {
+        if (!server.userStore.hasUsers()) {
+          console.log('   No administrator yet: open the page and use this token to create one.');
+        }
+      } catch (_) { /* a startup note must never stop startup */ }
     }
     
     // Start ngrok tunnel if both flags provided

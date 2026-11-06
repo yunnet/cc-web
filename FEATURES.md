@@ -394,15 +394,15 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | SRV-01 | 首页和静态资源无需认证即可加载 | `route:GET /` | — |
-| SRV-02 | 认证默认开启：REST 只认 Authorization 请求头，WebSocket 用 URL 里的令牌；`/auth-status` 查询是否需要令牌，`/auth-verify` 校验令牌 | `route:GET /auth-status` `route:POST /auth-verify` | `test/feature-guards.test.js` |
-| SRV-03 | 登录框：密码型输入框，空值、验证中、令牌无效都有提示；成功后刷新；令牌只存在当前浏览器标签；`?token=` 链接登录后立即从地址栏去掉；任何接口 401 时清除令牌并弹出登录框 | `file:src/public/auth.js` | — |
+| SRV-02 | 认证默认开启：REST 认登录 Cookie 或 Authorization 请求头里的启动令牌（不认查询参数里的令牌），WebSocket 认同源的登录 Cookie 或 URL 里的令牌；`/auth-status` 查询是否需要认证、是否已登录、当前用户、是否还需创建管理员，`/auth-verify` 校验启动令牌，已有管理员时同时以管理员身份签发登录 Cookie；启动令牌（请求头、WebSocket、链接、`/auth-verify`）同一地址一分钟内猜错 10 次后，这一分钟内连正确的令牌也拒绝（REST 返回 429，WebSocket 拒绝连接），不带令牌或链接里的 `-` 不计数 | `route:GET /auth-status` `route:POST /auth-verify` | `test/feature-guards.test.js` |
+| SRV-03 | 登录框：用户名 + 密码登录，可切换为「用访问令牌登录」；还没有任何用户时先输启动令牌，再设置管理员用户名和密码（两次密码须一致）；空值、验证中、密码或令牌错误都有提示；成功后刷新；登录靠 HttpOnly Cookie 保持，页面里不保存令牌，重启服务、新开标签页都不用重新登录；`?token=` 链接仍可登录并立即从地址栏去掉；任何接口 401 时弹出登录框 | `file:src/public/auth.js` | — |
 | SRV-04 | 异步路由出错返回 500，不会让服务崩溃带走所有终端 | 手工 | `test/async-route-safety.test.js` |
 | SRV-05 | 会话按每个一个文件保存，每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
 | SRV-06 | 同一数据目录已有别的实例在运行时拒绝启动；实例锁文件权限 0600，退出时删除 | `file:src/instance-lock.js` | `test/instance-lock.test.js` |
 | SRV-07 | 新建会话：名称、工作目录可选；`resumeId` 接续已有对话（非法 UUID 400，已在别的标签 409，不存在 404） | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
 | SRV-08 | 查看会话详情、健康检查 | `route:GET /api/sessions/:sessionId` `route:GET /api/health` | — |
 | SRV-09 | 删除会话：停止 Claude，通知所有连接的客户端，删除上传图片目录和会话文件，不删 Claude 自己的对话记录 | `route:DELETE /api/sessions/:sessionId` | — |
-| SRV-10 | 计划文件服务：令牌放在 URL 里，以 text/plain 返回便于 Markdown 插件渲染；白名单为 `.claude/plans/` 与全局或会话计划目录中的 .md，按真实路径校验，上限 2MB | `route:GET /api/plan` `route:GET /api/plan/:token/:file` `route:GET /api/plan/:token/:session/:file` | `test/plan-file.test.js` `test/plan-dirs.test.js` |
+| SRV-10 | 计划文件服务：已登录的浏览器靠 Cookie 认证，URL 里的令牌段为 `-`；仍接受 URL 里带启动令牌的旧链接；以 text/plain 返回便于 Markdown 插件渲染；白名单为 `.claude/plans/` 与全局或会话计划目录中的 .md，按真实路径校验，上限 2MB | `route:GET /api/plan` `route:GET /api/plan/:token/:file` `route:GET /api/plan/:token/:session/:file` | `test/plan-file.test.js` `test/plan-dirs.test.js` |
 | SRV-11 | 文件服务的安全：.html/.svg 默认只显示源码，渲染需一次性票据（30 秒、用一次即失效）；渲染时放进无网络的沙箱；统一 nosniff、no-referrer；中文文件名 | `route:GET /api/fs/file/:token/:file` `route:POST /api/fs/ticket` `file:src/utils/inline-assets.js` | `test/fs-browse.test.js` `test/inline-assets.test.js` |
 | SRV-12 | 选择或设置工作目录、清除已选目录（旧接口） | `route:POST /api/set-working-dir` `route:POST /api/folders/select` `route:POST /api/close-session` | — |
 | SRV-13 | 加入会话不再强制重绘，避免出现两个输入框 | 手工 | `test/pty-repaint.test.js` |
@@ -416,6 +416,10 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-21 | 计划链接里的 `~/…` 会展开成家目录绝对路径；不在白名单、超过 2MB 或不是 .md 的一律 404（不泄露文件存不存在） | `route:GET /api/plan` | `test/plan-file.test.js` |
 | SRV-22 | 退出时除保存会话外，还会停掉所有正在跑的 Claude 进程并清理定时器 | 手工 | — |
 | SRV-23 | 数据目录默认在 `~/.cc-web/data`（`~/.cc-web` 按 0700 创建）；首次启动把旧布局的 `~/.claude-code-web` 一次性原子迁入，迁移失败则继续用原目录、绝不抛错 | `file:src/utils/data-dir.js` | `test/data-dir.test.js` |
+| SRV-24 | 用户名 + 密码登录：成功后签发 HttpOnly、SameSite=Strict 的登录 Cookie，30 天有效、使用中自动续期（服务端续期时同时重发 Cookie），服务重启后仍然有效；经 https 访问（含 ngrok 或本机代理转发的 https）时 Cookie 带 Secure；密码错误、用户不存在、账号停用一律答「Invalid username or password」；同一地址每分钟最多 10 次、同一用户名每分钟最多 50 次（被地址限流挡下的请求不计入用户名），超出返回 429；经 ngrok 或本机反向代理访问时按 X-Forwarded-For 识别地址；`/api/auth/me` 返回当前用户 | `route:POST /api/auth/login` `route:GET /api/auth/me` `file:src/utils/password.js` `file:src/utils/cookies.js` | `test/auth-login.test.js` |
+| SRV-25 | 退出登录：服务端作废这个登录会话并清除 Cookie，同时关闭用这个登录打开的 WebSocket（其他标签页里的终端随之断开）| `route:POST /api/auth/logout` | `test/auth-login.test.js` |
+| SRV-26 | 首次创建管理员：还没有任何用户时，凭启动令牌设置第一个账号（用户名 2–32 位字母数字 `_ . -`，密码至少 8 位），它就是管理员并直接登录；已有用户后此接口返回 409；启动时控制台提示「用这个令牌创建管理员」 | `route:POST /api/auth/setup` | `test/auth-login.test.js` |
+| SRV-27 | 用户与登录会话的存储：`<数据目录>/platform/` 下每个用户、每个登录会话各一个文件（0600，原子写）；密码只存 scrypt 加盐哈希，登录会话只存 Cookie 值的 SHA-256；Cookie 名带端口（`ccw_sid_<端口>`），同机的 stable 和 dev 互不顶掉登录；带 Cookie 的跨站写请求和跨站 WebSocket 一律拒绝（403） | `file:src/utils/user-store.js` | `test/auth-login.test.js` |
 ## 命令行
 
 | ID | 功能 | 入口 | 守卫 |
@@ -436,7 +440,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| GAP-01 | CLAUDE.md 说有按 IP 限流，但限流中间件所在的 `src/utils/auth.js` 没有被任何代码引用，实际不限流 | `file:src/utils/auth.js` | — |
+| GAP-01 | （2026-11-05 部分修复）`src/utils/auth.js` 的限流器已接到登录和创建管理员接口（同一地址每分钟 10 次、同一用户名每分钟 50 次，超出返回 429 和提示）；其余接口仍不限流，与 CLAUDE.md 说的「按 IP 限流」不符 | `file:src/utils/auth.js` | — |
 | GAP-02 | 令牌来自 `--auth-file` 或 `CCWEB_AUTH` 时，控制台仍把它当作「生成的令牌」打印出来 | 手工 | — |
 | GAP-03 | 菜单里的「Clear Terminal」没有绑定事件，点了没反应；「Reconnect」一直禁用；「Close Session」一直隐藏 | `control:clearBtnMobile` `control:reconnectBtnMobile` `control:closeSessionBtnMobile` | — |
 | GAP-04 | 设置里历史保留量的单位文字仍写着「chunks」，和标签上的 MB 对不上 | 手工 | — |
