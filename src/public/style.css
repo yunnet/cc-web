@@ -4793,3 +4793,180 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     .skills-add-market { flex-direction: column; }
     .skills-add-market .btn { width: 100%; min-height: 44px; }
 }
+
+/* --- Account and user management (account.js, M4) --- */
+.menu-user {
+    padding: 0 16px 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.menu-user strong { color: var(--text-primary); font-weight: 600; }
+
+.account-modal .modal-content,
+.users-modal .modal-content {
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.session-modal.users-modal .modal-content { max-width: 720px; }
+
+.account-modal .modal-body,
+.users-modal .modal-body {
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.account-section {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.account-section:not(:first-child) { margin-top: 18px; }
+
+.account-form,
+.users-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.account-form input,
+.users-add input,
+.users-add select,
+.users-row textarea {
+    flex: 1 1 160px;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 9px 10px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.users-add select { flex: 0 0 auto; }
+
+.users-add .users-days {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.users-add .users-days input { flex: 0 0 64px; }
+
+.account-form .btn,
+.users-add .btn { flex: 0 0 auto; min-height: 36px; }
+
+.account-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.account-status {
+    min-height: 18px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.account-status.error { color: #f85149; }
+
+.account-footer {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.users-pane { margin-top: 12px; }
+
+.users-list { max-height: min(56vh, 520px); margin-top: 10px; }
+
+.users-row {
+    padding: 9px 10px;
+    margin-bottom: 4px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.users-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.users-row-name {
+    flex: 1 1 160px;
+    min-width: 0;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.users-row-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.users-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.users-row-actions .btn { min-height: 32px; padding: 4px 10px; }
+
+.users-row.disabled .users-row-name { color: var(--text-secondary); text-decoration: line-through; }
+
+.users-row textarea {
+    width: 100%;
+    min-height: 72px;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    resize: vertical;
+}
+
+.users-tag {
+    padding: 1px 6px;
+    border-radius: 3px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 10px;
+}
+
+.users-tag.accent { color: var(--accent); border-color: var(--accent); }
+
+.users-secret {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background-color: var(--bg-primary);
+    font-size: 13px;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.users-secret code {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    user-select: all;
+}
+
+.users-secret .btn { margin-left: 8px; }

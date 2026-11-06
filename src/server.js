@@ -11,6 +11,7 @@ const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const SpaceStore = require('./utils/space-store');
 const UserStore = require('./utils/user-store');
+const { registerAccountRoutes, registerAdminRoutes } = require('./account-routes');
 const AuthManager = require('./utils/auth');
 const { safeEqual } = require('./utils/password');
 const { parseCookies, serializeCookie } = require('./utils/cookies');
@@ -181,11 +182,58 @@ class ClaudeCodeWebServer {
   // before the auth middleware: the login cookie's user, else — the shared
   // token having been checked already — the first admin.
   navActor(req) {
+    const user = this.navUser(req);
+    return user ? user.id : null;
+  }
+
+  navUser(req) {
     if (!this.authEnabled()) return null;
     const login = this.cookieLogin(req);
-    if (login) return login.user.id;
-    const admin = this.userStore.firstAdmin();
-    return admin ? admin.id : null;
+    if (login) return login.user;
+    return this.userStore.firstAdmin();
+  }
+
+  // --- Browse roots (M4) -----------------------------------------------------
+  // Where a user may browse, create sessions and spaces, upload, delete and
+  // pull. null = anywhere (administrators, the shared token, auth off) -- the
+  // behaviour every user had before M4. A regular user gets their rootDirs, or
+  // <dataDir>/<uid>/workspace when an admin set none. Not a security boundary:
+  // Claude itself still runs as the server's OS user (accepted, see section 3).
+  browseRoots(user) {
+    if (!this.authEnabled() || !user || user.role === 'admin') return null;
+    const dirs = (Array.isArray(user.rootDirs) ? user.rootDirs : []).filter((d) => typeof d === 'string' && d);
+    if (dirs.length) return dirs.map((d) => path.resolve(d));
+    const workspace = path.join(this.sessionStore.storageDir, user.id, 'workspace');
+    try { fs.mkdirSync(workspace, { recursive: true, mode: 0o700 }); } catch (_) { /* reported by the browse itself */ }
+    return [workspace];
+  }
+
+  // Where browsing starts and what the home button goes to.
+  homeFor(user) {
+    const roots = this.browseRoots(user);
+    return roots ? roots[0] : this.baseFolder;
+  }
+
+  // The real path of `p`, or of its nearest existing ancestor with the rest
+  // appended -- so a path that does not exist yet (a folder about to be made)
+  // is judged by where it would land, and a symlink cannot step outside.
+  static realish(p) {
+    let head = path.resolve(p);
+    const tail = [];
+    for (;;) {
+      try { return path.join(fs.realpathSync(head), ...tail.reverse()); } catch (_) { /* go up */ }
+      const parent = path.dirname(head);
+      if (parent === head) return path.resolve(p);
+      tail.push(path.basename(head));
+      head = parent;
+    }
+  }
+
+  static isInside(target, root) {
+    const norm = (x) => (process.platform === 'win32' ? x.toLowerCase() : x);
+    const t = norm(ClaudeCodeWebServer.realish(target));
+    const r = norm(ClaudeCodeWebServer.realish(root));
+    return t === r || t.startsWith(r.endsWith(path.sep) ? r : r + path.sep);
   }
 
   // The session with this id if `actorId` owns it. Someone else's session is
@@ -397,6 +445,7 @@ class ClaudeCodeWebServer {
     // Auto-save sessions every 30 seconds
     this.autoSaveInterval = setInterval(() => {
       this.saveSessionsToDisk();
+      this.sweepRevokedAccess();
     }, 30000);
 
     // Also save on process exit. Keep references so dispose() can remove them:
@@ -679,7 +728,7 @@ class ClaudeCodeWebServer {
   verifyWebSocketClient(info) {
     if (!this.authEnabled()) return true;
     const login = this.cookieLogin(info.req);
-    if (login && this.sameOrigin(info.req)) {
+    if (login && this.sameOrigin(info.req) && !login.user.mustChangePassword) {
       info.req.ccwUser = login.user;
       info.req.ccwLoginId = login.session.id;
       return true;
@@ -692,20 +741,27 @@ class ClaudeCodeWebServer {
     return false;
   }
 
-  validatePath(targetPath) {
+  // `user` is whoever is asking (req.user, or the session owner on the
+  // WebSocket); see browseRoots for who is limited and to what.
+  validatePath(targetPath, user = null) {
     if (!targetPath) {
       return { valid: false, error: 'Path is required' };
     }
-    
+
     const resolvedPath = path.resolve(targetPath);
-    
+
     if (!this.isPathWithinBase(resolvedPath)) {
-      return { 
-        valid: false, 
-        error: 'Access denied: Path is outside the allowed directory' 
+      return {
+        valid: false,
+        error: 'Access denied: Path is outside the allowed directory'
       };
     }
-    
+
+    const roots = this.browseRoots(user);
+    if (roots && !roots.some((root) => ClaudeCodeWebServer.isInside(resolvedPath, root))) {
+      return { valid: false, error: '超出你可以访问的目录范围' };
+    }
+
     return { valid: true, path: resolvedPath };
   }
 
@@ -806,13 +862,7 @@ class ClaudeCodeWebServer {
       const loginId = sid ? this.userStore.deleteLoginSession(sid) : null;
       // An open socket outlives the cookie that opened it; close the ones this
       // login opened so signing out actually ends terminal access.
-      if (loginId) {
-        for (const info of this.webSocketConnections.values()) {
-          if (info.loginId === loginId && info.ws) {
-            try { info.ws.close(4001, 'Signed out'); } catch (_) { /* already closing */ }
-          }
-        }
-      }
+      if (loginId) this.closeLoginSockets([loginId], 'Signed out');
       res.setHeader('Set-Cookie', this.sessionCookie(req, '', 0));
       res.json({ ok: true });
     });
@@ -822,6 +872,9 @@ class ClaudeCodeWebServer {
       if (!login) return res.status(401).json({ error: 'Unauthorized' });
       res.json({ user: UserStore.publicUser(login.user) });
     });
+
+    // Invite sign-up, own password, own devices (src/account-routes.js).
+    registerAccountRoutes(this);
 
     // First admin. Only while no user exists, and only for whoever holds the
     // startup token — the same secret that guarded the instance until now.
@@ -892,7 +945,13 @@ class ClaudeCodeWebServer {
           if (req.method !== 'GET' && req.method !== 'HEAD' && !this.sameOrigin(req)) {
             return res.status(403).json({ error: 'Cross-origin request refused' });
           }
+          // A one-time password only buys the password change itself (the
+          // /api/auth/* routes are registered before this middleware).
+          if (login.user.mustChangePassword) {
+            return res.status(403).json({ error: 'Password change required', code: 'password_change_required', message: '请先修改密码' });
+          }
           req.user = login.user;
+          req.loginId = login.session.id;
           return next();
         }
         const check = this.checkToken(req, req.headers.authorization);
@@ -902,6 +961,9 @@ class ClaudeCodeWebServer {
         next();
       });
     }
+
+    // User and invite management (src/account-routes.js); admins only.
+    registerAdminRoutes(this);
 
     // Image upload for pasting/dropping images into the terminal. Saves the
     // image into <session workingDir>/.ccw-uploads and returns its absolute
@@ -1134,8 +1196,9 @@ class ClaudeCodeWebServer {
       res.json({
         folderMode: this.folderMode,
         selectedWorkingDir: this.tenant(this.actorOf(req.user)).selectedWorkingDir,
-        baseFolder: this.baseFolder,
-        homeDir: os.homedir(),
+        baseFolder: this.homeFor(req.user),
+        // A user limited to their own directories starts there, not in ~.
+        homeDir: this.browseRoots(req.user) ? this.homeFor(req.user) : os.homedir(),
         aliases: this.aliases,
         version: require('../package.json').version,
         port: this.port,
@@ -1154,18 +1217,18 @@ class ClaudeCodeWebServer {
         return res.status(400).json({ message: 'Invalid folder name' });
       }
       
-      const basePath = parentPath || this.baseFolder;
+      const basePath = parentPath || this.homeFor(req.user);
       const fullPath = path.join(basePath, folderName);
       
       // Validate that the parent path and resulting path are within base folder
-      const parentValidation = this.validatePath(basePath);
+      const parentValidation = this.validatePath(basePath, req.user);
       if (!parentValidation.valid) {
         return res.status(403).json({ 
           message: 'Cannot create folder outside the allowed area' 
         });
       }
       
-      const fullValidation = this.validatePath(fullPath);
+      const fullValidation = this.validatePath(fullPath, req.user);
       if (!fullValidation.valid) {
         return res.status(403).json({ 
           message: 'Cannot create folder outside the allowed area' 
@@ -1195,10 +1258,10 @@ class ClaudeCodeWebServer {
     });
 
     this.app.get('/api/folders', (req, res) => {
-      const requestedPath = req.query.path || this.baseFolder;
+      const requestedPath = req.query.path || this.homeFor(req.user);
       
       // Validate the requested path
-      const validation = this.validatePath(requestedPath);
+      const validation = this.validatePath(requestedPath, req.user);
       if (!validation.valid) {
         return res.status(403).json({ 
           error: validation.error,
@@ -1235,14 +1298,14 @@ class ClaudeCodeWebServer {
           .sort((a, b) => a.name.localeCompare(b.name));
         
         const parentDir = path.dirname(currentPath);
-        const canGoUp = this.isPathWithinBase(parentDir) && parentDir !== currentPath;
+        const canGoUp = this.validatePath(parentDir, req.user).valid && parentDir !== currentPath;
         
         res.json({
           currentPath,
           parentPath: canGoUp ? parentDir : null,
           folders,
-          home: this.baseFolder,
-          baseFolder: this.baseFolder
+          home: this.homeFor(req.user),
+          baseFolder: this.homeFor(req.user)
         });
       } catch (error) {
         res.status(403).json({ 
@@ -1308,7 +1371,7 @@ class ClaudeCodeWebServer {
     this.app.post('/api/spaces', (req, res) => {
       const cleaned = SpaceStore.cleanName(req.body && req.body.name);
       if (cleaned.error) return res.status(400).json({ error: cleaned.error });
-      const validation = this.validatePath(req.body.dir);
+      const validation = this.validatePath(req.body.dir, req.user);
       if (!validation.valid) {
         return res.status(403).json({ error: validation.error, message: 'Cannot create a space outside the allowed area' });
       }
@@ -1334,7 +1397,7 @@ class ClaudeCodeWebServer {
         space.name = cleaned.name;
       }
       if (body.dir !== undefined) {
-        const validation = this.validatePath(body.dir);
+        const validation = this.validatePath(body.dir, req.user);
         if (!validation.valid) {
           return res.status(403).json({ error: validation.error, message: 'Cannot point a space outside the allowed area' });
         }
@@ -1394,7 +1457,7 @@ class ClaudeCodeWebServer {
       const { path: selectedPath } = req.body;
 
       // Validate the path
-      const validation = this.validatePath(selectedPath);
+      const validation = this.validatePath(selectedPath, req.user);
       if (!validation.valid) {
         return res.status(403).json({ 
           error: validation.error,
@@ -1433,7 +1496,7 @@ class ClaudeCodeWebServer {
         const { path: selectedPath } = req.body;
         
         // Validate the path
-        const validation = this.validatePath(selectedPath);
+        const validation = this.validatePath(selectedPath, req.user);
         if (!validation.valid) {
           return res.status(403).json({ 
             error: validation.error,
@@ -1745,9 +1808,9 @@ class ClaudeCodeWebServer {
     const ownerId = this.actorOf(req.user);
     const mine = this.tenant(ownerId);
 
-    let validWorkingDir = this.baseFolder;
+    let validWorkingDir = this.homeFor(req.user);
     if (workingDir) {
-      const validation = this.validatePath(workingDir);
+      const validation = this.validatePath(workingDir, req.user);
       if (!validation.valid) {
         return res.status(403).json({
           error: validation.error,
@@ -1857,8 +1920,8 @@ class ClaudeCodeWebServer {
     if (!dirParam.ok) return res.status(400).json({ error: 'Invalid dir parameter' });
 
     const ownerId = this.actorOf(req.user);
-    let dir = dirParam.value || this.tenant(ownerId).selectedWorkingDir || this.baseFolder;
-    const validation = this.validatePath(dir);
+    let dir = dirParam.value || this.tenant(ownerId).selectedWorkingDir || this.homeFor(req.user);
+    const validation = this.validatePath(dir, req.user);
     if (!validation.valid) return res.status(403).json({ error: validation.error });
     dir = validation.path;
 
@@ -1883,9 +1946,10 @@ class ClaudeCodeWebServer {
     const mine = this.tenant(ownerId);
 
     // Validate working directory if provided
-    let validWorkingDir = this.baseFolder;
+    const wsUser = ownerId ? this.userStore.getUser(ownerId) : null;
+    let validWorkingDir = this.homeFor(wsUser);
     if (workingDir) {
-      const validation = this.validatePath(workingDir);
+      const validation = this.validatePath(workingDir, wsUser);
       if (!validation.valid) {
         this.sendToWebSocket(wsInfo.ws, {
           type: 'error',
@@ -2191,6 +2255,50 @@ class ClaudeCodeWebServer {
         message: `Failed to start Claude Code: ${error.message}`
       });
     }
+  }
+
+  // Close the sockets these logins opened (sign-out, a revoked device, a
+  // password change elsewhere).
+  closeLoginSockets(loginIds, reason) {
+    const ids = new Set(loginIds || []);
+    if (!ids.size) return;
+    for (const info of this.webSocketConnections.values()) {
+      if (info.loginId && ids.has(info.loginId) && info.ws) {
+        try { info.ws.close(4001, reason); } catch (_) { /* already closing */ }
+      }
+    }
+  }
+
+  // What `cc-web user disable|passwd` did from outside the process: the
+  // store already refuses those logins, but sockets opened with them stay up
+  // until someone closes them. Runs with the autosave, so within 30 seconds.
+  sweepRevokedAccess() {
+    if (!this.authEnabled()) return;
+    const owners = new Set();
+    for (const info of this.webSocketConnections.values()) {
+      if (info.loginId && !this.userStore.isLoginLive(info.loginId) && info.ws) {
+        try { info.ws.close(4001, 'Signed out'); } catch (_) { /* already closing */ }
+      }
+      if (info.userId) owners.add(info.userId);
+    }
+    for (const s of this.claudeSessions.values()) if (s.ownerId && s.active) owners.add(s.ownerId);
+    for (const id of owners) {
+      const user = this.userStore.getUser(id);
+      if (!user || user.disabled) this.endUserAccess(id, 'Account disabled').catch(() => {});
+    }
+  }
+
+  // A disabled, deleted or reset account: every socket of theirs closes and
+  // every Claude they have running stops. Their sessions stay, as after a
+  // restart, so the work is there when they are allowed back.
+  async endUserAccess(userId, reason) {
+    for (const info of this.webSocketConnections.values()) {
+      if (info.userId === userId && info.ws) {
+        try { info.ws.close(4001, reason); } catch (_) { /* already closing */ }
+      }
+    }
+    const running = [...this.claudeSessions.values()].filter((s) => (s.ownerId || null) === userId && s.active);
+    await Promise.all(running.map((s) => this.stopClaude(s.id).catch(() => {})));
   }
 
   async stopClaude(claudeSessionId) {
@@ -2533,7 +2641,7 @@ class ClaudeCodeWebServer {
     }
     // '.' is how the scan reports "the directory itself is the repository".
     const target = (!name || name === '.') ? raw : path.join(raw, name);
-    const validation = this.validatePath(target);
+    const validation = this.validatePath(target, req.user);
     if (!validation.valid) {
       return res.status(403).json({ error: validation.error, message: 'Access to this directory is not allowed' });
     }
@@ -2562,8 +2670,8 @@ class ClaudeCodeWebServer {
     if (!raw.ok) {
       return res.status(400).json({ error: 'path must be a single value' });
     }
-    const requested = raw.value || this.baseFolder;
-    const validation = this.validatePath(requested);
+    const requested = raw.value || this.homeFor(req.user);
+    const validation = this.validatePath(requested, req.user);
     if (!validation.valid) {
       return res.status(403).json({ error: validation.error, message: 'Access to this directory is not allowed' });
     }
@@ -2594,8 +2702,8 @@ class ClaudeCodeWebServer {
     const MAX_ITEMS = 2000; // Bound the per-entry stat cost so a huge directory
                             // (node_modules, /nix/store) can't freeze the shared
                             // single-threaded server with 10k+ sync stat calls.
-    const requested = req.query.path || this.baseFolder;
-    const validation = this.validatePath(requested);
+    const requested = req.query.path || this.homeFor(req.user);
+    const validation = this.validatePath(requested, req.user);
     if (!validation.valid) {
       return res.status(403).json({ error: validation.error, message: 'Access to this directory is not allowed' });
     }
@@ -2628,7 +2736,7 @@ class ClaudeCodeWebServer {
         return { name: e.name, type: e.isDir ? 'dir' : 'file', size, isSymlink: e.isSymlink };
       });
       const parentDir = path.dirname(dir);
-      res.json({ path: dir, parent: parentDir !== dir ? parentDir : null, home: this.baseFolder, items, truncated });
+      res.json({ path: dir, parent: parentDir !== dir && this.validatePath(parentDir, req.user).valid ? parentDir : null, home: this.homeFor(req.user), items, truncated });
     } catch (error) {
       const status = error && error.code === 'ENOENT' ? 404 : 403;
       res.status(status).json({ error: 'Cannot access directory', message: error.message });
@@ -2649,7 +2757,7 @@ class ClaudeCodeWebServer {
   // directory on screen no matter which directory that is.
   uploadFile(req, res) {
     const query = req.query || {};
-    const validation = this.validatePath(query.path);
+    const validation = this.validatePath(query.path, req.user);
     if (!validation.valid) {
       return res.status(403).json({ error: validation.error, message: 'Uploading to this directory is not allowed' });
     }
@@ -2731,7 +2839,7 @@ class ClaudeCodeWebServer {
     if (typeof raw !== 'string' || !raw || raw.indexOf('\0') !== -1) {
       return res.status(400).json({ error: 'Invalid path', message: 'A path is required' });
     }
-    const validation = this.validatePath(raw);
+    const validation = this.validatePath(raw, req.user);
     if (!validation.valid) return res.status(403).json({ error: validation.error, message: 'Deleting here is not allowed' });
 
     let target;
@@ -2791,7 +2899,7 @@ class ClaudeCodeWebServer {
     if (typeof raw !== 'string' || raw.length === 0 || raw.indexOf('\0') !== -1) {
       return res.status(404).json({ error: 'Not found' });
     }
-    const validation = this.validatePath(raw);
+    const validation = this.validatePath(raw, this.navUser(req));
     if (!validation.valid) {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -2870,7 +2978,7 @@ class ClaudeCodeWebServer {
     // tab, so they get a ticket for the same reason rendering does: whatever
     // ends up recorded there must be spent already.
     const download = !!(req.body && req.body.download);
-    const validation = this.validatePath(requested);
+    const validation = this.validatePath(requested, req.user);
     if (!validation.valid) return res.status(404).json({ error: 'Not found' });
     let real;
     try {

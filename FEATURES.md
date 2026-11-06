@@ -98,13 +98,13 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写；每个平台用户一份，在 `<uid>/spaces.json`）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
-| SPACE-02 | 空间 CRUD（只限自己的空间，别人的按不存在处理返回 404）：GET 列出自己的全部；POST 建（名字 1-200 字、目录经路径校验越界 403、**必须是真实存在的目录**否则 400 中文提示——手滑路径建出的空间会让其下任务无处启动）；PATCH 改名/改目录（同样校验；改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话（只动自己的）转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
+| SPACE-02 | 空间 CRUD（只限自己的空间，别人的按不存在处理返回 404）：GET 列出自己的全部；POST 建（名字 1-200 字、目录经路径校验越界 403、**必须是真实存在的目录**否则 400 中文提示——手滑路径建出的空间会让其下任务无处启动）；PATCH 改名/改目录（同样校验；改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话（只动自己的）转为未分组（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
 | SPACE-03 | 一次性迁移（每个用户各自按自己的会话执行）：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
 | SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId（包括别的用户的空间）降级为其目录所绑空间（只找自己的空间）、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
 | SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可收起为图标轨道，窄屏（≤768px）变左滑抽屉带遮罩；头部 #sidebarToggleBtn 是唯一的开关，两个方向都管（桌面展开⇄收起、窄屏抽屉开⇄关，aria-expanded 与提示随状态变）。侧栏内的收起按钮 #sidebarCollapseBtn 已移除（用户 2026-11-04：「sidebarToggleBtn这个图标按钮做成双重开关，可以开，也可以关。 sidebarCollapseBtn按钮，不要了。」） | `control:sidebarToggleBtn` `file:src/public/spaces.js` | `test/features.test.js` |
 | SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器，自己的所有设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
-| SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝（只和自己的空间比）；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
+| SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝（只和自己的空间比）；Enter 创建、Esc 取消（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
 | SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用；**空间目录打不开时禁用两个启动键并给出中文原因与补救指引**（防止任务静默落到其它目录/错误空间） | `file:src/public/app.js` | — |
 | SPACE-10 | 每空间任务**水位线渐显**（借鉴 DSH）：默认只列前 5 个任务，超出部分隐藏（DOM 保留不丢）；正在运行/待批准/未读 ✓/当前任务自动抬升水位线保证可见（扫描前 50）；组尾「显示更多（还有 N 个）」每次 +5（剩 ≤5 全显）、「收起」复位；折叠空间即复位；不持久化（刷新重置） | `file:src/public/spaces.js` | — |
 | SPACE-11 | 侧栏**搜索**（借鉴 DSH）：标题行搜索图标展开输入框；非空查询把分组树替换为平铺命中列表（任务名/空间名子串、大小写不敏感；行内带状态点 + `任务名 · 空间名`）；点结果=清空收起搜索、切到该任务、展开所属空间并滚动到行；Esc 收起；无结果显示「没有匹配的任务」 | `control:sidebarSearchBtn` `control:sidebarSearchInput` | — |
@@ -136,16 +136,16 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | NEW-01 | 头部「＋任务」、空间行的 +、Ctrl+T、Sessions 面板和菜单里的 New Session、恢复对话框、首次运行，都打开同一个「新建标签页」对话框 | `control:headerNewTaskBtn` `control:conversationsNewBtn` `control:newSessionBtnMobile` | `test/new-tab-dialog.test.js` |
-| NEW-02 | 工程目录默认选当前标签的目录，其次是其他已开标签，再其次是最近用过的目录；最近目录打不开（403/404）时自动忘掉并试下一个，断网或未登录时保留 | 手工 | `test/new-tab-dialog.test.js` |
+| NEW-02 | 工程目录默认选当前标签的目录，其次是其他已开标签，再其次是最近用过的目录；最近目录打不开（403/404）时自动忘掉并试下一个，断网或未登录时保留；都没有时用自己的第一个可浏览目录（普通用户，见 ACC-07） | 手工 | `test/new-tab-dialog.test.js` |
 | NEW-03 | 打开时焦点落在「启动」上，直接回车即可启动；由危险模式进入时焦点在「危险模式启动」上 | `control:newTabStartBtn` | — |
 | NEW-04 | 模型、权限模式、思考强度默认沿用上次启动的选择（可在设置面板「任务默认启动选项」直接编辑，同一份记录）；「跳过权限」从不记住；每次都默认「新对话」模式 | `control:newTabModelSelect` `control:newTabPermissionSelect` `control:newTabEffortSelect` | `test/new-tab-dialog.test.js` |
 | NEW-05 | 名称框没手动输入时自动填文件夹名，选了要继续的对话时填对话标题（超 40 字截断）；手动输入的不被覆盖；回车即启动；只有手动输入的名称才作为自定义名传给 Claude | `control:sessionName` | `test/new-tab-dialog.test.js` `test/start-options.test.js` |
 | NEW-06 | 路径栏可直接输入，回车跳转，Esc 恢复当前路径（不关闭对话框）；输入了路径没回车就启动时先跳过去再启动；路径长时滚到末尾露出文件夹名 | `control:currentPathInput` | — |
 | NEW-07 | 「上一级」（根目录时禁用）和「回到起始目录」按钮；「浏览…」展开或收起目录树 | `control:folderUpBtn` `control:folderHomeBtn` `control:newTabBrowseBtn` | — |
 | NEW-08 | 路径栏下方显示最多 8 个最近目录，当前目录高亮，点击跳转；非工程目录不显示也不预选 | 手工 | `test/new-tab-dialog.test.js` |
-| NEW-09 | 目录树顶部有「..」，点文件夹进入，符号链接文件夹标 ↗；空目录和打不开的目录有中文提示；遇到 401 弹出登录框 | `js-control:app.js:Symbolic link` `route:GET /api/folders` | — |
+| NEW-09 | 目录树顶部有「..」，点文件夹进入，符号链接文件夹标 ↗；空目录和打不开的目录有中文提示；遇到 401 弹出登录框（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `js-control:app.js:Symbolic link` `route:GET /api/folders` | — |
 | NEW-10 | 「显示隐藏文件夹」复选框（默认不勾），切换后刷新 | `control:showHiddenFolders` | — |
-| NEW-11 | 「新建文件夹」输入条：回车创建、Esc 取消；名称为空、含 / 或 \\、已存在等情况有中文提示；成功后刷新目录树 | `control:createFolderBtn` `control:newFolderNameInput` `control:confirmCreateFolderBtn` `control:cancelCreateFolderBtn` `route:POST /api/create-folder` | — |
+| NEW-11 | 「新建文件夹」输入条：回车创建、Esc 取消；名称为空、含 / 或 \\、已存在等情况有中文提示；成功后刷新目录树（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:createFolderBtn` `control:newFolderNameInput` `control:confirmCreateFolderBtn` `control:cancelCreateFolderBtn` `route:POST /api/create-folder` | — |
 | NEW-12 | 「新对话 / 继续之前的对话」切换；继续模式列出该目录下 Claude 记录过的对话（标题、相对时间、id），已在别的标签打开的灰掉不能选（被其他用户占用的同样灰掉，标「其他用户正在使用」，悬停提示「其他用户正在使用这个对话」）；换目录时列表跟着刷新 | `js-control:conversations.js:Already open in a tab` `route:GET /api/claude-sessions` `js-control:conversations.js:其他用户正在使用这个对话` | `test/claude-history.test.js` `test/claude-resume.test.js` |
 | NEW-13 | 「启动」创建会话并直接启动 Claude，不再弹 Start 面板；「危险模式启动」以跳过权限的方式启动 | `control:newTabStartBtn` `control:newTabDangerousBtn` `route:POST /api/sessions/create` | `test/new-tab-dialog.test.js` `test/session-create-guard.test.js` |
 | NEW-14 | 启动请求进行中两个按钮都禁用，显示「启动中…」，防止连点建出多个会话 | 手工 | `test/session-create-guard.test.js` |
@@ -203,17 +203,17 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | FILE-01 | 工具栏的文件按钮打开右侧抽屉；打开时回到本会话上次浏览的位置，没有则用会话工作目录 | `control:explorerBtn` `file:src/public/file-explorer.js` | — |
 | FILE-02 | 拖动抽屉左边缘调整宽度（最小 300px，触屏也能拖），宽度记住 | `js-control:file-explorer.js:Drag to resize` | — |
 | FILE-03 | ×、点背景、Esc 关闭抽屉 | `control:explorerCloseBtn` `key:file-explorer.js:Escape` | — |
-| FILE-04 | 「上一级」「主目录」按钮；路径栏回车跳转；列表顶部「..」；点文件夹进入 | `control:explorerUpBtn` `control:explorerHomeBtn` `control:explorerPathInput` `key:file-explorer.js:Enter` | — |
+| FILE-04 | 「上一级」「主目录」按钮；路径栏回车跳转；列表顶部「..」；点文件夹进入；「主目录」是自己的第一个可浏览目录，普通用户到了可浏览目录的顶层就没有「上一级」（见 ACC-07） | `control:explorerUpBtn` `control:explorerHomeBtn` `control:explorerPathInput` `key:file-explorer.js:Enter` | — |
 | FILE-05 | 「Show hidden items」默认勾选，切换后立即重新加载 | `control:explorerShowHidden` | — |
-| FILE-06 | 列出文件和文件夹（文件夹在前，带大小）；超过 2000 项截断并提示；加载中、空目录、无权限、打不开都有提示 | `route:GET /api/fs/list` | `test/fs-browse.test.js` |
-| FILE-07 | 点可预览的文件（文本、代码、图片、PDF 等）在新标签页打开；.html/.svg 用一次性票据渲染，拿不到票据时显示源码 | `route:GET /api/fs/file/:token/:file` `route:POST /api/fs/ticket` | `test/fs-browse.test.js` `test/fs-render-inline.test.js` |
+| FILE-06 | 列出文件和文件夹（文件夹在前，带大小）；超过 2000 项截断并提示；加载中、空目录、无权限、打不开都有提示（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:GET /api/fs/list` | `test/fs-browse.test.js` |
+| FILE-07 | 点可预览的文件（文本、代码、图片、PDF 等）在新标签页打开；.html/.svg 用一次性票据渲染，拿不到票据时显示源码（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:GET /api/fs/file/:token/:file` `route:POST /api/fs/ticket` | `test/fs-browse.test.js` `test/fs-render-inline.test.js` |
 | FILE-08 | 点不可预览的文件直接下载；行内下载按钮用一次性票据下载，有「Downloading X」和失败提示 | `js-control:file-explorer.js:Download` | `test/fs-browse.test.js` |
 | FILE-09 | 行内 @ 按钮把「@绝对路径 」输入终端（不回车），关闭抽屉并提示；未启动 Claude 时提示先启动 | `js-control:file-explorer.js:Insert path into the terminal` | `test/insert-path.test.js` |
-| FILE-10 | 行内红色删除按钮，先弹确认（文件夹注明连同内容一起删除）；成功刷新，失败显示原因 | `js-control:file-explorer.js:Delete` `route:POST /api/fs/delete` | `test/fs-delete.test.js` |
-| FILE-11 | 服务器拒绝删除根目录、主目录、启动目录、任一会话的工作目录及其上级（按真实路径比较，识破符号链接别名）；符号链接只删链接本身 | `route:POST /api/fs/delete` | `test/fs-delete.test.js` |
+| FILE-10 | 行内红色删除按钮，先弹确认（文件夹注明连同内容一起删除）；成功刷新，失败显示原因（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `js-control:file-explorer.js:Delete` `route:POST /api/fs/delete` | `test/fs-delete.test.js` |
+| FILE-11 | 服务器拒绝删除根目录、主目录、启动目录、任一会话的工作目录及其上级（按真实路径比较，识破符号链接别名）；符号链接只删链接本身；普通用户还只能删自己可浏览目录里的东西（见 ACC-07） | `route:POST /api/fs/delete` | `test/fs-delete.test.js` |
 | FILE-12 | 行内按钮（@、下载、删除）一直显示不靠悬停，与悬停高亮一致；手机上点击区域放大到 44px | 手工 | `test/hover-latency.test.js` |
 | FILE-13 | 符号链接在名称后标 ↗ | `js-control:file-explorer.js:Symlink` | — |
-| FILE-14 | 上传按钮选多个文件上传到当前目录；也可以拖文件到列表上传（拖入的文件夹跳过并提示）；逐个上传，同名不覆盖，结果汇总提示 | `control:explorerUploadBtn` `control:explorerFileInput` `route:POST /api/fs/upload` | `test/fs-upload.test.js` |
+| FILE-14 | 上传按钮选多个文件上传到当前目录；也可以拖文件到列表上传（拖入的文件夹跳过并提示）；逐个上传，同名不覆盖，结果汇总提示（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:explorerUploadBtn` `control:explorerFileInput` `route:POST /api/fs/upload` | `test/fs-upload.test.js` |
 | FILE-15 | 新建文件夹：输入栏自动聚焦，Create 或回车创建，Cancel 或 Esc 收起；失败时保留输入栏以便改名 | `control:explorerNewFolderBtn` `control:explorerNewFolderInput` `control:explorerCreateFolderBtn` `control:explorerCancelFolderBtn` | — |
 | FILE-16 | 悬停某行时整行变为强调色蓝底白字 | 手工 | `test/hover-latency.test.js` |
 | FILE-17 | 操作结果都有提示：删除成功「Deleted <名字>」、新建成功「Created folder <名字>」、失败时原样显示服务器给的理由 | 手工 | — |
@@ -225,16 +225,16 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | FILE-23 | 「空目录」「只显示前 2000 项」这类说明行不跟随悬停变色，保持灰字不可点 | 手工 | — |
 | FILE-24 | 删除按钮的红色在浅色主题下换成更深的一档，避免在白底上发飘 | 手工 | — |
 | FILE-25 | 未启动会话、Start 覆盖层还盖着时，文件抽屉照样能打开并浮在覆盖层之上 | 手工 | `test/overlay-stacking.test.js` |
-| FILE-26 | 打开超过 10MB 的文件时新标签页显示「File too large」；下载没有大小上限且是流式发送，下大文件不卡别的标签 | `route:GET /api/fs/file/:token/:file` | `test/fs-browse.test.js` |
-| FILE-27 | 上传单个文件上限 50MB；同名文件一律不覆盖（409）；文件名带路径、无写权限分别被拒 | `route:POST /api/fs/upload` | `test/fs-upload.test.js` |
+| FILE-26 | 打开超过 10MB 的文件时新标签页显示「File too large」；下载没有大小上限且是流式发送，下大文件不卡别的标签（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:GET /api/fs/file/:token/:file` | `test/fs-browse.test.js` |
+| FILE-27 | 上传单个文件上限 50MB；同名文件一律不覆盖（409）；文件名带路径、无写权限分别被拒（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/fs/upload` | `test/fs-upload.test.js` |
 ## 分支面板
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| GIT-01 | 分支按钮打开或收起面板，列出当前标签工作目录下每个子项目的 git 分支；点面板外或 Esc 关闭 | `control:branchBtn` `key:git-branches.js:Escape` `route:GET /api/git/branches` `file:src/public/git-branches.js` `file:src/git-branches.js` | `test/git-branches.test.js` |
+| GIT-01 | 分支按钮打开或收起面板，列出当前标签工作目录下每个子项目的 git 分支；点面板外或 Esc 关闭（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:branchBtn` `key:git-branches.js:Escape` `route:GET /api/git/branches` `file:src/public/git-branches.js` `file:src/git-branches.js` | `test/git-branches.test.js` |
 | GIT-02 | 刷新按钮；「Check changes」查询未提交改动、领先、落后（查询中禁用） | `control:branchRefreshBtn` `control:branchStatusBtn` | `test/git-branches.test.js` `test/async-route-safety.test.js` |
 | GIT-03 | 同一分支的多个仓库用同一种颜色标出（最多 6 组），深浅主题各一套；状态徽章 ● N、↑N、↓N | 手工 | `test/git-branches.test.js` |
-| GIT-04 | 每行拉取按钮（悬停出现）执行 `git pull --ff-only`；进行中旋转，结果和失败原因显示在该行，成功后自动刷新；有未提交改动、无上游、需合并、超时都有明确原因；不弹凭据提示，错误里的凭据打码 | `route:POST /api/git/pull` | `test/git-branches.test.js` |
+| GIT-04 | 每行拉取按钮（悬停出现）执行 `git pull --ff-only`；进行中旋转，结果和失败原因显示在该行，成功后自动刷新；有未提交改动、无上游、需合并、超时都有明确原因；不弹凭据提示，错误里的凭据打码（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/git/pull` | `test/git-branches.test.js` |
 | GIT-05 | 面板底部统计仓库和分支数；空状态和错误提示；窄屏上面板对齐右侧不出屏 | 手工 | — |
 | GIT-06 | 面板顶部显示当前工程目录名（悬停看完整路径）；工作目录自身是仓库时那一行显示「(this directory)」 | 手工 | — |
 | GIT-07 | 游离 HEAD 显示「detached @ <短 sha>」，用琥珀色斜体，浅色主题另用更深的琥珀 | 手工 | `test/git-branches.test.js` |
@@ -245,7 +245,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GIT-12 | 分支列表最高 60vh、内部自己滚动，仓库再多面板也不会顶穿屏幕 | 手工 | — |
 | GIT-13 | 扫描上限：最多 50 个仓库（多出的写「+N not shown」）、最多看 2000 个子目录（没看到的写「N dirs not examined」）；一个都没扫到时有专门的说明文案 | `route:GET /api/git/branches` | `test/git-branches.test.js` |
 | GIT-14 | 拉取 60 秒超时后连同子进程按进程树杀掉，不留后台僵尸；状态查询每仓库 10 秒超时、最多 4 个并发；所有 git 操作在服务端排队执行 | `route:POST /api/git/pull` | `test/git-branches.test.js` `test/async-route-safety.test.js` |
-| GIT-15 | 对不是 git 仓库的目录点拉取，服务端先拒绝、根本不执行 git；仓库名必须是单段路径 | `route:POST /api/git/pull` | `test/git-branches.test.js` |
+| GIT-15 | 对不是 git 仓库的目录点拉取，服务端先拒绝、根本不执行 git；仓库名必须是单段路径（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/git/pull` | `test/git-branches.test.js` |
 ## 分屏
 
 | ID | 功能 | 入口 | 守卫 |
@@ -401,12 +401,12 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-04 | 异步路由出错返回 500，不会让服务崩溃带走所有终端 | 手工 | `test/async-route-safety.test.js` |
 | SRV-05 | 会话按每个一个文件保存（平台用户的会话存在 `<数据目录>/<uid>/sessions/`，按归属分别保存与恢复；还没有管理员时仍在数据目录根下），每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
 | SRV-06 | 同一数据目录已有别的实例在运行时拒绝启动；实例锁文件权限 0600，退出时删除 | `file:src/instance-lock.js` | `test/instance-lock.test.js` |
-| SRV-07 | 新建会话：名称、工作目录可选；`resumeId` 接续已有对话（只在自己的 Claude 目录里找；非法 UUID 400，已在别的标签 409，不存在 404）；新会话归创建者所有；要接续的对话正被其他用户的会话占用时同样 409，但不返回对方的会话 id，提示「其他用户正在使用这个对话」 | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
+| SRV-07 | 新建会话：名称、工作目录可选（不给时用自己的第一个可浏览目录；普通用户的工作目录必须在可浏览目录内，见 ACC-07）；`resumeId` 接续已有对话（只在自己的 Claude 目录里找；非法 UUID 400，已在别的标签 409，不存在 404）；新会话归创建者所有；要接续的对话正被其他用户的会话占用时同样 409，但不返回对方的会话 id，提示「其他用户正在使用这个对话」 | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
 | SRV-08 | 查看会话详情（只限自己的会话，别人的按不存在处理返回 404）、健康检查（会话数与连接数只算自己的） | `route:GET /api/sessions/:sessionId` `route:GET /api/health` | — |
 | SRV-09 | 删除会话（只能删自己的，别人的返回 404）：停止 Claude，通知连着这个会话的客户端（都是会话所有者自己的设备），删除上传图片目录和会话文件，不删 Claude 自己的对话记录 | `route:DELETE /api/sessions/:sessionId` | — |
 | SRV-10 | 计划文件服务：已登录的浏览器靠 Cookie 认证，URL 里的令牌段为 `-`；仍接受 URL 里带启动令牌的旧链接；以 text/plain 返回便于 Markdown 插件渲染；白名单为 `.claude/plans/` 与全局或会话计划目录中的 .md，按真实路径校验，上限 2MB | `route:GET /api/plan` `route:GET /api/plan/:token/:file` `route:GET /api/plan/:token/:session/:file` | `test/plan-file.test.js` `test/plan-dirs.test.js` |
 | SRV-11 | 文件服务的安全：.html/.svg 默认只显示源码，渲染需一次性票据（30 秒、用一次即失效）；渲染时放进无网络的沙箱；统一 nosniff、no-referrer；中文文件名 | `route:GET /api/fs/file/:token/:file` `route:POST /api/fs/ticket` `file:src/utils/inline-assets.js` | `test/fs-browse.test.js` `test/inline-assets.test.js` |
-| SRV-12 | 选择或设置工作目录、清除已选目录（旧接口） | `route:POST /api/set-working-dir` `route:POST /api/folders/select` `route:POST /api/close-session` | — |
+| SRV-12 | 选择或设置工作目录、清除已选目录（旧接口）（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/set-working-dir` `route:POST /api/folders/select` `route:POST /api/close-session` | — |
 | SRV-13 | 加入会话不再强制重绘，避免出现两个输入框 | 手工 | `test/pty-repaint.test.js` |
 | SRV-14 | 服务端入口与会话多路复用：Express + WebSocket 服务 | `file:src/server.js` | — |
 | SRV-15 | 会话文件损坏时改名留档而不是删除，同时跳过它继续恢复其他会话（在各用户自己的会话目录里同样如此） | 手工 | `test/session-store.test.js` |
@@ -418,11 +418,23 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-21 | 计划链接只在自己的会话范围内查找：指定会话时必须是自己的会话，不指定时只合并自己会话的工作目录；计划链接里的 `~/…` 会展开成家目录绝对路径；不在白名单、超过 2MB 或不是 .md 的一律 404（不泄露文件存不存在） | `route:GET /api/plan` | `test/plan-file.test.js` |
 | SRV-22 | 退出时除保存会话（各自写进所有者的目录）外，还会停掉所有正在跑的 Claude 进程并清理定时器 | 手工 | — |
 | SRV-23 | 数据目录默认在 `~/.cc-web/data`（`~/.cc-web` 按 0700 创建）；首次启动把旧布局的 `~/.claude-code-web` 一次性原子迁入，迁移失败则继续用原目录、绝不抛错；有平台用户后，每个用户的数据在其中的 `<uid>/` 子目录（会话、空间、历史保留量），用户与登录会话在 `platform/` | `file:src/utils/data-dir.js` | `test/data-dir.test.js` |
-| SRV-24 | 用户名 + 密码登录：成功后签发 HttpOnly、SameSite=Strict 的登录 Cookie，30 天有效、使用中自动续期（服务端续期时同时重发 Cookie），服务重启后仍然有效；经 https 访问（含 ngrok 或本机代理转发的 https）时 Cookie 带 Secure；密码错误、用户不存在、账号停用一律答「Invalid username or password」；同一地址每分钟最多 10 次、同一用户名每分钟最多 50 次（被地址限流挡下的请求不计入用户名），超出返回 429；经 ngrok 或本机反向代理访问时按 X-Forwarded-For 识别地址；`/api/auth/me` 返回当前用户 | `route:POST /api/auth/login` `route:GET /api/auth/me` `file:src/utils/password.js` `file:src/utils/cookies.js` | `test/auth-login.test.js` |
-| SRV-25 | 退出登录：服务端作废这个登录会话并清除 Cookie，同时关闭用这个登录打开的 WebSocket（其他标签页里的终端随之断开）| `route:POST /api/auth/logout` | `test/auth-login.test.js` |
+| SRV-24 | 用户名 + 密码登录：成功后签发 HttpOnly、SameSite=Strict 的登录 Cookie，30 天有效、使用中自动续期（服务端续期时同时重发 Cookie），服务重启后仍然有效；经 https 访问（含 ngrok 或本机代理转发的 https）时 Cookie 带 Secure；密码错误、用户不存在、账号停用一律答「Invalid username or password」；同一地址每分钟最多 10 次、同一用户名每分钟最多 50 次（被地址限流挡下的请求不计入用户名），超出返回 429；经 ngrok 或本机反向代理访问时按 X-Forwarded-For 识别地址；`/api/auth/me` 返回当前用户（含是否必须先改密码）；用临时密码登录后，在改掉密码之前除 `/api/auth/*` 外的请求一律 403、WebSocket 拒连（见 ACC-03） | `route:POST /api/auth/login` `route:GET /api/auth/me` `file:src/utils/password.js` `file:src/utils/cookies.js` | `test/auth-login.test.js` |
+| SRV-25 | 退出登录：服务端作废这个登录会话并清除 Cookie，同时关闭用这个登录打开的 WebSocket（其他标签页里的终端随之断开）；入口在菜单「账号」里的「退出登录」（见 ACC-05）| `route:POST /api/auth/logout` | `test/auth-login.test.js` |
 | SRV-26 | 首次创建管理员：还没有任何用户时，凭启动令牌设置第一个账号（用户名 2–32 位字母数字 `_ . -`，密码至少 8 位），它就是管理员并直接登录；已有用户后此接口返回 409；启动时控制台提示「用这个令牌创建管理员」 | `route:POST /api/auth/setup` | `test/auth-login.test.js` |
-| SRV-27 | 用户与登录会话的存储：`<数据目录>/platform/` 下每个用户、每个登录会话各一个文件（0600，原子写）；密码只存 scrypt 加盐哈希，登录会话只存 Cookie 值的 SHA-256；Cookie 名带端口（`ccw_sid_<端口>`），同机的 stable 和 dev 互不顶掉登录；带 Cookie 的跨站写请求和跨站 WebSocket 一律拒绝（403） | `file:src/utils/user-store.js` | `test/auth-login.test.js` |
+| SRV-27 | 用户与登录会话的存储：`<数据目录>/platform/` 下每个用户、每个登录会话各一个文件（0600，原子写）；密码只存 scrypt 加盐哈希，登录会话只存 Cookie 值的 SHA-256；Cookie 名带端口（`ccw_sid_<端口>`），同机的 stable 和 dev 互不顶掉登录；带 Cookie 的跨站写请求和跨站 WebSocket 一律拒绝（403）；邀请码在 `platform/invites/` 每个一个文件；用户目录有变化（`cc-web user` 在服务运行时改的）就重读，不用重启；改密码 / 重置 / 停用时记下 `sessionsValidAfter`，之前签发的登录一律失效，它们打开的 WebSocket 在 30 秒内（随自动保存）断开、停用用户的 Claude 停止 | `file:src/utils/user-store.js` | `test/auth-login.test.js` |
 | SRV-28 | 单用户数据交给第一个管理员：有管理员后（服务启动时，或第一个管理员刚建好时），数据目录根下原有的会话文件逐个 rename 进管理员的 `<uid>/sessions/`、`spaces.json` 一并移过去、`scrollback.json` 复制过去（原文件保留），内存里的会话与空间改归管理员；只移不删，移不动的留在原处、下次自动保存照样写进管理员目录；写 `migrated-to-admin.json` 标记，只做一次；关闭认证（`--disable-auth`）时不做 | 手工 | `test/multi-user-data.test.js` |
+## 账号与用户管理
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| ACC-01 | 菜单顶部显示「已登录：用户名（管理员 / 普通用户）」；登录用户的菜单里多「账号」，管理员再多「用户管理」；用令牌访问或关闭认证时都不显示 | `control:accountBtnMobile` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
+| ACC-02 | 用户管理（管理员）：列出所有用户（角色、停用、待改密码、可浏览目录、登录设备数、运行中会话数、最近使用）；新建用户时选角色，服务端生成一次性临时密码，只在这一次显示、可复制；设为管理员 / 普通用户、停用 / 启用、重置密码（新临时密码）、删除都带确认；非管理员调 `/api/admin/*` 一律 403 | `control:closeUsersBtn` `control:usersTabUsers` `control:usersNewName` `control:usersNewRole` `control:usersCreateBtn` `key:account.js:Escape` `route:GET /api/admin/users` `route:POST /api/admin/users` `route:PATCH /api/admin/users/:id` `route:POST /api/admin/users/:id/reset-password` `route:DELETE /api/admin/users/:id` `file:src/account-routes.js` | `test/account-admin.test.js` |
+| ACC-03 | 首次登录强制改密码：管理员新建或重置出来的临时密码登录后，弹出不能关闭的「请先修改密码」框（当前密码 + 新密码两次，可选退出登录）；改好之前服务端拒绝其他所有请求和 WebSocket | `route:POST /api/auth/password` | `test/account-admin.test.js` |
+| ACC-04 | 停用、删除、重置密码立即生效：吊销对方全部登录、断开对方的 WebSocket、停止对方正在运行的 Claude（会话本身保留）；删除账号只删账号，数据目录 `<uid>/` 留在磁盘上；不能停用、删除、降级、重置自己，也不能让系统里没有可用的管理员 | `route:DELETE /api/admin/users/:id` | `test/account-admin.test.js` |
+| ACC-05 | 账号（每个登录用户）：修改密码（当前密码 + 新密码两次；成功后其他设备退出，这台保持登录）；登录设备列表（浏览器 · 系统、地址、登录时间、最近使用，标出「本机」），可单独退出别的设备并断开它的终端；退出登录 | `control:closeAccountBtn` `control:accountCurrentPassword` `control:accountNewPassword` `control:accountNewPassword2` `control:accountChangePasswordBtn` `control:accountLogoutBtn` `route:GET /api/auth/devices` `route:DELETE /api/auth/devices/:id` | `test/account-admin.test.js` |
+| ACC-06 | 邀请码：管理员选注册后的角色和有效天数（默认 7 天，1–90）生成邀请链接 `/?invite=<码>`（生成后自动复制）；列表可复制、作废；对方打开链接看到「注册账号」，填用户名和两次密码后直接登录；每个码只能用一次，用户名被占用等失败时码不作废；过期的自动清掉；注册与登录同样限流 | `control:usersTabInvites` `control:invitesRole` `control:invitesDays` `control:invitesCreateBtn` `route:GET /api/admin/invites` `route:POST /api/admin/invites` `route:DELETE /api/admin/invites/:code` `route:POST /api/auth/register` | `test/account-admin.test.js` |
+| ACC-07 | 可浏览目录（rootDirs）：管理员不限；普通用户只能在自己的可浏览目录里浏览、建会话 / 空间、建文件夹、上传、删除、打开文件、拉取 git（按真实路径判断，符号链接跳不出去），越界一律 403「超出你可以访问的目录范围」；管理员没给设置时默认 `<数据目录>/<uid>/workspace`（第一次用到时创建）；管理员在用户管理里按行编辑（必须是存在的绝对路径目录）。这只是界面上的范围，不是安全边界：Claude 本身仍能访问整台机器（已接受，见升级计划第 3 节） | 手工 | `test/account-admin.test.js` |
+
 ## 命令行
 
 | ID | 功能 | 入口 | 守卫 |
@@ -439,6 +451,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLI-10 | Ctrl+C / SIGTERM 优雅退出：保存会话（各自写进所有者的目录）、撤下实例锁、关闭隧道 | 手工 | — |
 | CLI-11 | `--https` 只给一个证书参数时启动失败并说明原因；`--auth-file` 指向的文件读不了或为空时打印原因退出，不会悄悄改用随机令牌 | `cli:--https` `cli:--auth-file` | `test/instance-lock.test.js` |
 | CLI-12 | 版本查询的耐用性：`claude --version` 5 秒超时、npm 查询 8 秒超时且最多读 64KB、结果缓存 6 小时而失败不缓存；查不出来时显示未知而不是谎报已是最新 | `route:GET /api/version` | `test/version-info.test.js` |
+| CLI-13 | `cc-web user list|add|passwd|disable|enable|role` 管理平台用户（`--data-dir` 或 `CCW_DATA_DIR` 指定实例）；`add` 和 `passwd` 打印一次性临时密码、第一次登录必须改；服务运行中也能用，改动立即生效（见 SRV-27）；不能停用或降级最后一个可用的管理员 | `file:src/user-cli.js` | `test/account-admin.test.js` |
 ## 已知缺陷与未接入（只登记，未修；修不修由用户决定）
 
 | ID | 功能 | 入口 | 守卫 |

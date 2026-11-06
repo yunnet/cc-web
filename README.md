@@ -37,6 +37,39 @@ you out. The token keeps working as a fallback sign-in for the administrator.
 
 Use `--disable-auth` to turn it off (local development only).
 
+### Accounts
+
+Signed in, the menu shows who you are and an **账号** (account) panel: change your
+password (your other devices are signed out, this one stays), see the browsers
+signed in as you and sign any of them out, or sign out here.
+
+Administrators also get **用户管理** (user management):
+
+- **Create a user**: pick a role; the server makes a one-time password, shown once.
+  The user must replace it at first sign-in, and nothing else works until they do.
+- **Invite links**: `/?invite=<code>`, one use each, valid 1-90 days (default 7).
+  Whoever opens it picks their own username and password.
+- **Change role, disable / enable, reset password, delete**: disabling, deleting or
+  resetting ends that user's sign-ins, closes their terminals and stops their
+  running Claude at once. Deleting removes the account only; `<data dir>/<uid>/`
+  stays on disk. You cannot do these to yourself, and the last active admin stays.
+- **Browse directories**: admins browse anywhere. A regular user browses, creates
+  sessions and spaces, uploads, deletes and pulls only inside their directories —
+  by default `<data dir>/<uid>/workspace`, or whatever the admin lists. This is a
+  UI boundary, not a security one: Claude itself still runs as the server's OS user.
+
+From the command line, with the server stopped or running (changes apply at once;
+open terminals of a revoked login close within 30 seconds):
+
+```bash
+cc-web user list
+cc-web user add alice --admin        # prints a one-time password
+cc-web user passwd alice             # new one-time password, signs alice out everywhere
+cc-web user disable alice            # / enable
+cc-web user role alice user          # admin | user
+# --data-dir <dir> picks the instance (default: CCW_DATA_DIR, then ~/.cc-web/data)
+```
+
 ### Each user's own Claude, on the platform key
 
 Every user — the administrator included — runs Claude on a configuration

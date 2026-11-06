@@ -228,6 +228,7 @@
                 <h2><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 10h.01M16 10h.01M8 16c1.333-1 2.667-1 4 0 1.333 1 2.667 1 4 0"/></svg></span> Claude Code</h2>
                 <button class="close-menu-btn" id="closeMenuBtn">&times;</button>
             </div>
+            <div class="menu-user" id="menuUser" hidden></div>
             <div class="mobile-menu-content">
                 <button id="sessionsBtnMobile" class="mobile-menu-btn">Sessions</button>
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
@@ -235,6 +236,8 @@
                 <button id="clearBtnMobile" class="mobile-menu-btn">Clear Terminal</button>
                 <button id="skillsBtnMobile" class="mobile-menu-btn">Skills</button>
                 <button id="settingsBtnMobile" class="mobile-menu-btn">Settings</button>
+                <button id="accountBtnMobile" class="mobile-menu-btn" hidden>账号</button>
+                <button id="usersBtnMobile" class="mobile-menu-btn" hidden>用户管理</button>
             </div>
             <div class="mobile-menu-footer" id="menuVersion" title="version · port · build id (same build id = same code on both instances)">—</div>
         </div>
@@ -489,6 +492,78 @@
              are three questions about one thing. A plugin is the unit that gets
              installed — that is the unit `claude plugin` knows — and each row
              names the skills it brings. See src/public/skills.js. -->
+        <!-- Your account (account.js): password, signed-in devices, sign out. -->
+        <div class="session-modal account-modal" id="accountModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="accountTitle">账号</h2>
+                    <button class="close-btn" id="closeAccountBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <h3 class="account-section">修改密码</h3>
+                    <form class="account-form" id="accountPasswordForm" autocomplete="on">
+                        <input type="password" id="accountCurrentPassword" placeholder="当前密码" autocomplete="current-password">
+                        <input type="password" id="accountNewPassword" placeholder="新密码（至少 8 位）" autocomplete="new-password">
+                        <input type="password" id="accountNewPassword2" placeholder="再输一次新密码" autocomplete="new-password">
+                        <button class="btn btn-primary btn-small" id="accountChangePasswordBtn" type="submit">修改密码</button>
+                    </form>
+                    <p class="account-hint">改密码后，你在其他设备上的登录会退出，这台设备保持登录。</p>
+
+                    <h3 class="account-section">登录设备</h3>
+                    <div class="conv-list" id="accountDeviceList"></div>
+
+                    <div class="account-status" id="accountStatus" role="status"></div>
+                    <div class="account-footer">
+                        <button class="btn btn-secondary btn-small" id="accountLogoutBtn" type="button">退出登录</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User management (account.js), administrators only. -->
+        <div class="session-modal users-modal" id="usersModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>用户管理</h2>
+                    <button class="close-btn" id="closeUsersBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="skills-tabs" role="tablist">
+                        <button class="skills-tab active" id="usersTabUsers" type="button">用户</button>
+                        <button class="skills-tab" id="usersTabInvites" type="button">邀请码</button>
+                    </div>
+
+                    <div class="users-pane" id="usersPaneUsers">
+                        <form class="users-add" id="usersCreateForm">
+                            <input type="text" id="usersNewName" placeholder="新用户名" spellcheck="false" autocomplete="off">
+                            <select id="usersNewRole">
+                                <option value="user">普通用户</option>
+                                <option value="admin">管理员</option>
+                            </select>
+                            <button class="btn btn-primary btn-small" id="usersCreateBtn" type="submit">新建用户</button>
+                        </form>
+                        <div class="users-secret" id="usersSecret" hidden></div>
+                        <div class="conv-list users-list" id="usersList"></div>
+                    </div>
+
+                    <div class="users-pane" id="usersPaneInvites" hidden>
+                        <form class="users-add" id="invitesCreateForm">
+                            <select id="invitesRole">
+                                <option value="user">普通用户</option>
+                                <option value="admin">管理员</option>
+                            </select>
+                            <label class="users-days">有效
+                                <input type="number" id="invitesDays" min="1" max="90" value="7"> 天</label>
+                            <button class="btn btn-primary btn-small" id="invitesCreateBtn" type="submit">生成邀请链接</button>
+                        </form>
+                        <div class="conv-list users-list" id="invitesList"></div>
+                    </div>
+
+                    <div class="account-status" id="usersStatus" role="status"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="session-modal" id="skillsModal">
             <div class="modal-content">
                 <div class="modal-header">
@@ -824,6 +899,7 @@
     <script src="conversations.js"></script>
     <script src="skills.js"></script>
     <script src="git-branches.js"></script>
+    <script src="account.js"></script>
     <script src="icons.js"></script>
     <!-- Pure geometry for the draggable mobile buttons; app.js calls into it,
          so it has to be defined first. -->

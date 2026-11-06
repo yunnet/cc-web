@@ -12,6 +12,7 @@ function useTempDataDir(server) {
   server.spaceStore.storageDir = dir;
   server.userStore.users = null;
   server.userStore.loginSessions = null;
+  server.userStore.invites = null;
   return dir;
 }
 

@@ -6,6 +6,9 @@
 // does not sign anyone out. The shared startup token still works: entered once
 // it is exchanged for the same cookie (as the first admin), and while no user
 // exists it is what authorises creating that admin.
+//
+// Two more screens since M4: signing up with an invite link (/?invite=<code>),
+// and the password change a one-time password forces before anything else.
 class AuthManager {
     constructor() {
         // Always run consumeUrlToken first so a ?token=… in the URL is stripped
@@ -18,6 +21,23 @@ class AuthManager {
         this.authRequired = false;
         this.setupRequired = false;
         this.user = null;
+        this.invite = this.consumeUrlInvite();
+    }
+
+    // /?invite=<code>: kept for the sign-up screen, dropped from the address
+    // bar so a reload after signing up does not offer it again.
+    consumeUrlInvite() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('invite');
+            if (!code) return null;
+            params.delete('invite');
+            const qs = params.toString();
+            window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+            return code;
+        } catch (_) {
+            return null;
+        }
     }
 
     // If the page was opened with ?token=… (a convenience/bookmark form), adopt
@@ -124,9 +144,10 @@ class AuthManager {
         return result;
     }
 
-    // mode: 'login' (username + password), 'token' (shared startup token) or
-    // 'setup' (create the first administrator). With no argument it picks
-    // setup while no user exists, else login.
+    // mode: 'login' (username + password), 'token' (shared startup token),
+    // 'setup' (create the first administrator), 'register' (sign up with an
+    // invite) or 'change' (the forced password change). With no argument it
+    // picks setup while no user exists, else login.
     showLoginPrompt(mode) {
         if (!mode) mode = this.setupRequired ? (this.token ? 'setup' : 'token') : 'login';
         console.log('[Auth] Showing login prompt:', mode);
@@ -203,6 +224,24 @@ class AuthManager {
                     ? '<p style="color: var(--text-secondary, #8b949e); font-size: 12px; margin: 0;">The access token is printed when the server starts, or read from <code style="background: var(--bg-primary, #0d1117); padding: 2px 4px; border-radius: 3px;">--auth-file</code>.</p>'
                     : `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">Sign in with username and password</button>`
             },
+            register: {
+                heading: '注册账号',
+                intro: '你收到了一个邀请。设置用户名和密码，注册后直接登录。',
+                fields: field('auth-username', '用户名', 'text', '2–32 位字母、数字或 _ . -', 'username')
+                    + field('auth-password', '密码', 'password', '至少 8 位', 'new-password')
+                    + field('auth-password2', '再输一次密码', 'password', '再输一次密码', 'new-password'),
+                button: '注册并登录',
+                footer: `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">已有账号？直接登录</button>`
+            },
+            change: {
+                heading: '请先修改密码',
+                intro: '你现在用的是管理员给的临时密码。设置一个只有你知道的新密码后才能继续使用。',
+                fields: field('auth-current', '临时密码（当前密码）', 'password', '当前密码', 'current-password')
+                    + field('auth-password', '新密码', 'password', '至少 8 位', 'new-password')
+                    + field('auth-password2', '再输一次新密码', 'password', '再输一次新密码', 'new-password'),
+                button: '修改密码',
+                footer: `<button type="button" id="auth-logout" style="${linkStyle}">退出登录</button>`
+            },
             setup: {
                 heading: 'Create administrator',
                 intro: 'Choose the username and password for the first account. It becomes the administrator.',
@@ -261,6 +300,8 @@ class AuthManager {
         if (switcher) {
             switcher.addEventListener('click', () => this.showLoginPrompt(switcher.dataset.mode));
         }
+        const logoutLink = document.getElementById('auth-logout');
+        if (logoutLink) logoutLink.addEventListener('click', () => this.logout());
 
         const showError = (message) => {
             errorDiv.textContent = message;
@@ -300,8 +341,33 @@ class AuthManager {
                 return done();
             }
 
+            if (mode === 'change') {
+                const current = value('auth-current');
+                const next = value('auth-password');
+                if (!current || !next) return showError('请填写当前密码和新密码');
+                if (next !== value('auth-password2')) return showError('两次输入的新密码不一致');
+                setBusy(true, '正在修改…');
+                const result = await this.postJson('/api/auth/password', { current, next });
+                if (!result.ok) {
+                    setBusy(false, screen.button);
+                    return showError(AuthManager.zh(result.error));
+                }
+                return done();
+            }
+
             const username = value('auth-username').trim();
             const password = value('auth-password');
+            if (mode === 'register') {
+                if (!username || !password) return showError('请填写用户名和密码');
+                if (password !== value('auth-password2')) return showError('两次输入的密码不一致');
+                setBusy(true, '正在注册…');
+                const result = await this.postJson('/api/auth/register', { invite: this.invite, username, password });
+                if (!result.ok) {
+                    setBusy(false, screen.button);
+                    return showError(AuthManager.zh(result.error));
+                }
+                return done();
+            }
             if (!username || !password) return showError('Please enter a username and password');
 
             if (mode === 'setup') {
@@ -331,6 +397,29 @@ class AuthManager {
 
         // Focus the first input
         if (inputs[0]) inputs[0].focus();
+    }
+
+    // The server's account errors, in the words the new (Chinese) screens use.
+    // Anything not listed is shown as sent.
+    static zh(message) {
+        const known = [
+            [/^Current password is incorrect/, '当前密码不对'],
+            [/^The new password must be different/, '新密码不能和当前密码相同'],
+            [/^Password must be at least (\d+)/, (m) => `密码至少 ${m[1]} 位`],
+            [/^Password must be at most (\d+)/, (m) => `密码最多 ${m[1]} 位`],
+            [/^Username must be/, '用户名为 2–32 位字母、数字或 _ . -，以字母或数字开头'],
+            [/^Username already exists/, '这个用户名已经有人用了'],
+            [/^Invite code is invalid or has expired/, '邀请链接无效或已过期，请向管理员要一个新的'],
+            [/^Too many attempts/, '尝试次数太多，请一分钟后再试'],
+            [/^Could not reach the server/, '连不上服务器'],
+            [/^Unauthorized/, '登录已失效，请刷新页面重新登录'],
+        ];
+        const text = String(message || '');
+        for (const [re, out] of known) {
+            const m = text.match(re);
+            if (m) return typeof out === 'function' ? out(m) : out;
+        }
+        return text;
     }
 
     // Only the shared token travels in a header. A signed-in browser sends its
@@ -411,6 +500,12 @@ class AuthManager {
             // is no longer needed.
             this.token = null;
             sessionStorage.removeItem('cc-web-token');
+            // A one-time password: the server refuses everything else until
+            // it is changed, so ask now rather than show a page that fails.
+            if (this.user && this.user.mustChangePassword) {
+                this.showLoginPrompt('change');
+                return false;
+            }
             console.log('[Auth] Signed in as', this.user && this.user.username);
             return true;
         }
@@ -433,7 +528,7 @@ class AuthManager {
             return true;
         }
 
-        this.showLoginPrompt();
+        this.showLoginPrompt(this.invite && !this.setupRequired ? 'register' : undefined);
         return false;
     }
 }

@@ -7,6 +7,7 @@ const { hashPassword, verifyPassword } = require('./password');
 //
 //   platform/users/<uid>.json              one user
 //   platform/login-sessions/<sha256>.json  one signed-in browser
+//   platform/invites/<code>.json           one unused invite code
 //
 // One file per entity, for the reason session-store.js gives: no shared
 // document for two writers to race over, and deletion is always explicit.
@@ -15,6 +16,12 @@ const { hashPassword, verifyPassword } = require('./password');
 // disk are not usable credentials. Everything is cached in memory after the
 // first read; the directory is resolved through a function on every access so a
 // test that redirects the server's data dir moves this store with it.
+//
+// `cc-web user ...` edits these files while the server runs. The users directory
+// is re-read whenever its mtime moves (an atomic write renames into it), and a
+// user's `sessionsValidAfter` voids every login issued before it -- so a reset
+// password or a disabled account takes effect without a restart, even though
+// the server holds its login sessions in memory.
 //
 // Synchronous on purpose: the files are tiny and the lookup runs inside the
 // auth check of every request, where an await would only add ordering bugs.
@@ -27,12 +34,28 @@ const TOUCH_EVERY_MS = 10 * 60 * 1000;
 const USERNAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,31}$/;
 const UID = /^u-[0-9a-f]{8}$/;
 const SID_HASH = /^[0-9a-f]{64}$/;
+const INVITE = /^[A-Za-z0-9_-]{12}$/;
+const INVITE_MAX_DAYS = 90;
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 256;
 
 // Verified against when the username does not exist, so a miss costs the same
 // scrypt as a hit and response time does not reveal which usernames exist.
 let dummyHash = null;
+
+// Readable one-time passwords: no 0/O/1/l/I to misread when passing one on.
+const TEMP_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function tempPassword(length = 12) {
+  let out = '';
+  while (out.length < length) {
+    for (const b of crypto.randomBytes(length)) {
+      // Rejection sampling keeps every character equally likely.
+      if (b < 256 - (256 % TEMP_ALPHABET.length) && out.length < length) out += TEMP_ALPHABET[b % TEMP_ALPHABET.length];
+    }
+  }
+  return out;
+}
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -75,14 +98,30 @@ class UserStore {
     this.dirFn = dirFn;
     this.users = null;        // uid → user record (with passwordHash)
     this.loginSessions = null; // sha256(sid) → login session record
+    this.usersMtime = null;    // users dir mtime at the last read
+    this.invites = null;       // code → invite record
   }
 
   get dir() { return this.dirFn(); }
   get usersDir() { return path.join(this.dir, 'users'); }
   get sessionsDir() { return path.join(this.dir, 'login-sessions'); }
+  get invitesDir() { return path.join(this.dir, 'invites'); }
 
   static publicUser(user) {
-    return user ? { id: user.id, username: user.username, role: user.role } : null;
+    return user
+      ? { id: user.id, username: user.username, role: user.role, mustChangePassword: !!user.mustChangePassword }
+      : null;
+  }
+
+  // What the admin page shows: everything but the hash.
+  static adminUser(user) {
+    if (!user) return null;
+    const { passwordHash, ...rest } = user;
+    return { ...rest, rootDirs: Array.isArray(user.rootDirs) ? user.rootDirs : [], disabled: !!user.disabled };
+  }
+
+  static tempPassword() {
+    return tempPassword();
   }
 
   static validateUsername(username) {
@@ -100,8 +139,14 @@ class UserStore {
     return null;
   }
 
+  usersDirMtime() {
+    try { return fs.statSync(this.usersDir).mtimeMs; } catch (_) { return 0; }
+  }
+
   loadUsers() {
-    if (this.users) return this.users;
+    const mtime = this.usersDirMtime();
+    if (this.users && mtime === this.usersMtime) return this.users;
+    this.usersMtime = mtime;
     this.users = new Map();
     for (const u of readJsonDir(this.usersDir, UID)) {
       if (u && UID.test(String(u.id)) && typeof u.username === 'string') this.users.set(u.id, u);
@@ -139,7 +184,7 @@ class UserStore {
 
   // onlyIfNoUsers: the first-admin path. Checked again after the hash, since
   // two setups for DIFFERENT names would otherwise both pass the name check.
-  async createUser({ username, password, role = 'user', onlyIfNoUsers = false }) {
+  async createUser({ username, password, role = 'user', onlyIfNoUsers = false, mustChangePassword = false }) {
     if (onlyIfNoUsers && this.hasUsers()) {
       throw Object.assign(new Error('An administrator already exists'), { status: 409 });
     }
@@ -160,6 +205,7 @@ class UserStore {
       rootDirs: [],
       claudeConfigDir: null,
       disabled: false,
+      mustChangePassword: !!mustChangePassword,
       createdAt: new Date().toISOString(),
     };
     // The scrypt above yields, so re-check: two setups racing must not both win.
@@ -169,9 +215,49 @@ class UserStore {
     if (this.findByUsername(username)) {
       throw Object.assign(new Error('Username already exists'), { status: 409 });
     }
-    writeJsonAtomic(path.join(this.usersDir, `${id}.json`), user);
-    this.loadUsers().set(id, user);
+    this.writeUser(user);
     return user;
+  }
+
+  writeUser(user) {
+    writeJsonAtomic(path.join(this.usersDir, `${user.id}.json`), user);
+    this.loadUsers().set(user.id, user);
+    return user;
+  }
+
+  // Role, disabled, rootDirs -- whatever the caller already validated.
+  // Disabling voids the user's logins (see sessionsValidAfter).
+  updateUser(id, patch) {
+    const user = this.getUser(id);
+    if (!user) return null;
+    const next = { ...user, ...patch };
+    if (patch.disabled === true && !user.disabled) next.sessionsValidAfter = new Date().toISOString();
+    return this.writeUser(next);
+  }
+
+  // A new password. `revokeAll` (an admin reset, the CLI) voids every login of
+  // this user; otherwise (the user changing their own) only those other than
+  // `keepLoginId` are removed and the browser that asked stays signed in.
+  async setPassword(id, password, { mustChangePassword = false, revokeAll = false, keepLoginId = null } = {}) {
+    const pwError = UserStore.validatePassword(password);
+    if (pwError) throw Object.assign(new Error(pwError), { status: 400 });
+    if (!this.getUser(id)) throw Object.assign(new Error('No such user'), { status: 404 });
+    const passwordHash = await hashPassword(password);
+    // Re-read after the hash: the record may have changed while it ran.
+    const current = this.getUser(id);
+    if (!current) throw Object.assign(new Error('No such user'), { status: 404 });
+    const next = { ...current, passwordHash, mustChangePassword: !!mustChangePassword };
+    if (revokeAll) next.sessionsValidAfter = new Date().toISOString();
+    this.writeUser(next);
+    return this.revokeUserSessions(id, { except: revokeAll ? null : keepLoginId });
+  }
+
+  deleteUser(id) {
+    if (!this.getUser(id)) return false;
+    this.revokeUserSessions(id);
+    try { fs.unlinkSync(path.join(this.usersDir, `${id}.json`)); } catch (_) { /* already gone */ }
+    this.loadUsers().delete(id);
+    return true;
   }
 
   // The user on a correct username + password, else null. Disabled users fail
@@ -184,7 +270,10 @@ class UserStore {
       return null;
     }
     const ok = await verifyPassword(String(password || ''), user.passwordHash);
-    return ok && !user.disabled ? user : null;
+    if (!ok) return null;
+    // The hash took a while; answer from the record as it is now.
+    const current = this.getUser(user.id);
+    return current && !current.disabled ? current : null;
   }
 
   loadLoginSessions() {
@@ -250,6 +339,12 @@ class UserStore {
     }
     const user = this.getUser(record.userId);
     if (!user || user.disabled) return null;
+    // Issued before an admin reset, a disable, or the CLI: void.
+    if (user.sessionsValidAfter && record.createdAt < user.sessionsValidAfter) {
+      sessions.delete(hash);
+      this.removeSessionFile(hash);
+      return null;
+    }
     let refreshed = false;
     if (now - Date.parse(record.lastSeenAt) > TOUCH_EVERY_MS) {
       refreshed = true;
@@ -262,6 +357,117 @@ class UserStore {
       }
     }
     return { session: record, user, refreshed };
+  }
+
+  // This user's live logins, most recently used first. `id` is the hash -- not
+  // usable as a cookie, so it is safe to hand to the browser as a handle.
+  listLoginSessions(userId) {
+    const user = this.getUser(userId);
+    const now = Date.now();
+    return [...this.loadLoginSessions().values()]
+      .filter((s) => s.userId === userId && Date.parse(s.expiresAt) > now)
+      .filter((s) => !(user && user.sessionsValidAfter && s.createdAt < user.sessionsValidAfter))
+      .sort((a, b) => String(b.lastSeenAt).localeCompare(String(a.lastSeenAt)));
+  }
+
+  // Is the login with this id (the hash) still good? Same rules as
+  // getLoginSession, without sliding the expiry.
+  isLoginLive(hash) {
+    const record = this.loadLoginSessions().get(hash);
+    if (!record || Date.parse(record.expiresAt) <= Date.now()) return false;
+    const user = this.getUser(record.userId);
+    if (!user || user.disabled) return false;
+    return !(user.sessionsValidAfter && record.createdAt < user.sessionsValidAfter);
+  }
+
+  // Removes this user's logins (all, or all but `except`); returns their ids.
+  revokeUserSessions(userId, { except = null } = {}) {
+    const removed = [];
+    for (const [hash, record] of this.loadLoginSessions()) {
+      if (record.userId !== userId || hash === except) continue;
+      this.loginSessions.delete(hash);
+      this.removeSessionFile(hash);
+      removed.push(hash);
+    }
+    return removed;
+  }
+
+  // One login by its id (the hash), only if it belongs to `userId`.
+  deleteLoginSessionById(userId, hash) {
+    const record = SID_HASH.test(String(hash || '')) ? this.loadLoginSessions().get(hash) : null;
+    if (!record || record.userId !== userId) return false;
+    this.loginSessions.delete(hash);
+    this.removeSessionFile(hash);
+    return true;
+  }
+
+  // --- Invite codes ---------------------------------------------------------
+  // One use each, then gone. Expired ones are dropped whenever the list is read.
+
+  loadInvites() {
+    if (this.invites) return this.invites;
+    this.invites = new Map();
+    for (const inv of readJsonDir(this.invitesDir, INVITE)) {
+      if (inv && INVITE.test(String(inv.code))) this.invites.set(inv.code, inv);
+    }
+    return this.invites;
+  }
+
+  removeInviteFile(code) {
+    try { fs.unlinkSync(path.join(this.invitesDir, `${code}.json`)); } catch (_) { /* already gone */ }
+  }
+
+  listInvites(now = Date.now()) {
+    const out = [];
+    for (const [code, inv] of this.loadInvites()) {
+      if (Date.parse(inv.expiresAt) <= now) {
+        this.invites.delete(code);
+        this.removeInviteFile(code);
+        continue;
+      }
+      out.push(inv);
+    }
+    return out.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+
+  createInvite({ role = 'user', days = 7, createdBy = null } = {}) {
+    const d = Math.min(INVITE_MAX_DAYS, Math.max(1, Math.floor(Number(days)) || 7));
+    let code;
+    do { code = crypto.randomBytes(9).toString('base64url'); } while (this.loadInvites().has(code));
+    const now = Date.now();
+    const invite = {
+      code,
+      role: role === 'admin' ? 'admin' : 'user',
+      createdBy,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + d * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    writeJsonAtomic(path.join(this.invitesDir, `${code}.json`), invite);
+    this.loadInvites().set(code, invite);
+    return invite;
+  }
+
+  deleteInvite(code) {
+    if (!INVITE.test(String(code || ''))) return false;
+    const existed = this.loadInvites().delete(code);
+    this.removeInviteFile(code);
+    return existed;
+  }
+
+  // Sign up with an invite: the code is taken BEFORE the (slow) account
+  // creation so two sign-ups cannot share it, and put back if creation fails.
+  async registerWithInvite(code, { username, password }) {
+    const invite = INVITE.test(String(code || '')) ? this.listInvites().find((i) => i.code === code) : null;
+    if (!invite) throw Object.assign(new Error('Invite code is invalid or has expired'), { status: 400 });
+    this.invites.delete(code);
+    this.removeInviteFile(code);
+    try {
+      return await this.createUser({ username, password, role: invite.role });
+    } catch (error) {
+      writeJsonAtomic(path.join(this.invitesDir, `${code}.json`), invite);
+      this.loadInvites().set(code, invite);
+      throw error;
+    }
   }
 
   // Returns the deleted session's id (the hash), or null.

@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+// `cc-web user …` manages platform accounts and never starts a server; it is
+// handled before the server's own options are parsed (src/user-cli.js).
+if (process.argv[2] === 'user') {
+  require('../src/user-cli').main(process.argv.slice(3)).then((code) => { process.exitCode = code; });
+  return;
+}
+
 const { Command } = require('commander');
 const fs = require('fs');
 const path = require('path');

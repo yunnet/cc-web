@@ -87,8 +87,10 @@ describe('feature surface scanner', function () {
     // Counted by hand with grep when the scanner was written (2026-09-22).
     // A rule that silently stops matching shows up here as a number dropping.
     const count = (kind) => surfaces().filter(s => s.kind === kind).length;
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server.js'), 'utf8');
-    const grepRoutes = (src.match(/this\.app\.(get|post|put|patch|delete)\('/g) || []).length;
+    // Routes live in server.js and, since M4, in account-routes.js.
+    const grepRoutes = ['server.js', 'account-routes.js']
+      .map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8'))
+      .reduce((n, src) => n + (src.match(/\bapp\.(get|post|put|patch|delete)\('/g) || []).length, 0);
     assert.strictEqual(count('route'), grepRoutes);
     const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'index.html'), 'utf8');
     assert.strictEqual(count('control'), (html.match(/<(button|input|select|textarea)[^>]* id="[^"]+"/g) || []).length);

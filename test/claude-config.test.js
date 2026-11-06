@@ -234,6 +234,7 @@ describe('per-user Claude directory on the server (M3)', function () {
     server.baseFolder = path.dirname(work);
     alice = await signIn(server, { username: 'alice', role: 'admin' });
     bob = await signIn(server, { username: 'bob', role: 'user' });
+    server.userStore.updateUser(bob.user.id, { rootDirs: [work] });
     await new Promise((resolve) => {
       listener = http.createServer(server.app).listen(0, '127.0.0.1', () => {
         port = listener.address().port;

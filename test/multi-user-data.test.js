@@ -25,6 +25,8 @@ describe('per-user data (M2)', function () {
     work = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-work-'));
     alice = await signIn(server, { username: 'alice', role: 'admin' });
     bob = await signIn(server, { username: 'bob', role: 'user' });
+    // A regular user browses only their own directories (M4); this one works here.
+    server.userStore.updateUser(bob.user.id, { rootDirs: [work] });
     await new Promise((resolve) => {
       listener = http.createServer(server.app).listen(0, '127.0.0.1', () => {
         port = listener.address().port;
