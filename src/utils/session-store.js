@@ -139,6 +139,9 @@ class SessionStore {
             resumedConversation: !!session.resumedConversation,
             // The name was typed by a person, so it is passed to `claude --name`.
             nameIsCustom: !!session.nameIsCustom,
+            // The last statusLine snapshot (context use, cost), so the tab's
+            // context ring has a value again after a restart.
+            liveUsage: session.liveUsage || undefined,
             // Trimmed by BYTES, not by chunk count. A chunk is whatever one
             // read off the pty returned and is mostly Claude's redraw escapes —
             // measured on a live session, 500 chunks were 50 KB and replayed

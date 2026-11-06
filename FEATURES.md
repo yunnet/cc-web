@@ -388,10 +388,26 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-14 | 注入 `tui: default` 会压过该用户自己 Claude 设置里的 fullscreen，并让 Claude 不再反复询问是否切换渲染器 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` |
 | CLA-18 | 网页权限卡片（ccweb-companion mod 配套）：mod 把待执行的 Bash 命令 POST 到 hook 端点并挂起等待；网页弹出「Claude 想执行一条命令」卡片，允许/拒绝经 answer 端点回传（只接受会话所有者的应答，别人的返回 404），超时 120 秒自动放行（回退到终端流程）；端口经环境变量告知 mod | `route:POST /api/hooks/:sessionId/answer` `env:CCWEB_HOOK_PORT` `ws-client:app.js:hook_event` | `test/permission-card.test.js` |
 | CLA-19 | 每个平台用户（第一个管理员也一样）有自己的 Claude：配置目录 `<数据目录>/<uid>/claude` 以 `CLAUDE_CONFIG_DIR` 交给 Claude，登录、设置、对话记录、技能、插件、主题都在里面，互不相通；第一次为这个用户启动 Claude 前预置 `.claude.json`（已完成引导、主题，有平台 key 时记下已批准这个 key），只补缺的、不覆盖；还没有管理员（或关闭认证）时仍用 `~/.claude`，什么都不注入 | `env:CLAUDE_CONFIG_DIR` `file:src/utils/claude-config.js` | `test/claude-config.test.js` |
-| CLA-20 | 平台 key：读 `CCW_ANTHROPIC_API_KEY` 环境变量，没有就读 `<数据目录>/platform/anthropic-key` 第一行，每次启动 Claude 时现读（改了文件下次启动就生效，不用重启 cc-web）；注入给每个有自己 Claude 目录的用户（含管理员，用户 2026-11-05「管理员也用平台key」）；服务进程继承来的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 对这些用户一律清掉；没配 key 时不注入，用户在终端里自己 `/login` | `env:ANTHROPIC_API_KEY` | `test/claude-config.test.js` |
+| CLA-20 | 平台 key：读 `CCW_ANTHROPIC_API_KEY` 环境变量，没有就读 `<数据目录>/platform/anthropic-key` 第一行，每次启动 Claude 时现读（改了文件下次启动就生效，不用重启 cc-web）；注入给每个有自己 Claude 目录的用户（含管理员，用户 2026-11-05「管理员也用平台key」）；服务进程继承来的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 对这些用户一律清掉；没配 key 时不注入，用户在终端里自己 `/login`；配置了平台订阅令牌时改用令牌、不再注入 key（见 CLA-21） | `env:ANTHROPIC_API_KEY` | `test/claude-config.test.js` |
+| CLA-21 | 所有平台用户共用同一个订阅账号（用户 2026-11-06：「不把个人订阅登录分给平台用户, 这个地方改一下，当前所有人使用同一个订阅用户。」）：管理员用 `claude setup-token` 生成长期令牌，写进 `<数据目录>/platform/claude-oauth-token` 第一行（或环境变量 `CCW_CLAUDE_OAUTH_TOKEN`），每次启动 Claude 时现读，以 `CLAUDE_CODE_OAUTH_TOKEN` 注入给每个有自己 Claude 目录的用户（含管理员），不用 `/login`、额度算在这个订阅上；令牌和平台 key 同时配置时只用令牌（两个都给 Claude 会优先用 key、改按 API 计费）；每人的 Claude 目录、对话记录、技能仍各自独立；令牌和 key 一样，用户在自己终端里能看到 | `env:CLAUDE_CODE_OAUTH_TOKEN` | `test/claude-config.test.js` |
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`，平台用户的写入各自 Claude 目录的 `themes/`（第一次为这个用户启动 Claude 时写，原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
+## 上下文与用量
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| CTX-01 | 标签名前的小圆环显示 Claude 上下文窗口的占用：低于 60% 绿、60–85% 琥珀、85% 及以上红；悬停显示占用百分比、已用与窗口 Token、本次运行 Claude 的花费（Claude 自己的计数，每次启动或恢复从 0 算起；标注「API 折算」）、模型、5 小时与 7 天额度；还没有数据时不显示；刷新页面、重开标签或重启服务后立即恢复上次的值；分屏窗格里的会话同样更新 | `file:src/public/context-ring.js` | `test/context-ring.test.js` `test/statusline.test.js` |
+| CTX-02 | Claude 的 statusLine 由 cc-web 注入的中继接管，每次刷新（启动时与每轮结束时）把快照回传给服务器，数值变了才推给浏览器；用户自己配置的 statusLine（项目 `settings.local.json`、项目 `settings.json`、用户 Claude 目录的 `settings.json`，取最具体的那个）照常运行，输出原样显示在终端底部，`padding` 保留 | `bin:cc-statusline.js` `env:CCWEB_USER_STATUSLINE` | `test/statusline.test.js` `test/claude-bridge.test.js` |
+| CTX-04 | 「上下文与用量」面板：点标签上的圆环或标签右键菜单「上下文与用量」打开「本标签」页（菜单里的「用量」打开「总览」页，两页可切换，「本标签」是当前标签）；读这个标签当前对话的记录（`/clear` 后跟到新对话），显示请求数、总 Token（悬停看输入/缓存读/缓存写/输出）、缓存命中率、估算花费（标注「API 折算」，模型没有价格的请求不计入并注明）、时长、子 Agent 个数与用量；还没有对话记录时说明原因；可刷新，点遮罩或关闭按钮关闭 | `control:usageBtnMobile` `control:closeUsageBtn` `control:usageRefreshBtn` `control:usageDoneBtn` `control:usageTabSession` `route:GET /api/sessions/:sessionId/usage` `file:src/public/usage-panel.js` | `test/usage-panel.test.js` `test/claude-usage.test.js` |
+| CTX-05 | 面板里的「当前上下文」条：最近一次请求的上下文按缓存读/缓存写/新输入分色，知道窗口大小时按窗口比例画并显示剩余与百分比；「每个请求的上下文」趋势图：每个请求一根柱，「总量」按来源堆叠、「增量」显示比上一个请求涨了或缩了多少（缩为红色向下）；压缩处画红色虚线和 ✂，悬停显示自动或手动与压缩前大小；悬停柱子看该请求的时间、各部分 Token、输出与模型；超过 2000 个请求只画最近的并注明；打开或刷新时滚到最新一端，切换总量与增量时保持阅读位置 | `file:src/public/usage-panel.js` | `test/usage-panel.test.js` |
+| CTX-06 | 面板里的排行：工具、Bash 程序（跳过 `cd`、环境变量与 sudo，带空格的带引号路径也认得）、读改写过的文件（显示末两级路径，悬停看全路径与读/改/写次数）、技能与斜杠命令，各取前 15 | `file:src/public/usage-panel.js` | `test/claude-usage.test.js` `test/usage-panel.test.js` |
+| CTX-07 | 读对话记录的方式：同一个响应拆成多条记录时按消息 id 只算一次；只解析可能有用的行，几十 MB 的记录也只要零点几秒（41MB 实测约 0.2 秒）；记录只会增长，之后只读新增部分（实测约 1 毫秒），被替换或变短时从头读；子 Agent 记录（`<对话>/subagents/`）单独汇总；平台用户读自己的 Claude 目录；历史对话也可按 `GET /api/claude-sessions/:id/usage?dir=` 读取，目录按浏览范围校验 | `route:GET /api/claude-sessions/:conversationId/usage` `file:src/utils/claude-usage.js` | `test/claude-usage.test.js` |
+| CTX-08 | 「总览」页：当前用户自己 Claude 目录下的全部对话（平台用户互不可见），可选 7 天 / 30 天 / 全部；对话数、请求、Token、缓存命中、估算花费（API 折算）；每日用量柱状图（7 天按天、30 天与全部为最近 30 天，悬停看 Token、请求数与花费），按请求发生的那天（浏览器本地日期）计，不按文件修改时间；最近 8 周的热力图（按周一到周日排，按活跃日四分位分四档，悬停看当天用量）；这些对话累计的工具、Bash 程序、技能与斜杠命令排行 | `control:usageTabOverview` `route:GET /api/usage/overview` | `test/usage-overview.test.js` |
+| CTX-09 | 「总览」里的对话列表：标题（自己起的名字优先，其次 Claude 的标题，再次第一句提问）、目录、多久以前、Token、花费；可按最近 / Token / 花费排序，搜索框即输即筛（标题或目录），刷新与轮询时保留搜索和滚动位置；已在标签中打开的标「已打开」，点击切换过去；没打开的点击在新标签中继续这段对话（与 Sessions 面板同一方式）；超过 300 个只列前 300 并注明 | `file:src/public/usage-panel.js` | `test/usage-overview.test.js` |
+| CTX-10 | 第一次扫描很大的 Claude 目录时先返回已读完的部分并显示「正在读取对话记录（已读 / 总数）」，每 1.5 秒再取一次直到读完；之后只读新增部分（本机 157 个、332MB 记录实测：冷读约 1.1 秒，再读约 30 毫秒）；关掉面板就停止轮询 | `route:GET /api/usage/overview` | `test/usage-overview.test.js` |
+| CTX-03 | statusLine 中继的自保上限：回传 1 秒超时、用户命令 5 秒超时、整体 6 秒内必定结束，任何失败都以 0 退出、不输出 cc-web 自己的内容，绝不拖住 Claude 的界面 | `bin:cc-statusline.js` | `test/statusline.test.js` |
+
 ## 服务端、安全与持久化
 
 | ID | 功能 | 入口 | 守卫 |

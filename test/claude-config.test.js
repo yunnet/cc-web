@@ -110,13 +110,45 @@ describe('per-user Claude directory (M3)', function () {
     });
   });
 
+  // One subscription for everyone (user 2026-11-06): a `claude setup-token`
+  // token, preferred over the key when both are configured.
+  describe('the shared subscription token', function () {
+    let prevToken;
+    let prevKey;
+    beforeEach(function () {
+      prevToken = process.env.CCW_CLAUDE_OAUTH_TOKEN;
+      prevKey = process.env.CCW_ANTHROPIC_API_KEY;
+      delete process.env.CCW_CLAUDE_OAUTH_TOKEN;
+      delete process.env.CCW_ANTHROPIC_API_KEY;
+    });
+    afterEach(function () {
+      if (prevToken === undefined) delete process.env.CCW_CLAUDE_OAUTH_TOKEN; else process.env.CCW_CLAUDE_OAUTH_TOKEN = prevToken;
+      if (prevKey === undefined) delete process.env.CCW_ANTHROPIC_API_KEY; else process.env.CCW_ANTHROPIC_API_KEY = prevKey;
+    });
+
+    it('reads the first line of platform/claude-oauth-token, or CCW_CLAUDE_OAUTH_TOKEN first', function () {
+      assert.strictEqual(claudeConfig.readPlatformOAuthToken(tmp), '');
+      fs.writeFileSync(path.join(tmp, 'claude-oauth-token'), ' sk-ant-oat01-file \r\nignored\n');
+      assert.strictEqual(claudeConfig.readPlatformOAuthToken(tmp), 'sk-ant-oat01-file');
+      process.env.CCW_CLAUDE_OAUTH_TOKEN = 'sk-ant-oat01-env';
+      assert.strictEqual(claudeConfig.readPlatformOAuthToken(tmp), 'sk-ant-oat01-env');
+    });
+
+    it('wins over the platform key, which is then not handed out at all', function () {
+      fs.writeFileSync(path.join(tmp, 'anthropic-key'), 'sk-key\n');
+      assert.deepStrictEqual(claudeConfig.platformCredentials(tmp), { oauthToken: '', apiKey: 'sk-key' });
+      fs.writeFileSync(path.join(tmp, 'claude-oauth-token'), 'sk-ant-oat01-x\n');
+      assert.deepStrictEqual(claudeConfig.platformCredentials(tmp), { oauthToken: 'sk-ant-oat01-x', apiKey: '' });
+    });
+  });
+
   describe('the spawn environment', function () {
     const inherited = () => ({
       PATH: '/bin', ANTHROPIC_API_KEY: 'operator', ANTHROPIC_AUTH_TOKEN: 'operator', CLAUDE_CODE_OAUTH_TOKEN: 'operator'
     });
 
     for (const [name, apply] of [
-      ['ClaudeBridge.applyOwnerEnv', (env, o) => ClaudeBridge.applyOwnerEnv(env, { claudeConfigDir: o.configDir, apiKey: o.apiKey })],
+      ['ClaudeBridge.applyOwnerEnv', (env, o) => ClaudeBridge.applyOwnerEnv(env, { claudeConfigDir: o.configDir, apiKey: o.apiKey, oauthToken: o.oauthToken })],
       ['claudeConfig.applyEnv', (env, o) => claudeConfig.applyEnv(env, o)]
     ]) {
       it(`${name}: a user gets their directory and the platform key, never the operator's credentials`, function () {
@@ -131,6 +163,14 @@ describe('per-user Claude directory (M3)', function () {
       it(`${name}: with no platform key a user gets no key at all`, function () {
         const env = apply(inherited(), { configDir: '/data/u-1/claude', apiKey: '' });
         assert.strictEqual(env.ANTHROPIC_API_KEY, undefined);
+      });
+
+      it(`${name}: with the shared subscription, a user gets that token and never a key`, function () {
+        // Claude prefers ANTHROPIC_API_KEY over an OAuth token: both would bill the API.
+        const env = apply(inherited(), { configDir: '/data/u-1/claude', apiKey: 'sk-platform', oauthToken: 'sk-ant-oat01-shared' });
+        assert.strictEqual(env.CLAUDE_CODE_OAUTH_TOKEN, 'sk-ant-oat01-shared');
+        assert.strictEqual(env.ANTHROPIC_API_KEY, undefined);
+        assert.strictEqual(env.ANTHROPIC_AUTH_TOKEN, undefined);
       });
 
       it(`${name}: the unowned tenant's env is left alone`, function () {
@@ -216,6 +256,7 @@ describe('per-user Claude directory on the server (M3)', function () {
   let prevHome;
   let prevProfile;
   let prevKey;
+  let prevToken;
 
   beforeEach(async function () {
     // ~/.claude is the unowned tenant's: point it at a temp home.
@@ -226,6 +267,8 @@ describe('per-user Claude directory on the server (M3)', function () {
     process.env.HOME = home;
     process.env.USERPROFILE = home;
     delete process.env.CCW_ANTHROPIC_API_KEY;
+    prevToken = process.env.CCW_CLAUDE_OAUTH_TOKEN;
+    delete process.env.CCW_CLAUDE_OAUTH_TOKEN;
 
     server = new ClaudeCodeWebServer({ auth: 'tok-m3', folderMode: false, port: 40125 });
     dir = useTempDataDir(server);
@@ -249,6 +292,7 @@ describe('per-user Claude directory on the server (M3)', function () {
     if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
     if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
     if (prevKey === undefined) delete process.env.CCW_ANTHROPIC_API_KEY; else process.env.CCW_ANTHROPIC_API_KEY = prevKey;
+    if (prevToken === undefined) delete process.env.CCW_CLAUDE_OAUTH_TOKEN; else process.env.CCW_CLAUDE_OAUTH_TOKEN = prevToken;
     claudeTheme._reset();
     for (const d of [dir, work, home]) fs.rmSync(d, { recursive: true, force: true });
   });
@@ -293,8 +337,22 @@ describe('per-user Claude directory on the server (M3)', function () {
     assert.deepStrictEqual(seeded.customApiKeyResponses.approved, ['key-000000000000000000'.slice(-20)]);
     assert.ok(fs.existsSync(path.join(prepared.claudeConfigDir, 'themes')));
 
-    assert.deepStrictEqual(server.prepareClaudeFor(null), { claudeConfigDir: null, apiKey: '' });
+    assert.deepStrictEqual(server.prepareClaudeFor(null), { claudeConfigDir: null, apiKey: '', oauthToken: '' });
     assert.ok(!fs.existsSync(path.join(home, '.claude')), 'nothing is written into ~/.claude');
+  });
+
+  it('gives every user, the administrator included, the one shared subscription when it is configured', function () {
+    fs.mkdirSync(path.join(dir, 'platform'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'platform', 'anthropic-key'), 'sk-ant-platform-key-000000000000000000\n');
+    fs.writeFileSync(path.join(dir, 'platform', 'claude-oauth-token'), 'sk-ant-oat01-shared\n');
+    for (const who of [alice, bob]) {
+      const prepared = server.prepareClaudeFor(who.user.id);
+      assert.strictEqual(prepared.oauthToken, 'sk-ant-oat01-shared');
+      assert.strictEqual(prepared.apiKey, '');
+      const seeded = JSON.parse(fs.readFileSync(path.join(prepared.claudeConfigDir, '.claude.json'), 'utf8'));
+      assert.strictEqual(seeded.customApiKeyResponses, undefined, 'no key approved: none is handed out');
+      assert.strictEqual(seeded.hasCompletedOnboarding, true);
+    }
   });
 
   it('lists only the caller\'s own conversations and resumes only those', async function () {

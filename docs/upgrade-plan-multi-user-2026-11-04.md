@@ -347,3 +347,15 @@ M1 → 你验证登录体验 → M2 → M3 → M4。
 | 2026-11-06 | M4 | ACC-01 | 「账号」入口从菜单移到页头最右边（人像图标 + 用户名，点击弹出账号窗口）；菜单里去掉「账号」按钮和「已登录：…」一行；「用户管理」仍在菜单 | "个人账号，不应该放在setting弹窗，应该在Header的右上角，搞个图标和账号显示，点击时弹出个人账号弹窗。" |
 | 2026-11-06 | — | SET-01，新增 UI-16 | 齿轮按钮从页头左端移到右端（账号按钮左边），菜单改为从右侧滑出；原位置放新设计的 cc-web 标志 | "把setting图标移到右边，原来设置图标，帮我设计一个cc-web的图标放那里，要求要有科技感" |
 | 2026-11-04 | M5 | CLI-04 `--disable-auth` | 移除：关闭认证的模式取消，所有访问都必须登录 | "选C"（针对"A 保留视为 admin / B 仅限 127.0.0.1 / C 移除"三个选项） |
+
+## 变更：所有人共用一个订阅（2026-11-06）
+
+用户 2026-11-06：「不把个人订阅登录分给平台用户, 这个地方改一下，当前所有人使用同一个订阅用户。」
+
+- 推翻第 128 行「不使用个人订阅的登录态让多人共用」。平台凭证新增「订阅令牌」：管理员运行 `claude setup-token`，把令牌写进 `<dataDir>/platform/claude-oauth-token`（0600，第一行）或环境变量 `CCW_CLAUDE_OAUTH_TOKEN`，每次启动 Claude 时现读，以 `CLAUDE_CODE_OAUTH_TOKEN` 注入给每个有自己目录的用户（含管理员）。
+- 令牌和平台 key 同时配置时只注入令牌：Claude 遇到 `ANTHROPIC_API_KEY` 会优先用它，两个都给就会悄悄改成按 API 计费。
+- 每人的 `CLAUDE_CONFIG_DIR` 不变：对话、技能、插件仍各自独立，只共用身份和额度。
+- 实测（2.1.304，全新目录 + `CLAUDE_CODE_OAUTH_TOKEN`）：不出现「Not logged in」和登录提示，目录里不写凭证文件；只剩「信任此文件夹」（cc-web 本来就会确认，CLA-05）；发一句话后 statusLine 带 `rate_limits`（5 小时 / 7 天），说明用的是订阅额度。横幅显示「Claude API」、默认模型是 Sonnet 5.5，因为新目录里没有账号资料；用 `/model` 或启动选项可选别的模型。
+- 已知代价：所有人共用同一份 5 小时 / 7 天额度，一个人用完大家都受限；令牌和 key 一样，用户在自己终端里能看到。
+- 代码：`src/utils/claude-config.js`（`readPlatformOAuthToken`、`platformCredentials`、`applyEnv`）、`server.prepareClaudeFor`、`ClaudeBridge.applyOwnerEnv`；FEATURES CLA-20 补一句、新增 CLA-21。提交在 `feat/context-usage` 分支上，可单独挑到多用户分支。
+

@@ -1355,6 +1355,15 @@ class ClaudeCodeWebInterface {
         
         // Skills. Same panel from the menu and from Settings, like Sessions:
         // two entry points that render one list can never disagree.
+        // Usage: the tab in front's context and token use (usage-panel.js).
+        const usageBtnMobile = document.getElementById('usageBtnMobile');
+        if (usageBtnMobile) {
+            usageBtnMobile.addEventListener('click', () => {
+                if (window.usagePanel) window.usagePanel.open(null, 'overview');
+                this.closeMobileMenu();
+            });
+        }
+
         const skillsBtnMobile = document.getElementById('skillsBtnMobile');
         if (skillsBtnMobile) {
             skillsBtnMobile.addEventListener('click', () => {
@@ -1713,6 +1722,7 @@ class ClaudeCodeWebInterface {
                 // Update tab status
                 if (this.sessionTabManager) {
                     this.sessionTabManager.updateTabStatus(message.sessionId, message.active ? 'active' : 'idle');
+                    if (message.liveUsage) this.sessionTabManager.setTabUsage(message.sessionId, message.liveUsage);
                 }
                 
                 // Notify split container of session change

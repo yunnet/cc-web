@@ -263,6 +263,7 @@
                 <button id="reconnectBtnMobile" class="mobile-menu-btn" disabled>Reconnect</button>
                 <button id="clearBtnMobile" class="mobile-menu-btn">Clear Terminal</button>
                 <button id="skillsBtnMobile" class="mobile-menu-btn">Skills</button>
+                <button id="usageBtnMobile" class="mobile-menu-btn">用量</button>
                 <button id="settingsBtnMobile" class="mobile-menu-btn">Settings</button>
                 <button id="usersBtnMobile" class="mobile-menu-btn" hidden>用户管理</button>
             </div>
@@ -588,6 +589,26 @@
                     </div>
 
                     <div class="account-status" id="usersStatus" role="status"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="session-modal" id="usageModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="usageTitle">上下文与用量</h2>
+                    <button class="close-btn" id="closeUsageBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="skills-tabs" role="tablist">
+                        <button class="skills-tab active" id="usageTabSession" type="button">本标签</button>
+                        <button class="skills-tab" id="usageTabOverview" type="button">总览</button>
+                    </div>
+                    <div id="usageBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="usageRefreshBtn" type="button">刷新</button>
+                    <button class="btn btn-secondary" id="usageDoneBtn" type="button">关闭</button>
                 </div>
             </div>
         </div>
@@ -920,12 +941,14 @@
     <script src="session-manager.js"></script>
     <script src="spaces.js"></script>
     <script src="claude-title.js"></script>
+    <script src="context-ring.js"></script>
     <script src="terminal-links.js"></script>
     <script src="turn-rail.js"></script>
     <script src="splits.js"></script>
     <script src="file-explorer.js"></script>
     <script src="conversations.js"></script>
     <script src="skills.js"></script>
+    <script src="usage-panel.js"></script>
     <script src="git-branches.js"></script>
     <script src="account.js"></script>
     <script src="icons.js"></script>

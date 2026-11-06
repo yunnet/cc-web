@@ -59,9 +59,18 @@
 | S44 | SPACE-16 | 点 #sidebarSortBtn 切「最近」 | 按钮带 .active；修改某任务 lastActivity 为最新后该任务（非置顶时）排组首；对行派发 dragover 事件后 DOM 序不变；切回手动恢复拖拽序；刷新后模式保持 |
 | S45 | SPACE-17 | 桌面宽度点 #sidebarToggleBtn 收起（再点一次展开回原宽，aria-expanded 随之 false/true） | `.spaces-sidebar` 宽 56±2px；`.rail-badge` 数=空间数且首字符=空间名首字；当前任务徽标 .current 填充强调色；带运行任务的徽标有 .rail-dot；点徽标后侧栏展开、目标空间展开且组顶在树可视区 |
 | S46 | SPACE-18 | 指针移入/移出任务树，量滚动条 | 指针在外 `::-webkit-scrollbar-thumb` 不可见（用 `.scroll-active` 类断言：无类）；pointerenter 后有类；pointerleave 后 2s 内仍有、2.5s 后无；树内容宽度全程不变 |
+| S48 | CTX-01、CTX-02 | 新会话里发一句话，等这一轮结束；再停服务、重启、刷新 | 发完后 `.tab-ctx` 可见、`data-ctx` 为 ok/warn/full 之一、title 含「上下文 N%」「（API 折算）」；工作目录 `.claude/settings.local.json` 配了自己的 statusLine 时，终端底部仍显示它的输出；重启刷新后不发消息圆环即恢复 |
+| S49 | CTX-04、CTX-05、CTX-06 | 点圆环；再用一个几百个请求、有压缩的对话的数据渲染；切「增量」；390 宽 | 点圆环打开 `#usageModal` 且当前标签不变；KPI 6 格（有子 Agent 时）；趋势柱数=请求数、`.u-compact` 数=压缩次数；新数据打开时 `.usage-trend` 滚到最右，切换总量/增量时 scrollLeft 不变；增量模式普通柱可见、压缩那根被截断；390 宽 `.modal-content` 左右各留 ≥16px、页面无横向溢出 |
+| S50 | CTX-08、CTX-09、CTX-10 | 菜单点「用量」；搜索、按花费排序；点已打开与未打开的对话各一次（未打开的把 `app.openConversationInTab` 换成记录调用的桩，别真的恢复别人的对话）；切 30 天；390 宽 | 打开即「总览」页；7 天时每日柱 7 根、30 天时 30 根，热力格 56 个；搜索即时筛选，排序后搜索词仍在、筛选仍生效；「已打开」的行点击后切到那个标签，未打开的行以 {id, title} 和对话目录调用 `openConversationInTab` 且面板关闭；390 宽左右各 ≥16px、无横向溢出、日期标签不变形 |
 | S47 | TERM-48 | 有多轮问答的会话，量轨道 | `.turn-mark` 数 ≥ 实际提问数（缓冲内）；行号 `rail.marks` 单调递增；悬停 `.turn-rail-tip` 含提问文本；点击后 `viewportY = min(target, buf.length - rows)` ±4；视口压到终端区 ≤900px 后 `.rail-hidden` |
 
 ## 基线结果
+
+S50（总览）于 2026-11-06 在同一一次性实例上、对本机真实 Claude 目录（157 个记录、332MB）跑过：全部范围冷读 1.55 秒、再读 0.049 秒，7 天 0.031 秒；7 天 25 个对话、30 天 48 个；搜索「fanxua」剩 4 行，按花费排序后仍是 4 行；「已打开」的行切到 e2e 标签；未打开的行以 {id, title:"软件模拟实训平台"} 和 D:yunnetjj 调用了桩；390 宽左右各 20px，无横向溢出。
+
+S49（用量面板）于 2026-11-06 在同一一次性实例上跑过：圆环点开面板、标签不变；41MB 对话（470 个请求、1 次手动压缩、1 个子 Agent）首次 0.20 秒、再次 0.008 秒（HTTP，响应 59KB），渲染 471 根柱、1 个 ✂，打开时在最右端，切换增量时 scrollLeft 保持 1000；增量模式按 98 分位缩放后普通增长可见；390 宽左右各 20px、无横向溢出。
+
+S48（上下文圆环）于 2026-11-06 在一次性实例（32354，`CCW_DATA_DIR` 临时目录，Windows，Claude 2.1.304）上跑过：一轮后圆环 5%、title「上下文 5% · 46.3k / 1M / 本次运行 $0.13（API 折算）/ Opus 5.5 / 额度 5 小时 20% · 7 天 44%」；项目 local 设置里的 statusLine 输出「USER-LINE Opus 5.5」照常出现在终端底部；重启服务刷新后圆环立即恢复。记录在 `docs/upgrade-plan-context-usage-2026-11-05.md`。
 
 2026-09-22 首次全套运行的结果，记在 `ts/.claude/plans/2026-09-22-防止遗漏现有功能.md` 的「实测记录」一节。
 

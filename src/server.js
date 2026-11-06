@@ -16,6 +16,7 @@ const AuthManager = require('./utils/auth');
 const { safeEqual } = require('./utils/password');
 const { parseCookies, serializeCookie } = require('./utils/cookies');
 const claudeHistory = require('./utils/claude-history');
+const claudeUsage = require('./utils/claude-usage');
 const claudeTheme = require('./utils/claude-theme');
 const claudeConfig = require('./utils/claude-config');
 const { inlineLocalAssets } = require('./utils/inline-assets');
@@ -133,15 +134,16 @@ class ClaudeCodeWebServer {
   // at the next start. The unowned tenant gets nothing — no directory, no key.
   prepareClaudeFor(ownerId) {
     const claudeConfigDir = this.claudeDirFor(ownerId);
-    if (!claudeConfigDir) return { claudeConfigDir: null, apiKey: '' };
-    const apiKey = claudeConfig.readPlatformKey(this.dataDirFile('platform'));
+    if (!claudeConfigDir) return { claudeConfigDir: null, apiKey: '', oauthToken: '' };
+    // The shared subscription when configured, else the platform key.
+    const { apiKey, oauthToken } = claudeConfig.platformCredentials(this.dataDirFile('platform'));
     claudeConfig.seedConfig(claudeConfigDir, { apiKey });
     if (!this.themedClaudeDirs) this.themedClaudeDirs = new Set();
     if (!this.themedClaudeDirs.has(claudeConfigDir)) {
       claudeTheme.ensureThemes(claudeConfigDir);
       this.themedClaudeDirs.add(claudeConfigDir);
     }
-    return { claudeConfigDir, apiKey };
+    return { claudeConfigDir, apiKey, oauthToken };
   }
 
   // The unowned tenant's spaces, under the name every caller used before there
@@ -1074,6 +1076,62 @@ class ClaudeCodeWebServer {
           return res.status(404).json({ error: 'Session not found' });
         }
         res.json(await claudeHistory.listUserPrompts(session.workingDir, session.id, { root: this.projectsDirFor(session.ownerId || null) }));
+      }));
+
+    // What one tab's conversation used — tokens, the per-request trend,
+    // compactions, tools — for the usage panel (src/public/usage-panel.js).
+    // Read-only, header auth; the conversation is the one Claude is writing
+    // to now (resumeIdFor), found in the owner's own Claude directory.
+    this.app.get('/api/sessions/:sessionId/usage',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        const usage = await claudeUsage.conversationUsage(session.workingDir, this.resumeIdFor(session), {
+          root: this.projectsDirFor(session.ownerId || null)
+        });
+        res.json({ name: session.name, workingDir: session.workingDir, liveUsage: session.liveUsage || null, usage });
+      }));
+
+    // The same for a conversation no tab holds (the Sessions panel's history
+    // rows). The folder is checked like the conversation list's.
+    this.app.get('/api/claude-sessions/:conversationId/usage',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const dirParam = ClaudeCodeWebServer.singleQueryValue(req.query.dir);
+        if (!dirParam.ok || !dirParam.value) return res.status(400).json({ error: 'Invalid dir parameter' });
+        const validation = this.validatePath(dirParam.value, req.user);
+        if (!validation.valid) return res.status(403).json({ error: validation.error });
+        if (!claudeHistory.UUID.test(req.params.conversationId)) return res.status(400).json({ error: 'Invalid conversation id' });
+        const usage = await claudeUsage.conversationUsage(validation.path, req.params.conversationId, {
+          root: this.projectsDirFor(this.actorOf(req.user))
+        });
+        if (!usage) return res.status(404).json({ error: 'Conversation not found' });
+        res.json({ workingDir: validation.path, usage });
+      }));
+
+    // Every conversation in the caller's own Claude directory, summed: the
+    // usage panel's 总览. Each platform user runs Claude on their own
+    // directory (M3), so reading projectsDirFor(actor) is the isolation — no
+    // one sees another user's conversations. range is 7d / 30d / all; tz is
+    // the browser's getTimezoneOffset(), so days are the reader's days.
+    this.app.get('/api/usage/overview',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const rangeParam = ClaudeCodeWebServer.singleQueryValue(req.query.range);
+        const tzParam = ClaudeCodeWebServer.singleQueryValue(req.query.tz);
+        const range = rangeParam.ok && ['7d', '30d', 'all'].includes(rangeParam.value) ? rangeParam.value : '7d';
+        const tz = tzParam.ok && /^-?\d{1,4}$/.test(tzParam.value || '') && Math.abs(Number(tzParam.value)) <= 14 * 60 ? Number(tzParam.value) : 0;
+        const actor = this.actorOf(req.user);
+        const now = Date.now();
+        const sinceMs = range === 'all' ? 0 : now - (range === '7d' ? 7 : 30) * 86400000;
+        const result = await claudeUsage.overview(this.projectsDirFor(actor), {
+          sinceMs, tzOffsetMin: tz, now, chartDays: range === '7d' ? 7 : 30
+        });
+        // A conversation a tab of this user already holds opens by switching.
+        for (const s of result.sessions) {
+          const holder = this.sessionHoldingConversation(s.id);
+          if (holder && this.getOwnedSession(actor, holder)) s.openSessionId = holder;
+        }
+        result.range = range;
+        res.json(result);
       }));
 
     // Get session details
@@ -2031,7 +2089,9 @@ class ClaudeCodeWebServer {
       // separate hard-coded 200, which meant raising the persist cap changed
       // nothing the browser could actually show — but bounded by bytes as well,
       // since this message is sent on every reconnect. See replaySlice.
-      outputBuffer: this.replaySlice(session.outputBuffer, session.ownerId)
+      outputBuffer: this.replaySlice(session.outputBuffer, session.ownerId),
+      // The context ring's last value, so a tab opened now shows it at once.
+      liveUsage: session.liveUsage || null
     });
 
     // No forced repaint here. v4.6.3 used to nudge the pty down a row and back
@@ -2176,6 +2236,9 @@ class ClaudeCodeWebServer {
         hookScript: path.join(__dirname, '..', 'bin', 'cc-hook.js'),
         hookPort: this.port,
         hookToken: session.hookToken,
+        // Claude's statusLine snapshot (context window, cost) for the tab's
+        // context ring; relayed by bin/cc-statusline.js to the same endpoint.
+        statusLineScript: path.join(__dirname, '..', 'bin', 'cc-statusline.js'),
         // Resume the Claude conversation if this cc-web session has started Claude
         // before (bound to this session id via --session-id). Survives server
         // restarts / dead PTYs instead of starting a brand-new conversation.
@@ -2373,6 +2436,39 @@ class ClaudeCodeWebServer {
   // authenticated with the session's own hookToken, then rebroadcast to the
   // session's browsers as a `hook_event`. Extracted from the route so it is
   // unit-testable with mock req/res, without binding a socket.
+  // The part of a statusLine snapshot the browser shows, as plain numbers.
+  // Measured on 2.1.304: context_window.used_percentage is an integer and
+  // context_window_size is the model's real window (1M on Opus 5.5); cost is
+  // what Claude prices the session at, which for a subscription is the API
+  // equivalent, not a bill. Anything missing stays null rather than 0, so the
+  // ring can tell "unknown" from "empty". Null for a snapshot with no numbers.
+  static liveUsageFrom(event) {
+    const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const cw = (event && typeof event.context_window === 'object' && event.context_window) || {};
+    const cur = (cw.current_usage && typeof cw.current_usage === 'object') ? cw.current_usage : null;
+    const cost = (event && typeof event.cost === 'object' && event.cost) || {};
+    const limits = (event && typeof event.rate_limits === 'object' && event.rate_limits) || {};
+    const ctxUsed = cur
+      ? ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+        .reduce((sum, k) => sum + (num(cur[k]) || 0), 0)
+      : null;
+    const usage = {
+      ctxPct: num(cw.used_percentage),
+      ctxUsed,
+      ctxSize: num(cw.context_window_size),
+      costUsd: num(cost.total_cost_usd),
+      durationMs: num(cost.total_duration_ms),
+      linesAdded: num(cost.total_lines_added),
+      linesRemoved: num(cost.total_lines_removed),
+      model: (event.model && typeof event.model.display_name === 'string') ? event.model.display_name.slice(0, 60) : null,
+      fiveHourPct: num(limits.five_hour && limits.five_hour.used_percentage),
+      sevenDayPct: num(limits.seven_day && limits.seven_day.used_percentage),
+      at: Date.now()
+    };
+    if (usage.ctxPct === null && usage.ctxUsed === null && usage.costUsd === null) return null;
+    return usage;
+  }
+
   handleHookEvent(req, res) {
     const remote = (req.socket && req.socket.remoteAddress) || '';
     const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
@@ -2414,6 +2510,20 @@ class ClaudeCodeWebServer {
           }
         });
       });
+    }
+
+    // Claude's statusLine snapshot, relayed by bin/cc-statusline.js. Kept on the
+    // session (and persisted) for the context ring; broadcast only when it
+    // changed, since Claude also calls it on start with nothing new.
+    if (event.hook_event_name === 'ccweb_statusline') {
+      const usage = ClaudeCodeWebServer.liveUsageFrom(event);
+      if (!usage) return res.json({ ok: true });
+      const before = session.liveUsage ? JSON.stringify({ ...session.liveUsage, at: 0 }) : '';
+      session.liveUsage = usage;
+      if (before !== JSON.stringify({ ...usage, at: 0 })) {
+        this.broadcastToSession(sessionId, { type: 'hook_event', sessionId, event: 'ccweb_statusline', usage });
+      }
+      return res.json({ ok: true });
     }
 
     const message = {
