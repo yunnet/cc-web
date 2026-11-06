@@ -646,6 +646,7 @@ class SessionTabManager {
         tab.innerHTML = `
             <div class="tab-content">
                 <span class="tab-status ${status}"></span>
+                <span class="tab-ctx" hidden></span>
                 <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
             </div>
             <span class="tab-time" title=""></span>
@@ -736,6 +737,7 @@ class SessionTabManager {
         
         tabsContainer.appendChild(tab);
         this.tabs.set(sessionId, tab);
+        if (this._usage && this._usage.has(sessionId)) this.setTabUsage(sessionId, this._usage.get(sessionId));
         if (!this.tabOrder.includes(sessionId)) {
             this.tabOrder.push(sessionId);
         }
@@ -1162,7 +1164,31 @@ class SessionTabManager {
             this.permissionRequested(sessionId, msg.message);
         } else if (msg.event === 'Stop') {
             this.turnFinished(sessionId, msg.last_assistant_message);
+        } else if (msg.event === 'ccweb_statusline') {
+            this.setTabUsage(sessionId, msg.usage);
         }
+    }
+
+    // The context ring: how full Claude's context window is, from its
+    // statusLine snapshot (session_joined carries the last one, hook_event the
+    // new ones). Kept per session so a tab built later still gets it. The
+    // level is an attribute on the ring, not the tab, so updateTabStatus'
+    // className rewrite cannot touch it.
+    setTabUsage(sessionId, usage) {
+        if (!usage || typeof ContextRing === 'undefined') return;
+        if (!this._usage) this._usage = new Map();
+        this._usage.set(sessionId, usage);
+        const tab = this.tabs.get(sessionId);
+        const ring = tab && tab.querySelector('.tab-ctx');
+        if (!ring) return;
+        if (typeof usage.ctxPct !== 'number') {
+            ring.hidden = true;
+            return;
+        }
+        ring.innerHTML = ContextRing.svg(usage.ctxPct);
+        ring.dataset.ctx = ContextRing.level(usage.ctxPct);
+        ring.title = ContextRing.tooltip(usage);
+        ring.hidden = false;
     }
 
     // The ✓ on a tab whose answer arrived while nobody was looking. Clearing

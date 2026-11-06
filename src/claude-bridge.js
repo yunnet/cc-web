@@ -120,6 +120,9 @@ class ClaudeBridge {
       hookScript = '',
       hookPort = 0,
       hookToken = '',
+      // The statusLine relay (bin/cc-statusline.js): the tab's context ring.
+      // Rides the same port and token as the hook relay.
+      statusLineScript = '',
       // Which Claude conversation `--resume` re-attaches to. Defaults to the
       // cc-web session id because that is what `--session-id` bound on the first
       // start — but Claude can move itself to a new transcript (`/clear`), and
@@ -139,8 +142,10 @@ class ClaudeBridge {
     // permission prompt) to the terminal bell — the BEL travels PTY→WS→xterm and
     // the client's onBell turns it into a beep + notification. Injected via
     // --settings so the user's own settings.json is untouched.
+    // The user's own statusLine, which ours replaces and then runs for them.
+    const userStatusLine = statusLineScript ? ClaudeBridge.userStatusLine(workingDir, claudeConfigDir) : null;
     baseArgs.push('--settings', JSON.stringify(
-      this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme, claudeConfigDir })
+      this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme, claudeConfigDir, statusLineScript, userStatusLine })
     ));
 
 
@@ -207,6 +212,8 @@ class ClaudeBridge {
       // Read by the ccweb-companion mod ($.env.get) to reach the relay: the port
       // is not secret but env beats another argv surface.
       if (hookToken && hookPort) childEnv.CCWEB_HOOK_PORT = String(hookPort);
+      // Run by cc-statusline.js so the user keeps the status line they had.
+      if (userStatusLine) childEnv.CCWEB_USER_STATUSLINE = userStatusLine.command;
       delete childEnv.CLAUDE_CODE_CHILD_SESSION;
       ClaudeBridge.applyOwnerEnv(childEnv, { claudeConfigDir, apiKey });
       return spawn(this.claudeCommand, [...idArgs, ...baseArgs], {
@@ -587,7 +594,30 @@ class ClaudeBridge {
     return claudeTheme.themeForUi(uiTheme, claudeConfigDir);
   }
 
-  buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '', claudeConfigDir = null } = {}) {
+  // The statusLine Claude would have used without ours: the most specific
+  // settings file that sets one wins (project local, project, then the user's
+  // own Claude directory). --settings outranks all three, so injecting ours
+  // hides theirs — cc-statusline.js runs it and prints its output instead.
+  static userStatusLine(workingDir, claudeConfigDir = null) {
+    const userDir = claudeConfigDir || path.join(os.homedir(), '.claude');
+    const files = [
+      path.join(workingDir || '', '.claude', 'settings.local.json'),
+      path.join(workingDir || '', '.claude', 'settings.json'),
+      path.join(userDir, 'settings.json')
+    ];
+    for (const file of files) {
+      let settings;
+      try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { continue; }
+      const line = settings && settings.statusLine;
+      if (!line || typeof line !== 'object') continue;
+      // Ours, left behind somewhere: running it would relay twice.
+      if (typeof line.command !== 'string' || !line.command.trim() || line.command.includes('cc-statusline.js')) return null;
+      return { command: line.command, padding: Number.isFinite(line.padding) ? line.padding : undefined };
+    }
+    return null;
+  }
+
+  buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '', claudeConfigDir = null, statusLineScript = '', userStatusLine = null } = {}) {
     // `tui` is Claude's own renderer setting — the one `/tui` writes. Values are
     // exactly ["default","fullscreen"]; "default" IS the classic renderer, and
     // it is the only way to name it (there is no "classic" value). Injecting it
@@ -658,6 +688,20 @@ class ClaudeBridge {
           { hooks: [relay] }
         ]
       };
+    }
+    if (statusLineScript && hookPort && hookToken) {
+      // Measured on 2.1.304 (Windows, real PTY): statusLine is NOT the hooks'
+      // shape. The exec form (`command` + `args`) is never run at all, and
+      // the command string goes through PowerShell 5.1 even with Git Bash
+      // installed — so a quoted path followed by arguments is a parse error,
+      // silently. PowerShell's call operator `&` makes the same line valid.
+      // PowerShell's single quotes are literal (no $ expansion), ' doubled.
+      const q = process.platform === 'win32'
+        ? (s) => `'${String(s).replace(/'/g, "''")}'`
+        : (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+      const line = `${q(process.execPath)} ${q(statusLineScript)} --port ${Number(hookPort)} --session ${q(sessionId)}`;
+      settings.statusLine = { type: 'command', command: process.platform === 'win32' ? `& ${line}` : line };
+      if (userStatusLine && userStatusLine.padding !== undefined) settings.statusLine.padding = userStatusLine.padding;
     }
     return settings;
   }

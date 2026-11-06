@@ -2031,7 +2031,9 @@ class ClaudeCodeWebServer {
       // separate hard-coded 200, which meant raising the persist cap changed
       // nothing the browser could actually show — but bounded by bytes as well,
       // since this message is sent on every reconnect. See replaySlice.
-      outputBuffer: this.replaySlice(session.outputBuffer, session.ownerId)
+      outputBuffer: this.replaySlice(session.outputBuffer, session.ownerId),
+      // The context ring's last value, so a tab opened now shows it at once.
+      liveUsage: session.liveUsage || null
     });
 
     // No forced repaint here. v4.6.3 used to nudge the pty down a row and back
@@ -2176,6 +2178,9 @@ class ClaudeCodeWebServer {
         hookScript: path.join(__dirname, '..', 'bin', 'cc-hook.js'),
         hookPort: this.port,
         hookToken: session.hookToken,
+        // Claude's statusLine snapshot (context window, cost) for the tab's
+        // context ring; relayed by bin/cc-statusline.js to the same endpoint.
+        statusLineScript: path.join(__dirname, '..', 'bin', 'cc-statusline.js'),
         // Resume the Claude conversation if this cc-web session has started Claude
         // before (bound to this session id via --session-id). Survives server
         // restarts / dead PTYs instead of starting a brand-new conversation.
@@ -2373,6 +2378,39 @@ class ClaudeCodeWebServer {
   // authenticated with the session's own hookToken, then rebroadcast to the
   // session's browsers as a `hook_event`. Extracted from the route so it is
   // unit-testable with mock req/res, without binding a socket.
+  // The part of a statusLine snapshot the browser shows, as plain numbers.
+  // Measured on 2.1.304: context_window.used_percentage is an integer and
+  // context_window_size is the model's real window (1M on Opus 5.5); cost is
+  // what Claude prices the session at, which for a subscription is the API
+  // equivalent, not a bill. Anything missing stays null rather than 0, so the
+  // ring can tell "unknown" from "empty". Null for a snapshot with no numbers.
+  static liveUsageFrom(event) {
+    const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const cw = (event && typeof event.context_window === 'object' && event.context_window) || {};
+    const cur = (cw.current_usage && typeof cw.current_usage === 'object') ? cw.current_usage : null;
+    const cost = (event && typeof event.cost === 'object' && event.cost) || {};
+    const limits = (event && typeof event.rate_limits === 'object' && event.rate_limits) || {};
+    const ctxUsed = cur
+      ? ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+        .reduce((sum, k) => sum + (num(cur[k]) || 0), 0)
+      : null;
+    const usage = {
+      ctxPct: num(cw.used_percentage),
+      ctxUsed,
+      ctxSize: num(cw.context_window_size),
+      costUsd: num(cost.total_cost_usd),
+      durationMs: num(cost.total_duration_ms),
+      linesAdded: num(cost.total_lines_added),
+      linesRemoved: num(cost.total_lines_removed),
+      model: (event.model && typeof event.model.display_name === 'string') ? event.model.display_name.slice(0, 60) : null,
+      fiveHourPct: num(limits.five_hour && limits.five_hour.used_percentage),
+      sevenDayPct: num(limits.seven_day && limits.seven_day.used_percentage),
+      at: Date.now()
+    };
+    if (usage.ctxPct === null && usage.ctxUsed === null && usage.costUsd === null) return null;
+    return usage;
+  }
+
   handleHookEvent(req, res) {
     const remote = (req.socket && req.socket.remoteAddress) || '';
     const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
@@ -2414,6 +2452,20 @@ class ClaudeCodeWebServer {
           }
         });
       });
+    }
+
+    // Claude's statusLine snapshot, relayed by bin/cc-statusline.js. Kept on the
+    // session (and persisted) for the context ring; broadcast only when it
+    // changed, since Claude also calls it on start with nothing new.
+    if (event.hook_event_name === 'ccweb_statusline') {
+      const usage = ClaudeCodeWebServer.liveUsageFrom(event);
+      if (!usage) return res.json({ ok: true });
+      const before = session.liveUsage ? JSON.stringify({ ...session.liveUsage, at: 0 }) : '';
+      session.liveUsage = usage;
+      if (before !== JSON.stringify({ ...usage, at: 0 })) {
+        this.broadcastToSession(sessionId, { type: 'hook_event', sessionId, event: 'ccweb_statusline', usage });
+      }
+      return res.json({ ok: true });
     }
 
     const message = {

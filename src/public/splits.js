@@ -393,6 +393,9 @@ class Split {
                 break;
                 
             case 'session_joined':
+                if (msg.liveUsage && this.app && this.app.sessionTabManager) {
+                    this.app.sessionTabManager.setTabUsage(this.sessionId, msg.liveUsage);
+                }
                 // Replay output buffer
                 if (msg.outputBuffer && msg.outputBuffer.length > 0) {
                     const joined = msg.outputBuffer.join('');

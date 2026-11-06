@@ -854,6 +854,21 @@ body.sidebar-hidden .sidebar-rail {
     position: relative;
 }
 
+/* The context ring (context-ring.js): how full Claude's context window is. */
+.tab-ctx {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
+.tab-ctx[hidden] { display: none; }
+.tab-ctx svg { display: block; }
+.tab-ctx .ctx-track { fill: none; stroke: var(--border); stroke-width: 2.5; }
+.tab-ctx .ctx-fill { fill: none; stroke: var(--success); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray 0.4s ease; }
+.session-tab.active .tab-ctx .ctx-track { stroke: rgba(255, 255, 255, 0.4); }
+.tab-ctx[data-ctx="warn"] .ctx-fill { stroke: var(--warning); }
+.tab-ctx[data-ctx="full"] .ctx-fill { stroke: var(--error); }
+
 .tab-icon {
     width: 14px;
     height: 14px;

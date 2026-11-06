@@ -1713,6 +1713,7 @@ class ClaudeCodeWebInterface {
                 // Update tab status
                 if (this.sessionTabManager) {
                     this.sessionTabManager.updateTabStatus(message.sessionId, message.active ? 'active' : 'idle');
+                    if (message.liveUsage) this.sessionTabManager.setTabUsage(message.sessionId, message.liveUsage);
                 }
                 
                 // Notify split container of session change

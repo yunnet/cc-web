@@ -391,6 +391,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`，平台用户的写入各自 Claude 目录的 `themes/`（第一次为这个用户启动 Claude 时写，原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
+## 上下文与用量
+
+| ID | 功能 | 入口 | 守卫 |
+|---|---|---|---|
+| CTX-01 | 标签名前的小圆环显示 Claude 上下文窗口的占用：低于 60% 绿、60–85% 琥珀、85% 及以上红；悬停显示占用百分比、已用与窗口 Token、本次运行 Claude 的花费（Claude 自己的计数，每次启动或恢复从 0 算起；标注「API 折算」）、模型、5 小时与 7 天额度；还没有数据时不显示；刷新页面、重开标签或重启服务后立即恢复上次的值；分屏窗格里的会话同样更新 | `file:src/public/context-ring.js` | `test/context-ring.test.js` `test/statusline.test.js` |
+| CTX-02 | Claude 的 statusLine 由 cc-web 注入的中继接管，每次刷新（启动时与每轮结束时）把快照回传给服务器，数值变了才推给浏览器；用户自己配置的 statusLine（项目 `settings.local.json`、项目 `settings.json`、用户 Claude 目录的 `settings.json`，取最具体的那个）照常运行，输出原样显示在终端底部，`padding` 保留 | `bin:cc-statusline.js` `env:CCWEB_USER_STATUSLINE` | `test/statusline.test.js` `test/claude-bridge.test.js` |
+| CTX-03 | statusLine 中继的自保上限：回传 1 秒超时、用户命令 5 秒超时、整体 6 秒内必定结束，任何失败都以 0 退出、不输出 cc-web 自己的内容，绝不拖住 Claude 的界面 | `bin:cc-statusline.js` | `test/statusline.test.js` |
+
 ## 服务端、安全与持久化
 
 | ID | 功能 | 入口 | 守卫 |
