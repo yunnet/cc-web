@@ -3627,6 +3627,11 @@ class ClaudeCodeWebInterface {
                 // One conversation, one tab: a second Claude on the same
                 // transcript would corrupt it. Go to the tab that has it.
                 const data = await response.json().catch(() => ({}));
+                // Held by another user: there is no tab of ours to go to.
+                if (!data.sessionId) {
+                    this.showToast(data.message || '其他用户正在使用这个对话', true, 5000);
+                    return null;
+                }
                 this.showToast('这个对话已经在另一个标签页里打开，正在切换过去', true);
                 if (data.sessionId && this.sessionTabManager) {
                     this.hideNewTabDialog({ cancelled: false });

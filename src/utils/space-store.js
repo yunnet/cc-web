@@ -24,10 +24,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NAME = 200;
 
 class SpaceStore {
-    constructor() {
+    // storageDir: a user's own folder, or omitted for the data dir itself.
+    constructor(storageDir) {
         // See SessionStore for why this is dataDir() and derived-per-access
         // matters (a test redirecting storageDir after construction).
-        this.storageDir = dataDir();
+        this.storageDir = storageDir || dataDir();
         // Whether the last load read a WELL-FORMED file. ENOENT and corrupt
         // JSON both leave it false, which is what lets the one-time migration
         // rebuild a spaces.json that was never written or got destroyed.

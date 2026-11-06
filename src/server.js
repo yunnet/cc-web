@@ -40,7 +40,6 @@ class ClaudeCodeWebServer {
     this.certFile = options.cert;
     this.keyFile = options.key;
     this.folderMode = options.folderMode !== false; // Default to true
-    this.selectedWorkingDir = null;
     this.baseFolder = process.cwd(); // The folder where the app runs from
     // Explicit plan directories for GET /api/plan. When non-empty they OVERRIDE
     // the default (auto-discovered `<project>/.claude/plans`): only files under
@@ -59,7 +58,15 @@ class ClaudeCodeWebServer {
     // sessions; loaded in loadPersistedSessions, where the one-time migration
     // needs both sides in hand.
     this.spaceStore = new SpaceStore();
-    this.spaces = [];
+    // Per-owner data (see tenant()). '' is the unowned tenant: the data dir
+    // root and the stores above, i.e. exactly the single-user layout.
+    this.tenants = new Map([['', {
+      ownerId: null,
+      sessionStore: this.sessionStore,
+      spaceStore: this.spaceStore,
+      spaces: [],
+      selectedWorkingDir: null,
+    }]]);
     // Platform users and their login sessions (<dataDir>/platform). Resolved
     // through dataDirFile on every access, like everything else in the data dir.
     this.userStore = new UserStore(() => this.dataDirFile('platform'));
@@ -98,17 +105,179 @@ class ClaudeCodeWebServer {
     this.setupAutoSave();
   }
   
+  // --- Tenants: whose data ---------------------------------------------------
+  // A tenant is one owner's slice of the data dir: sessions, spaces, scrollback
+  // and the selected working dir. A platform user's is <dataDir>/<uid>/. The
+  // unowned tenant (ownerId null) is the data dir root — the single-user layout
+  // — used before any administrator exists and with --disable-auth. Running
+  // sessions all stay in this.claudeSessions, each carrying its ownerId.
+
+  // The unowned tenant's spaces, under the name every caller used before there
+  // were tenants.
+  get spaces() { return this.tenants.get('').spaces; }
+  set spaces(list) { this.tenants.get('').spaces = list; }
+  get selectedWorkingDir() { return this.tenants.get('').selectedWorkingDir; }
+  set selectedWorkingDir(dir) { this.tenants.get('').selectedWorkingDir = dir; }
+
+  tenant(ownerId) {
+    const key = ownerId || '';
+    let t = this.tenants.get(key);
+    if (!t) {
+      // Under the root store's dir, read now: a test that redirects the data
+      // dir after construction takes every tenant with it.
+      const dir = path.join(this.sessionStore.storageDir, ownerId);
+      t = {
+        ownerId,
+        sessionStore: new SessionStore(dir),
+        spaceStore: new SpaceStore(dir),
+        spaces: [],
+        selectedWorkingDir: null,
+      };
+      t.sessionStore.maxOutputChunks = this.loadScrollbackChunks(ownerId);
+      this.tenants.set(key, t);
+    }
+    return t;
+  }
+
+  // Whose data a request acts on: the signed-in user (the shared token is the
+  // first admin, set by the auth middleware). With auth off, or before any
+  // administrator exists, nobody's — the unowned tenant.
+  actorOf(user) {
+    return (this.authEnabled() && user && user.id) || null;
+  }
+
+  // The same for the browser-navigation routes (plan / file links), which run
+  // before the auth middleware: the login cookie's user, else — the shared
+  // token having been checked already — the first admin.
+  navActor(req) {
+    if (!this.authEnabled()) return null;
+    const login = this.cookieLogin(req);
+    if (login) return login.user.id;
+    const admin = this.userStore.firstAdmin();
+    return admin ? admin.id : null;
+  }
+
+  // The session with this id if `actorId` owns it. Someone else's session is
+  // treated as not existing: callers answer 404 / "Session not found".
+  getOwnedSession(actorId, id) {
+    const session = typeof id === 'string' ? this.claudeSessions.get(id) : null;
+    return session && (session.ownerId || null) === (actorId || null) ? session : null;
+  }
+
+  ownedSessions(actorId) {
+    return [...this.claudeSessions.values()].filter((s) => (s.ownerId || null) === (actorId || null));
+  }
+
+  // Every tenant with data: the unowned one unless its data was handed to the
+  // first administrator, plus every platform user.
+  tenantOwners() {
+    const owners = [];
+    if (!fs.existsSync(this.dataDirFile('migrated-to-admin.json'))) owners.push(null);
+    for (const user of this.userStore.listUsers()) owners.push(user.id);
+    return owners;
+  }
+
   async loadPersistedSessions() {
+    // Let the constructor's caller finish first: a test that points the data
+    // dir somewhere else does it right after `new`, and every read below must
+    // see that.
+    await Promise.resolve();
+    const merged = new Map();
+    for (const ownerId of this.tenantOwners()) {
+      const t = this.tenant(ownerId);
+      try {
+        const sessions = await t.sessionStore.loadSessions();
+        for (const [id, session] of sessions) {
+          session.ownerId = ownerId;
+          merged.set(id, session);
+        }
+      } catch (error) {
+        console.error('Failed to load persisted sessions:', error);
+      }
+    }
+    // Sessions created while this was loading are kept, not replaced.
+    for (const [id, session] of this.claudeSessions) merged.set(id, session);
+    this.claudeSessions = merged;
+    if (merged.size > 0) {
+      console.log(`Loaded ${merged.size} persisted sessions`);
+    }
+    for (const ownerId of this.tenantOwners()) {
+      await this.loadSpacesAndMigrate(this.tenant(ownerId));
+    }
+  }
+
+  // Hand the single-user data to the first administrator, once: run when the
+  // real server starts (not in the constructor — tests build servers against
+  // the real data dir) and right after the first administrator is created.
+  // Files are moved one by one with rename and never deleted; whatever cannot
+  // be moved stays where it is and the owner is still set in memory, so the
+  // next autosave writes it into the administrator's folder. The marker file
+  // stops the root from being read again — otherwise the legacy sessions.json
+  // there would bring deleted sessions back.
+  async migrateUnownedToAdmin() {
+    if (!this.authEnabled()) return false;
+    const admin = this.userStore.firstAdmin();
+    if (!admin) return false;
+    const root = this.sessionStore.storageDir;
+    const marker = this.dataDirFile('migrated-to-admin.json');
+    if (fs.existsSync(marker)) return false;
+
+    const target = path.join(root, admin.id);
+    let moved = 0;
     try {
-      const sessions = await this.sessionStore.loadSessions();
-      this.claudeSessions = sessions;
-      if (sessions.size > 0) {
-        console.log(`Loaded ${sessions.size} persisted sessions`);
+      fs.mkdirSync(path.join(target, 'sessions'), { recursive: true, mode: 0o700 });
+      let files = [];
+      try { files = fs.readdirSync(path.join(root, 'sessions')).filter((f) => f.endsWith('.json')); } catch (_) { /* none */ }
+      for (const f of files) {
+        const to = path.join(target, 'sessions', f);
+        if (fs.existsSync(to)) continue;
+        try { fs.renameSync(path.join(root, 'sessions', f), to); moved++; } catch (error) {
+          console.warn(`[migrate] keeping ${f} in place: ${error.message}`);
+        }
+      }
+      const spacesFrom = path.join(root, 'spaces.json');
+      const spacesTo = path.join(target, 'spaces.json');
+      if (fs.existsSync(spacesFrom) && !fs.existsSync(spacesTo)) {
+        try { fs.renameSync(spacesFrom, spacesTo); } catch (error) {
+          console.warn(`[migrate] keeping spaces.json in place: ${error.message}`);
+        }
+      }
+      const scrollFrom = path.join(root, 'scrollback.json');
+      const scrollTo = path.join(target, 'scrollback.json');
+      if (fs.existsSync(scrollFrom) && !fs.existsSync(scrollTo)) {
+        try { fs.copyFileSync(scrollFrom, scrollTo); } catch (_) { /* default applies */ }
       }
     } catch (error) {
-      console.error('Failed to load persisted sessions:', error);
+      console.warn(`[migrate] could not prepare ${target}: ${error.message}`);
     }
-    await this.loadSpacesAndMigrate();
+
+    // In memory: the unowned tenant's sessions and spaces become the admin's.
+    const from = this.tenants.get('');
+    const to = this.tenant(admin.id);
+    to.sessionStore.maxOutputChunks = this.loadScrollbackChunks(admin.id);
+    let sessions = 0;
+    for (const session of this.claudeSessions.values()) {
+      if (!session.ownerId) { session.ownerId = admin.id; sessions++; }
+    }
+    if (from.spaces.length > 0) {
+      const known = new Set(to.spaces.map((s) => s.id));
+      to.spaces = to.spaces.concat(from.spaces.filter((s) => !known.has(s.id)));
+      from.spaces = [];
+      await to.spaceStore.saveSpaces(to.spaces);
+    }
+    if (from.selectedWorkingDir && !to.selectedWorkingDir) to.selectedWorkingDir = from.selectedWorkingDir;
+    from.selectedWorkingDir = null;
+
+    try {
+      fs.writeFileSync(marker, JSON.stringify({ adminId: admin.id, at: new Date().toISOString(), filesMoved: moved }, null, 2), { mode: 0o600 });
+    } catch (error) {
+      console.warn(`[migrate] could not write ${marker}: ${error.message}`);
+    }
+    await this.saveSessionsToDisk();
+    if (sessions > 0 || moved > 0) {
+      console.log(`[migrate] ${sessions} sessions and their spaces now belong to administrator "${admin.username}" (${target})`);
+    }
+    return true;
   }
 
   // Spaces load after the sessions they group. First run on an existing
@@ -117,14 +286,15 @@ class ClaudeCodeWebServer {
   // basename, disambiguated on a clash), every session assigned to its dir's
   // space. The sidebar then arrives organised instead of dumping everything
   // into 未分组 on upgrade day.
-  async loadSpacesAndMigrate() {
+  async loadSpacesAndMigrate(t = this.tenants.get('')) {
     try {
-      this.spaces = await this.spaceStore.loadSpaces();
-      if (this.spaces.length > 0 || this.spaceStore.fileExisted || this.claudeSessions.size === 0) return;
+      t.spaces = await t.spaceStore.loadSpaces();
+      const sessionsOfTenant = this.ownedSessions(t.ownerId);
+      if (t.spaces.length > 0 || t.spaceStore.fileExisted || sessionsOfTenant.length === 0) return;
 
       const byDir = new Map();
       const usedNames = new Set();
-      for (const session of this.claudeSessions.values()) {
+      for (const session of sessionsOfTenant) {
         const dir = session.workingDir;
         if (!dir || byDir.has(dir)) continue;
 
@@ -142,15 +312,15 @@ class ClaudeCodeWebServer {
         byDir.set(dir, { id: uuidv4(), name, dir, createdAt: now, updatedAt: now });
       }
 
-      this.spaces = [...byDir.values()];
-      for (const session of this.claudeSessions.values()) {
+      t.spaces = [...byDir.values()];
+      for (const session of sessionsOfTenant) {
         const space = byDir.get(session.workingDir);
         if (space) session.spaceId = space.id;
       }
-      await this.spaceStore.saveSpaces(this.spaces);
+      await t.spaceStore.saveSpaces(t.spaces);
       await this.saveSessionsToDisk();
-      if (this.spaces.length > 0) {
-        console.log(`Migrated ${this.claudeSessions.size} sessions into ${this.spaces.length} spaces by working directory`);
+      if (t.spaces.length > 0) {
+        console.log(`Migrated ${sessionsOfTenant.length} sessions into ${t.spaces.length} spaces by working directory`);
       }
     } catch (error) {
       console.error('Failed to load spaces:', error.message);
@@ -160,8 +330,8 @@ class ClaudeCodeWebServer {
   // A session's sidebar group. Unknown or absent ids degrade to null
   // (ungrouped) rather than erroring: creating a task must not fail because
   // some device still holds a stale space list.
-  resolveSpaceId(raw) {
-    return typeof raw === 'string' && this.spaces.some((s) => s.id === raw) ? raw : null;
+  resolveSpaceId(raw, ownerId = null) {
+    return typeof raw === 'string' && this.tenant(ownerId).spaces.some((s) => s.id === raw) ? raw : null;
   }
 
   // Default a session with no explicit (or no longer known) space to the one
@@ -179,7 +349,7 @@ class ClaudeCodeWebServer {
     }
   }
 
-  spaceIdForDir(dir) {
+  spaceIdForDir(dir, ownerId = null) {
     if (!dir) return null;
     // Resolved on both sides, and case-blind on Windows: there d:\work, D:\work
     // and D:/work/ are one folder, and the working dir arrives resolved anyway.
@@ -188,7 +358,7 @@ class ClaudeCodeWebServer {
       return process.platform === 'win32' ? r.toLowerCase() : r;
     };
     const want = key(dir);
-    const space = this.spaces.find((s) => key(s.dir) === want);
+    const space = this.tenant(ownerId).spaces.find((s) => key(s.dir) === want);
     return space ? space.id : null;
   }
   
@@ -283,10 +453,16 @@ class ClaudeCodeWebServer {
     this.instanceLockPath = null;
   }
   
+  // Each session into its owner's folder.
   async saveSessionsToDisk() {
-    if (this.claudeSessions.size > 0) {
-      await this.sessionStore.saveSessions(this.claudeSessions);
+    if (this.claudeSessions.size === 0) return;
+    const byOwner = new Map();
+    for (const [id, session] of this.claudeSessions) {
+      const key = session.ownerId || '';
+      if (!byOwner.has(key)) byOwner.set(key, new Map());
+      byOwner.get(key).set(id, session);
     }
+    await Promise.all([...byOwner].map(([key, sessions]) => this.tenant(key || null).sessionStore.saveSessions(sessions)));
   }
   
   async handleShutdown() {
@@ -634,6 +810,8 @@ class ClaudeCodeWebServer {
         return res.status(error.status || 500).json({ error: error.message });
       }
       console.log(`[auth] administrator "${user.username}" created`);
+      // Everything made before there were accounts is now theirs.
+      if (this.listening) await this.migrateUnownedToAdmin();
       this.startLoginSession(req, res, user);
       res.json({ user: UserStore.publicUser(user) });
     }));
@@ -705,8 +883,7 @@ class ClaudeCodeWebServer {
       express.raw({ type: Object.keys(IMAGE_EXT), limit: '15mb' }),
       (req, res) => {
         try {
-          const sessionId = req.query.sessionId;
-          const session = sessionId && this.claudeSessions.get(sessionId);
+          const session = this.getOwnedSession(this.actorOf(req.user), req.query.sessionId);
           if (!session) {
             return res.status(404).json({ error: 'Session not found' });
           }
@@ -743,20 +920,27 @@ class ClaudeCodeWebServer {
 
     // Commands API removed
 
+    // Counts are the caller's own: other users' sessions are none of theirs.
     this.app.get('/api/health', (req, res) => {
-      res.json({ 
-        status: 'ok', 
-        claudeSessions: this.claudeSessions.size,
-        activeConnections: this.webSocketConnections.size 
+      const ownerId = this.actorOf(req.user);
+      let connections = 0;
+      for (const info of this.webSocketConnections.values()) {
+        if ((info.userId || null) === ownerId) connections++;
+      }
+      res.json({
+        status: 'ok',
+        claudeSessions: this.ownedSessions(ownerId).length,
+        activeConnections: connections
       });
     });
     
     // Get session persistence info
     this.app.get('/api/sessions/persistence', ClaudeCodeWebServer.asyncRoute(async (req, res) => {
-      const metadata = await this.sessionStore.getSessionMetadata();
+      const ownerId = this.actorOf(req.user);
+      const metadata = await this.tenant(ownerId).sessionStore.getSessionMetadata();
       res.json({
         ...metadata,
-        currentSessions: this.claudeSessions.size,
+        currentSessions: this.ownedSessions(ownerId).length,
         autoSaveEnabled: true,
         autoSaveInterval: 30000
       });
@@ -764,8 +948,8 @@ class ClaudeCodeWebServer {
 
     // List all Claude sessions
     this.app.get('/api/sessions/list', (req, res) => {
-      const sessionList = Array.from(this.claudeSessions.entries()).map(([id, session]) => ({
-        id,
+      const sessionList = this.ownedSessions(this.actorOf(req.user)).map((session) => ({
+        id: session.id,
         name: session.name,
         created: session.created,
         active: session.active,
@@ -792,7 +976,7 @@ class ClaudeCodeWebServer {
     // working dir comes from the server's own session record, not the client.
     this.app.get('/api/sessions/:sessionId/prompts',
       ClaudeCodeWebServer.asyncRoute(async (req, res) => {
-        const session = this.claudeSessions.get(req.params.sessionId);
+        const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);
         if (!session) {
           return res.status(404).json({ error: 'Session not found' });
         }
@@ -801,7 +985,7 @@ class ClaudeCodeWebServer {
 
     // Get session details
     this.app.get('/api/sessions/:sessionId', (req, res) => {
-      const session = this.claudeSessions.get(req.params.sessionId);
+      const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
@@ -823,7 +1007,7 @@ class ClaudeCodeWebServer {
     // dropped it, and it never reached sessions.json or any other device —
     // even though the persisted session already has a name.
     this.app.patch('/api/sessions/:sessionId', (req, res) => {
-      const session = this.claudeSessions.get(req.params.sessionId);
+      const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
@@ -834,7 +1018,7 @@ class ClaudeCodeWebServer {
         if (body.spaceId === null || body.spaceId === '') {
           session.spaceId = null;
         } else {
-          const resolved = this.resolveSpaceId(body.spaceId);
+          const resolved = this.resolveSpaceId(body.spaceId, session.ownerId || null);
           if (!resolved) {
             return res.status(400).json({ error: 'spaceId must reference an existing space' });
           }
@@ -871,7 +1055,7 @@ class ClaudeCodeWebServer {
     // Delete a Claude session
     this.app.delete('/api/sessions/:sessionId', (req, res) => {
       const sessionId = req.params.sessionId;
-      const session = this.claudeSessions.get(sessionId);
+      const session = this.getOwnedSession(this.actorOf(req.user), sessionId);
       
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
@@ -909,7 +1093,7 @@ class ClaudeCodeWebServer {
       // a session missing from the map simply vanished. Per-session files have
       // no such side effect — and deliberately so, since that side effect is
       // what let two instances erase each other. Say it explicitly instead.
-      this.sessionStore.deleteSession(sessionId);
+      this.tenant(session.ownerId || null).sessionStore.deleteSession(sessionId);
       this.saveSessionsToDisk();
 
       res.json({ success: true, message: 'Session deleted' });
@@ -918,7 +1102,7 @@ class ClaudeCodeWebServer {
     this.app.get('/api/config', (req, res) => {
       res.json({
         folderMode: this.folderMode,
-        selectedWorkingDir: this.selectedWorkingDir,
+        selectedWorkingDir: this.tenant(this.actorOf(req.user)).selectedWorkingDir,
         baseFolder: this.baseFolder,
         homeDir: os.homedir(),
         aliases: this.aliases,
@@ -1088,7 +1272,7 @@ class ClaudeCodeWebServer {
     // Changing a space's dir only changes where NEW tasks default to; existing
     // sessions keep their own workingDir.
     this.app.get('/api/spaces', (req, res) => {
-      res.json({ spaces: this.spaces });
+      res.json({ spaces: this.tenant(this.actorOf(req.user)).spaces });
     });
     this.app.post('/api/spaces', (req, res) => {
       const cleaned = SpaceStore.cleanName(req.body && req.body.name);
@@ -1102,12 +1286,14 @@ class ClaudeCodeWebServer {
       }
       const now = new Date().toISOString();
       const space = { id: uuidv4(), name: cleaned.name, dir: validation.path, createdAt: now, updatedAt: now };
-      this.spaces.push(space);
-      this.spaceStore.saveSpaces(this.spaces);
+      const mine = this.tenant(this.actorOf(req.user));
+      mine.spaces.push(space);
+      mine.spaceStore.saveSpaces(mine.spaces);
       res.json({ success: true, space });
     });
     this.app.patch('/api/spaces/:id', (req, res) => {
-      const space = this.spaces.find((s) => s.id === req.params.id);
+      const mine = this.tenant(this.actorOf(req.user));
+      const space = mine.spaces.find((s) => s.id === req.params.id);
       if (!space) return res.status(404).json({ error: 'Space not found' });
       const body = req.body || {};
 
@@ -1128,22 +1314,24 @@ class ClaudeCodeWebServer {
       }
 
       space.updatedAt = new Date().toISOString();
-      this.spaceStore.saveSpaces(this.spaces);
+      mine.spaceStore.saveSpaces(mine.spaces);
       res.json({ success: true, space });
     });
     this.app.delete('/api/spaces/:id', (req, res) => {
-      const index = this.spaces.findIndex((s) => s.id === req.params.id);
+      const ownerId = this.actorOf(req.user);
+      const mine = this.tenant(ownerId);
+      const index = mine.spaces.findIndex((s) => s.id === req.params.id);
       if (index === -1) return res.status(404).json({ error: 'Space not found' });
-      this.spaces.splice(index, 1);
+      mine.spaces.splice(index, 1);
       // The tasks survive; they lose their group and show under 未分组.
       let orphaned = 0;
-      for (const session of this.claudeSessions.values()) {
+      for (const session of this.ownedSessions(ownerId)) {
         if (session.spaceId === req.params.id) {
           session.spaceId = null;
           orphaned++;
         }
       }
-      this.spaceStore.saveSpaces(this.spaces);
+      mine.spaceStore.saveSpaces(mine.spaces);
       if (orphaned > 0) this.saveSessionsToDisk();
       res.json({ success: true, orphaned });
     });
@@ -1195,10 +1383,11 @@ class ClaudeCodeWebServer {
           return res.status(400).json({ error: 'Path is not a directory' });
         }
         
-        this.selectedWorkingDir = validatedPath;
-        res.json({ 
-          success: true, 
-          workingDir: this.selectedWorkingDir 
+        const mine = this.tenant(this.actorOf(req.user));
+        mine.selectedWorkingDir = validatedPath;
+        res.json({
+          success: true,
+          workingDir: mine.selectedWorkingDir
         });
       } catch (error) {
         res.status(500).json({ 
@@ -1231,11 +1420,12 @@ class ClaudeCodeWebServer {
         }
         
         // Store the selected working directory
-        this.selectedWorkingDir = validatedPath;
-        
-        res.json({ 
+        const mine = this.tenant(this.actorOf(req.user));
+        mine.selectedWorkingDir = validatedPath;
+
+        res.json({
           success: true,
-          workingDir: this.selectedWorkingDir
+          workingDir: mine.selectedWorkingDir
         });
       } catch (error) {
         res.status(500).json({ 
@@ -1248,7 +1438,7 @@ class ClaudeCodeWebServer {
     this.app.post('/api/close-session', (req, res) => {
       try {
         // Clear the selected working directory
-        this.selectedWorkingDir = null;
+        this.tenant(this.actorOf(req.user)).selectedWorkingDir = null;
         
         res.json({ 
           success: true,
@@ -1325,6 +1515,12 @@ class ClaudeCodeWebServer {
             process.exit(1);
           }
           this.publishInstanceLock();
+          // Only a real, listening server moves data to the first admin; see
+          // migrateUnownedToAdmin for why never from the constructor.
+          this.listening = true;
+          this._initialLoad
+            .then(() => this.migrateUnownedToAdmin())
+            .catch((error) => console.error('[migrate] failed:', error.message));
           resolve(server);
         }
       });
@@ -1350,6 +1546,8 @@ class ClaudeCodeWebServer {
       claudeSessionId: null,
       // Which login opened this socket, so signing out can close it.
       loginId: req.ccwLoginId || null,
+      // Whose sessions this socket may join (see getOwnedSession).
+      userId: this.actorOf(req.ccwUser),
       created: new Date()
     };
     this.webSocketConnections.set(wsId, wsInfo);
@@ -1389,8 +1587,8 @@ class ClaudeCodeWebServer {
       connectionId: wsId
     });
 
-    // If sessionId provided, auto-join that session
-    if (claudeSessionId && this.claudeSessions.has(claudeSessionId)) {
+    // If sessionId provided, auto-join that session — only one of our own.
+    if (claudeSessionId && this.getOwnedSession(wsInfo.userId, claudeSessionId)) {
       this.joinClaudeSession(wsId, claudeSessionId);
     }
   }
@@ -1480,8 +1678,13 @@ class ClaudeCodeWebServer {
         break;
 
       case 'stop':
+        // The joined session — reached only through an owner-checked join — and
+        // still owned and attached, the same test input/resize apply.
         if (wsInfo.claudeSessionId) {
-          await this.stopClaude(wsInfo.claudeSessionId);
+          const session = this.getOwnedSession(wsInfo.userId, wsInfo.claudeSessionId);
+          if (session && session.connections.has(wsId)) {
+            await this.stopClaude(wsInfo.claudeSessionId);
+          }
         }
         break;
 
@@ -1508,6 +1711,8 @@ class ClaudeCodeWebServer {
   // again, and everything said from now on is appended to that transcript.
   async createSession(req, res) {
     const { name, workingDir, resumeId, customName, spaceId } = req.body || {};
+    const ownerId = this.actorOf(req.user);
+    const mine = this.tenant(ownerId);
 
     let validWorkingDir = this.baseFolder;
     if (workingDir) {
@@ -1519,8 +1724,8 @@ class ClaudeCodeWebServer {
         });
       }
       validWorkingDir = validation.path;
-    } else if (this.selectedWorkingDir) {
-      validWorkingDir = this.selectedWorkingDir;
+    } else if (mine.selectedWorkingDir) {
+      validWorkingDir = mine.selectedWorkingDir;
     }
 
     let sessionId = uuidv4();
@@ -1532,8 +1737,17 @@ class ClaudeCodeWebServer {
       // One conversation, one tab: two Claude processes resuming the same
       // transcript would interleave writes into it. The list greys these out;
       // this is the check that holds when another device got there first.
+      // Another user's tab counts too — Claude's transcripts are shared until
+      // each user has their own history — but its id is not ours to hand out.
       const holder = this.sessionHoldingConversation(resumeId);
       if (holder) {
+        const holderSession = this.claudeSessions.get(holder);
+        if (holderSession && (holderSession.ownerId || null) !== ownerId) {
+          return res.status(409).json({
+            error: 'Conversation in use by another user',
+            message: '其他用户正在使用这个对话。'
+          });
+        }
         return res.status(409).json({
           error: 'Conversation already open',
           message: 'That conversation is already open in another tab.',
@@ -1565,7 +1779,8 @@ class ClaudeCodeWebServer {
       // The sidebar space this task belongs to. resolveSpaceId degrades an
       // unknown id to null; from there the working dir's own space (if any)
       // is the natural default.
-      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
+      spaceId: this.resolveSpaceId(spaceId, ownerId) || this.spaceIdForDir(validWorkingDir, ownerId),
+      ownerId,
       planDirs: [], // per-session extra plan directories (additive to global + auto-discovery)
       // Claude has been started under this id before — by us, or (when resuming
       // a conversation from the history list) by whoever recorded it.
@@ -1580,7 +1795,7 @@ class ClaudeCodeWebServer {
       pausedConnections: new Set(),
       flowResumeTimer: null,
       outputBuffer: [],
-      maxBufferSize: this.maxBufferSize()
+      maxBufferSize: this.maxBufferSize(ownerId)
     };
 
     this.claudeSessions.set(sessionId, session);
@@ -1610,7 +1825,8 @@ class ClaudeCodeWebServer {
     const dirParam = ClaudeCodeWebServer.singleQueryValue(req.query.dir);
     if (!dirParam.ok) return res.status(400).json({ error: 'Invalid dir parameter' });
 
-    let dir = dirParam.value || this.selectedWorkingDir || this.baseFolder;
+    const ownerId = this.actorOf(req.user);
+    let dir = dirParam.value || this.tenant(ownerId).selectedWorkingDir || this.baseFolder;
     const validation = this.validatePath(dir);
     if (!validation.valid) return res.status(403).json({ error: validation.error });
     dir = validation.path;
@@ -1618,16 +1834,21 @@ class ClaudeCodeWebServer {
     const conversations = await claudeHistory.listConversations(dir, { limit: 50 });
     res.json({
       dir,
-      conversations: conversations.map(c => ({
-        ...c,
-        openInTab: this.claudeSessions.has(c.id)
-      }))
+      // A conversation another user's tab holds is just as taken (the
+      // transcripts are shared), but it is not a tab of ours to switch to.
+      conversations: conversations.map((c) => {
+        const holder = this.claudeSessions.get(c.id);
+        const inUseByOther = !!holder && (holder.ownerId || null) !== ownerId;
+        return { ...c, openInTab: !!holder, ...(inUseByOther ? { inUseByOther: true } : {}) };
+      })
     });
   }
 
   async createAndJoinSession(wsId, name, workingDir, spaceId) {
     const wsInfo = this.webSocketConnections.get(wsId);
     if (!wsInfo) return;
+    const ownerId = wsInfo.userId || null;
+    const mine = this.tenant(ownerId);
 
     // Validate working directory if provided
     let validWorkingDir = this.baseFolder;
@@ -1641,8 +1862,8 @@ class ClaudeCodeWebServer {
         return;
       }
       validWorkingDir = validation.path;
-    } else if (this.selectedWorkingDir) {
-      validWorkingDir = this.selectedWorkingDir;
+    } else if (mine.selectedWorkingDir) {
+      validWorkingDir = mine.selectedWorkingDir;
     }
 
     // Create new Claude session
@@ -1654,13 +1875,14 @@ class ClaudeCodeWebServer {
       lastActivity: new Date(),
       active: false,
       workingDir: validWorkingDir,
-      spaceId: this.resolveSpaceId(spaceId) || this.spaceIdForDir(validWorkingDir),
+      spaceId: this.resolveSpaceId(spaceId, ownerId) || this.spaceIdForDir(validWorkingDir, ownerId),
+      ownerId,
       connections: new Set([wsId]),
       // Flow control: connections that have asked us to pause the PTY.
       pausedConnections: new Set(),
       flowResumeTimer: null,
       outputBuffer: [],
-      maxBufferSize: this.maxBufferSize()
+      maxBufferSize: this.maxBufferSize(ownerId)
     };
     
     this.claudeSessions.set(sessionId, session);
@@ -1682,7 +1904,7 @@ class ClaudeCodeWebServer {
     const wsInfo = this.webSocketConnections.get(wsId);
     if (!wsInfo) return;
 
-    const session = this.claudeSessions.get(claudeSessionId);
+    const session = this.getOwnedSession(wsInfo.userId || null, claudeSessionId);
     if (!session) {
       this.sendToWebSocket(wsInfo.ws, {
         type: 'error',
@@ -1713,7 +1935,7 @@ class ClaudeCodeWebServer {
       // separate hard-coded 200, which meant raising the persist cap changed
       // nothing the browser could actually show — but bounded by bytes as well,
       // since this message is sent on every reconnect. See replaySlice.
-      outputBuffer: this.replaySlice(session.outputBuffer)
+      outputBuffer: this.replaySlice(session.outputBuffer, session.ownerId)
     });
 
     // No forced repaint here. v4.6.3 used to nudge the pty down a row and back
@@ -2074,7 +2296,7 @@ class ClaudeCodeWebServer {
   // held mod POST; unknown/expired callIds answer plainly so the client can't tell.
   answerPermissionRequest(req, res) {
     const sessionId = req.params.sessionId;
-    if (!this.claudeSessions.has(sessionId)) return res.status(404).json({ error: 'Unknown session' });
+    if (!this.getOwnedSession(this.actorOf(req.user), sessionId)) return res.status(404).json({ error: 'Unknown session' });
     const { call_id: callId, decision } = req.body || {};
     if (!callId || (decision !== 'allow' && decision !== 'deny')) {
       return res.status(400).json({ error: 'call_id and decision (allow|deny) required' });
@@ -2168,8 +2390,10 @@ class ClaudeCodeWebServer {
     // The `/api/plan/:token/:session/:file` route scopes to one session (its
     // workingDir + its planDirs). The 2-segment route (or `-`) has no session, so
     // it falls back to every active session's workingDir (global planDirs only).
+    // Only the caller's own sessions count, scoped or not.
+    const ownerId = this.navActor(req);
     const scoped = params.session && params.session !== '-'
-      ? this.claudeSessions.get(params.session)
+      ? this.getOwnedSession(ownerId, params.session)
       : null;
     const autoRoots = [this.baseFolder];
     const planDirsForReq = this.planDirs.slice();
@@ -2177,7 +2401,7 @@ class ClaudeCodeWebServer {
       if (scoped.workingDir) autoRoots.push(scoped.workingDir);
       if (Array.isArray(scoped.planDirs)) planDirsForReq.push(...scoped.planDirs);
     } else {
-      for (const s of this.claudeSessions.values()) {
+      for (const s of this.ownedSessions(ownerId)) {
         if (s && s.workingDir) autoRoots.push(s.workingDir);
       }
     }
@@ -2944,16 +3168,18 @@ class ClaudeCodeWebServer {
   static LEGACY_BYTES_PER_CHUNK = 100;
 
 
-  scrollbackFile() {
-    return this.dataDirFile('scrollback.json');
+  // Per user: <dataDir>/<uid>/scrollback.json; the unowned tenant's at the root.
+  scrollbackFile(ownerId = null) {
+    return ownerId ? path.join(this.sessionStore.storageDir, ownerId, 'scrollback.json')
+      : this.dataDirFile('scrollback.json');
   }
 
   // The persisted value, or the default if there is no file, it is corrupt, or
   // it holds something that is not a usable number. A bad settings file must
   // never stop the server from starting.
-  loadScrollbackChunks() {
+  loadScrollbackChunks(ownerId = null) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(this.scrollbackFile(), 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(this.scrollbackFile(ownerId), 'utf8'));
       if (parsed && Number.isInteger(parsed.bytes)) {
         return ClaudeCodeWebServer.clampScrollback(parsed.bytes);
       }
@@ -2987,9 +3213,9 @@ class ClaudeCodeWebServer {
   // 500 of them were 50 KB and rebuilt 39 lines. At the 2 MB default xterm
   // absorbs the replay in about 270ms (measured: 2 MB / 19066 lines / 271ms;
   // 8 MB / 76261 lines / 998ms), so a single replay stays comfortable.
-  replaySlice(buffer) {
+  replaySlice(buffer, ownerId = null) {
     if (!Array.isArray(buffer) || buffer.length === 0) return [];
-    const limit = this.sessionStore.maxOutputChunks;
+    const limit = this.tenant(ownerId).sessionStore.maxOutputChunks;
     let bytes = 0;
     let start = buffer.length;
     while (start > 0) {
@@ -3006,23 +3232,24 @@ class ClaudeCodeWebServer {
   // The in-memory cap. Never below the old 1000, and never below what we intend
   // to persist — memory that drops a chunk before the autosave runs would make
   // the setting a lie in the least visible way possible.
-  maxBufferSize() {
+  maxBufferSize(ownerId = null) {
     // Still a chunk count — it is what the live buffer is trimmed by — but sized
     // from the byte budget so memory can actually hold what we intend to persist.
     // Dropping a chunk before the autosave runs would make the setting a lie in
     // the least visible way possible.
-    const chunks = Math.ceil(this.sessionStore.maxOutputChunks /
+    const chunks = Math.ceil(this.tenant(ownerId).sessionStore.maxOutputChunks /
                              ClaudeCodeWebServer.LEGACY_BYTES_PER_CHUNK);
     return Math.max(1000, chunks);
   }
 
-  // Apply a new depth everywhere it is already in play: the store, and every
-  // live session's own cap (sessions created later read maxBufferSize()).
-  setScrollbackChunks(chunks) {
+  // Apply a new depth everywhere it is already in play for that owner: their
+  // store, and each of their live sessions' own cap (sessions created later read
+  // maxBufferSize()). Other users' sessions keep their own setting.
+  setScrollbackChunks(chunks, ownerId = null) {
     const value = ClaudeCodeWebServer.clampScrollback(chunks);
-    this.sessionStore.maxOutputChunks = value;
-    const memory = this.maxBufferSize();
-    for (const session of this.claudeSessions.values()) session.maxBufferSize = memory;
+    this.tenant(ownerId).sessionStore.maxOutputChunks = value;
+    const memory = this.maxBufferSize(ownerId);
+    for (const session of this.ownedSessions(ownerId)) session.maxBufferSize = memory;
     return value;
   }
 
@@ -3030,7 +3257,7 @@ class ClaudeCodeWebServer {
   // label its own input instead of hard-coding numbers that could drift.
   getScrollback(req, res) {
     res.json({
-      bytes: this.sessionStore.maxOutputChunks,
+      bytes: this.tenant(this.actorOf(req.user)).sessionStore.maxOutputChunks,
       min: ClaudeCodeWebServer.SCROLLBACK_MIN,
       max: ClaudeCodeWebServer.SCROLLBACK_MAX,
       default: ClaudeCodeWebServer.SCROLLBACK_DEFAULT
@@ -3057,7 +3284,8 @@ class ClaudeCodeWebServer {
     // Persist BEFORE applying. The other order left the running server on the
     // new value while the caller was told the save had failed — a disagreement
     // that stayed invisible until the next restart put the old value back.
-    const target = this.scrollbackFile();
+    const ownerId = this.actorOf(req.user);
+    const target = this.scrollbackFile(ownerId);
     // Temp name carries the pid so two writers cannot clobber each other's
     // partial write, then rename makes the swap atomic for readers — the same
     // reasoning, and the same shape, as SessionStore.writeOne.
@@ -3071,7 +3299,7 @@ class ClaudeCodeWebServer {
       if (this.dev) console.error('Failed to persist scrollback setting:', error.message);
       return res.status(500).json({ error: 'Could not save the setting', message: error.message });
     }
-    this.setScrollbackChunks(value);
+    this.setScrollbackChunks(value, ownerId);
     res.json({ bytes: value });
   }
 
@@ -3082,8 +3310,10 @@ class ClaudeCodeWebServer {
 
   // The working directory the CLI should run in. A plugin's scope can be
   // "project", and which project that is depends entirely on cwd.
-  skillsContext(sessionId) {
-    const session = sessionId ? this.claudeSessions.get(sessionId) : null;
+  // Only the caller's own session decides it; any other id falls back to the
+  // base folder, as an unknown one always did.
+  skillsContext(sessionId, ownerId = null) {
+    const session = sessionId ? this.getOwnedSession(ownerId, sessionId) : null;
     return {
       claudeCommand: this.claudeBridge ? this.claudeBridge.claudeCommand : 'claude',
       workingDir: (session && session.workingDir) || this.baseFolder || process.cwd()
@@ -3095,7 +3325,7 @@ class ClaudeCodeWebServer {
   async getSkills(req, res) {
     const sid = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
     if (!sid.ok) return res.status(400).json({ error: 'sessionId must be a single value' });
-    const out = await skills.listInstalled(this.skillsContext(sid.value));
+    const out = await skills.listInstalled(this.skillsContext(sid.value, this.actorOf(req.user)));
     res.json(out);
   }
 
@@ -3105,7 +3335,7 @@ class ClaudeCodeWebServer {
     const q = ClaudeCodeWebServer.singleQueryValue(req.query.q);
     const limit = ClaudeCodeWebServer.singleQueryValue(req.query.limit);
     if (!sid.ok || !q.ok || !limit.ok) return res.status(400).json({ error: 'each query parameter takes a single value' });
-    const ctx = this.skillsContext(sid.value);
+    const ctx = this.skillsContext(sid.value, this.actorOf(req.user));
     const cat = await skills.catalog(ctx);
     const installed = new Set(cat.installed.map((p) => p.id));
     const rows = skills.filterCatalog(cat.available, q.value, limit.value || 200);
@@ -3129,7 +3359,7 @@ class ClaudeCodeWebServer {
     const p = ClaudeCodeWebServer.singleQueryValue(req.query.path);
     if (!p.ok || !p.value) return res.status(400).json({ error: 'path is required, once' });
     const sid = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
-    const ctx = this.skillsContext(sid.ok ? sid.value : undefined);
+    const ctx = this.skillsContext(sid.ok ? sid.value : undefined, this.actorOf(req.user));
 
     let real;
     try { real = fs.realpathSync(p.value); } catch (_) { return res.status(404).json({ error: 'no such file' }); }
@@ -3164,7 +3394,7 @@ class ClaudeCodeWebServer {
       target: body.target,
       scope: body.scope,
       acceptSha: body.acceptSha,
-      ...this.skillsContext(body.sessionId)
+      ...this.skillsContext(body.sessionId, this.actorOf(req.user))
     });
     if (result.failureCode === 'busy') return res.status(409).json(result);
     if (result.failureCode && result.failureCode.startsWith('bad-')) return res.status(400).json(result);
@@ -3172,7 +3402,7 @@ class ClaudeCodeWebServer {
   }
 
   getPlanDirs(req, res) {
-    const session = this.claudeSessions.get(req.query.sessionId);
+    const session = this.getOwnedSession(this.actorOf(req.user), req.query.sessionId);
     if (!session) return res.status(400).json({ error: 'unknown or missing sessionId' });
     res.json({
       dirs: Array.isArray(session.planDirs) ? session.planDirs : [],
@@ -3188,7 +3418,7 @@ class ClaudeCodeWebServer {
   // servePlanFile's realpath check, so no arbitrary-path read is introduced.
   setPlanDirs(req, res) {
     const body = req.body || {};
-    const session = this.claudeSessions.get(body.sessionId);
+    const session = this.getOwnedSession(this.actorOf(req.user), body.sessionId);
     if (!session) return res.status(400).json({ error: 'unknown or missing sessionId' });
     if (!Array.isArray(body.dirs)) return res.status(400).json({ error: 'dirs must be an array' });
     const { accepted, rejected } = this._validatePlanDirs(body.dirs);

@@ -39,14 +39,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-19 | 大量输出按动画帧合并写入；积压过多时暂停该会话的 PTY，消化完再恢复，各标签分别限流 | `ws-server:pause` `ws-server:resume` | — |
 | TERM-20 | 过滤焦点上报序列（^[[I / ^[[O），不会作为乱码出现 | 手工 | — |
 | TERM-21 | 终端自动适配容器大小并同步给 PTY；窗口缩放、旋转、字体加载完成后重新适配并滚到底 | `ws-server:resize` | `test/pty-size-negotiation.test.js` |
-| TERM-22 | 多个设备共享同一个 PTY 时取最小尺寸；切走的标签撤回尺寸投票，不会把 PTY 压小；加入正在运行的会话时同步为本机宽度 | `ws-server:detach_size` `ws-server:resize` | `test/pty-size-negotiation.test.js` `test/session-views.test.js` |
+| TERM-22 | 同一用户的多个设备共享同一个 PTY 时取最小尺寸；切走的标签撤回尺寸投票，不会把 PTY 压小；加入正在运行的会话时同步为本机宽度 | `ws-server:detach_size` `ws-server:resize` | `test/pty-size-negotiation.test.js` `test/session-views.test.js` |
 | TERM-23 | 终端响铃时播放一声短提示音，后台标签响铃也会响 | `xterm:app.js:onBell` | `test/feature-guards.test.js` |
 | TERM-24 | 页面在后台时，响铃会弹出系统通知「Claude needs your attention」，同一会话的通知替换而不叠加；标签在「待批准」时只响铃不重复通知，已有 ✓ 时照常提醒（答完约 60 秒后的那次响铃） | `xterm:app.js:onBell` | `test/claude-title.test.js` |
 | TERM-25 | Claude 设置的终端标题去掉前面的动画符号后，作为浏览器标签标题；只有正在看的会话会改标题 | `xterm:app.js:onTitleChange` `file:src/public/claude-title.js` | `test/claude-title.test.js` |
 | TERM-26 | 切到某个标签后终端自动获得焦点；开始或加入会话时不自动聚焦 | 手工 | — |
 | TERM-27 | 连接意外断开时指数退避自动重连，最多 5 次，之后显示「Connection lost」和 Retry 按钮；单个标签连接 8 秒无响应不会卡住切换；每 30 秒心跳 | `control:retryBtn` `ws-server:ping` `ws-client:app.js:pong` `ws-client:app.js:connected` | — |
 | TERM-28 | Claude 停止或退出时终端写一行黄色提示；非 0 退出码把标签标成错误；只有可见会话弹出 Start 面板 | `ws-client:app.js:claude_stopped` `ws-client:app.js:exit` `ws-client:app.js:error` `ws-server:stop` | — |
-| TERM-29 | Claude 的输出实时广播给同一会话的所有设备；浏览器断开后 Claude 继续运行 | `ws-client:app.js:output` | — |
+| TERM-29 | Claude 的输出实时广播给同一会话的所有设备（只有会话所有者能加入，所以都是自己的设备）；浏览器断开后 Claude 继续运行 | `ws-client:app.js:output` | — |
 | TERM-30 | 终端滚动条细窄、跟随主题，不出现横向滚动条 | 手工 | — |
 | TERM-31 | 覆盖层（加载、Start、错误）打开时，标签栏和菜单仍可点击 | 手工 | `test/overlay-stacking.test.js` `test/start-prompt-overlay.test.js` |
 | TERM-34 | 全站轻提示条：屏幕底部居中弹出，成功绿色、失败红色，约 2.2 秒淡出，且不挡鼠标点击（粘贴图片、文件操作、设置都用它） | 手工 | — |
@@ -57,13 +57,13 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-39 | 浏览器在首次交互前拦掉提示音时静默忽略，不报错也不弹窗 | 手工 | `test/feature-guards.test.js` |
 | TERM-40 | 粘贴纯文本照常交给终端，只有剪贴板里含图片才拦截上传；拖进来的不是文件就不接管，拖标签分屏的手势不受影响 | 手工 | — |
 | TERM-41 | 关闭标签时连同它的终端和连接一起销毁，所以关掉标签的浏览器自己不会再弹「会话已被删除」 | 手工 | `test/session-views.test.js` |
-| TERM-42 | 连接 URL 带 `?sessionId=` 时直接自动加入该会话 | 手工 | — |
+| TERM-42 | 连接 URL 带 `?sessionId=` 时直接自动加入该会话（只限自己的会话；`join_session` 加入别人的会话一律答「Session not found」，`stop` 也只对自己加入着的会话生效） | 手工 | — |
 | TERM-43 | 为慢客户端暂停的 PTY 最多停 5 秒就强制恢复；暂停的页面断开时自动解除，终端不会被永久卡住 | `ws-server:pause` | — |
 | TERM-44 | 协商出的 PTY 尺寸与当前相同时不重新下发（一台设备重连不会让其他设备整屏重绘）；非法尺寸直接忽略 | 手工 | `test/pty-size-negotiation.test.js` |
-| TERM-45 | 回放用的字节预算与落盘用的是同一个：最新的一段即使单独超预算也一定保留，最后一屏不会丢 | 手工 | `test/scrollback-setting.test.js` |
+| TERM-45 | 回放用的字节预算与落盘用的是同一个（都是会话所有者自己的历史保留量）：最新的一段即使单独超预算也一定保留，最后一屏不会丢 | 手工 | `test/scrollback-setting.test.js` |
 | TERM-46 | WebSocket 收到解析不了的消息时只回一条错误，不断线 | 手工 | — |
 | TERM-48 | **回合轨道**：终端右缘透明轨道，每个提交过的问题一枚刻度（minimap 式、点击跳行）；**悬停轨道弹出提问列表**——全部提问成行、当前视野所在提问高亮并在列表居中（点行跳转、移开自动收起、列表内悬停不收）；「当前」= 视口中线以上最近的提问。**锚点即终端**：TUI 把每个提问渲染成 `❯ `/`> ` 开头的行，轨道直接扫缓冲取这些行——不存在匹配失败（首版对照转录清单匹配，在老回合已被输出缓冲裁掉的长会话上全数落空，实测 4.7MB 会话 0 锚点，改为扫行后同会话 3 锚点）；重复渲染的同一问只留最后一处；终端区 ≤900px 隐藏；触屏加宽命中区。**诚实限制**：刷新后不在重建缓冲内的老提问无刻度；进行中回合不出刻度 | `file:src/public/turn-rail.js` | — |
-| TERM-49 | 会话提问清单接口 `GET /api/sessions/:id/prompts`：按序返回该会话转录里的真实用户提问（每条 ≤200 字单行 + 时间戳；过滤命令/系统包装、tool_result、子代理与 meta 记录——与 extractTitle 同一过滤）；**增量解析**——每文件缓存 {offset, prompts} 只读上次之后的完整行（首读全量、之后只读新增；半行写跨界续读；文件变小视为同 id 新对话重置），长会话结尾全是工具链也能拿到全部提问；无转录/非法 id/未知目录返回空清单不抛错；符号链接目录按真实路径回退 | `route:GET /api/sessions/:sessionId/prompts` | `test/claude-history.test.js` |
+| TERM-49 | 会话提问清单接口 `GET /api/sessions/:id/prompts`（只限自己的会话，别人的返回 404）：按序返回该会话转录里的真实用户提问（每条 ≤200 字单行 + 时间戳；过滤命令/系统包装、tool_result、子代理与 meta 记录——与 extractTitle 同一过滤）；**增量解析**——每文件缓存 {offset, prompts} 只读上次之后的完整行（首读全量、之后只读新增；半行写跨界续读；文件变小视为同 id 新对话重置），长会话结尾全是工具链也能拿到全部提问；无转录/非法 id/未知目录返回空清单不抛错；符号链接目录按真实路径回退 | `route:GET /api/sessions/:sessionId/prompts` | `test/claude-history.test.js` |
 ## 标签页与标签标记
 
 | ID | 功能 | 入口 | 守卫 |
@@ -73,7 +73,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TAB-03 | 任务的 × 删除按钮（悬停时出现），点了先弹确认框（用户 2026-10-26：「删除时，要有确认弹窗」），确认后删除任务并停止其中的 Claude；取消则不动；提示对话记录保留 | `js-control:session-manager.js:删除任务` | `test/session-views.test.js` |
 | TAB-04 | 中键点击标签关闭它 | 手工 | — |
 | TAB-05 | 右键标签弹出菜单「Close Others」，点菜单外关闭 | 手工 | — |
-| TAB-06 | 双击标签名原地重命名：回车或失焦保存，Esc 恢复，清空保留原名；名字写到服务器，所有设备可见；只有真的改了才算自定义名 | `key:session-manager.js:Enter` `key:session-manager.js:Escape` `route:PATCH /api/sessions/:sessionId` | `test/session-rename.test.js` |
+| TAB-06 | 双击标签名原地重命名：回车或失焦保存，Esc 恢复，清空保留原名；名字写到服务器，自己的所有设备可见；只有真的改了才算自定义名 | `key:session-manager.js:Enter` `key:session-manager.js:Escape` `route:PATCH /api/sessions/:sessionId` | `test/session-rename.test.js` |
 | TAB-07 | 拖动标签调整顺序；顺序变化时分屏窗格跟着换边；标签可以拖进分屏区域 | 手工 | — |
 | TAB-08 | 切换到的任务不在侧边栏可视区时，侧边栏自动滚动把它露出来 | 手工 | — |
 | TAB-09 | 关闭当前标签后自动切到最近用过的标签；关掉最后一个时显示 Start 面板而不是空终端 | 手工 | — |
@@ -97,14 +97,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
-| SPACE-02 | 空间 CRUD：GET 列出全部；POST 建（名字 1-200 字、目录经路径校验越界 403、**必须是真实存在的目录**否则 400 中文提示——手滑路径建出的空间会让其下任务无处启动）；PATCH 改名/改目录（同样校验；改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
-| SPACE-03 | 一次性迁移：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
-| SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId 降级为其目录所绑空间、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
+| SPACE-01 | 空间清单服务端持久化（`spaces.json`，单文件原子整写；每个平台用户一份，在 `<uid>/spaces.json`）：空间 = 名字 + 绑定目录；坏 JSON 降级为空清单不抛错，畸形条目跳过并计数 | `file:src/utils/space-store.js` | `test/space-store.test.js` |
+| SPACE-02 | 空间 CRUD（只限自己的空间，别人的按不存在处理返回 404）：GET 列出自己的全部；POST 建（名字 1-200 字、目录经路径校验越界 403、**必须是真实存在的目录**否则 400 中文提示——手滑路径建出的空间会让其下任务无处启动）；PATCH 改名/改目录（同样校验；改目录只影响之后新建任务的默认目录，不动已有任务的工作目录）；DELETE 删空间——**任务保留**，其会话（只动自己的）转为未分组 | `route:GET /api/spaces` `route:POST /api/spaces` `route:PATCH /api/spaces/:id` `route:DELETE /api/spaces/:id` | `test/space-store.test.js` |
+| SPACE-03 | 一次性迁移（每个用户各自按自己的会话执行）：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
+| SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId（包括别的用户的空间）降级为其目录所绑空间（只找自己的空间）、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
 | SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可收起为图标轨道，窄屏（≤768px）变左滑抽屉带遮罩；头部 #sidebarToggleBtn 是唯一的开关，两个方向都管（桌面展开⇄收起、窄屏抽屉开⇄关，aria-expanded 与提示随状态变）。侧栏内的收起按钮 #sidebarCollapseBtn 已移除（用户 2026-11-04：「sidebarToggleBtn这个图标按钮做成双重开关，可以开，也可以关。 sidebarCollapseBtn按钮，不要了。」） | `control:sidebarToggleBtn` `file:src/public/spaces.js` | `test/features.test.js` |
-| SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器全设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
+| SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器，自己的所有设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
-| SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
+| SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝（只和自己的空间比）；Enter 创建、Esc 取消 | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
 | SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用；**空间目录打不开时禁用两个启动键并给出中文原因与补救指引**（防止任务静默落到其它目录/错误空间） | `file:src/public/app.js` | — |
 | SPACE-10 | 每空间任务**水位线渐显**（借鉴 DSH）：默认只列前 5 个任务，超出部分隐藏（DOM 保留不丢）；正在运行/待批准/未读 ✓/当前任务自动抬升水位线保证可见（扫描前 50）；组尾「显示更多（还有 N 个）」每次 +5（剩 ≤5 全显）、「收起」复位；折叠空间即复位；不持久化（刷新重置） | `file:src/public/spaces.js` | — |
 | SPACE-11 | 侧栏**搜索**（借鉴 DSH）：标题行搜索图标展开输入框；非空查询把分组树替换为平铺命中列表（任务名/空间名子串、大小写不敏感；行内带状态点 + `任务名 · 空间名`）；点结果=清空收起搜索、切到该任务、展开所属空间并滚动到行；Esc 收起；无结果显示「没有匹配的任务」 | `control:sidebarSearchBtn` `control:sidebarSearchInput` | — |
@@ -146,11 +146,11 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | NEW-09 | 目录树顶部有「..」，点文件夹进入，符号链接文件夹标 ↗；空目录和打不开的目录有中文提示；遇到 401 弹出登录框 | `js-control:app.js:Symbolic link` `route:GET /api/folders` | — |
 | NEW-10 | 「显示隐藏文件夹」复选框（默认不勾），切换后刷新 | `control:showHiddenFolders` | — |
 | NEW-11 | 「新建文件夹」输入条：回车创建、Esc 取消；名称为空、含 / 或 \\、已存在等情况有中文提示；成功后刷新目录树 | `control:createFolderBtn` `control:newFolderNameInput` `control:confirmCreateFolderBtn` `control:cancelCreateFolderBtn` `route:POST /api/create-folder` | — |
-| NEW-12 | 「新对话 / 继续之前的对话」切换；继续模式列出该目录下 Claude 记录过的对话（标题、相对时间、id），已在别的标签打开的灰掉不能选；换目录时列表跟着刷新 | `js-control:conversations.js:Already open in a tab` `route:GET /api/claude-sessions` | `test/claude-history.test.js` `test/claude-resume.test.js` |
+| NEW-12 | 「新对话 / 继续之前的对话」切换；继续模式列出该目录下 Claude 记录过的对话（标题、相对时间、id），已在别的标签打开的灰掉不能选（被其他用户占用的同样灰掉，标「其他用户正在使用」，悬停提示「其他用户正在使用这个对话」）；换目录时列表跟着刷新 | `js-control:conversations.js:Already open in a tab` `route:GET /api/claude-sessions` `js-control:conversations.js:其他用户正在使用这个对话` | `test/claude-history.test.js` `test/claude-resume.test.js` |
 | NEW-13 | 「启动」创建会话并直接启动 Claude，不再弹 Start 面板；「危险模式启动」以跳过权限的方式启动 | `control:newTabStartBtn` `control:newTabDangerousBtn` `route:POST /api/sessions/create` | `test/new-tab-dialog.test.js` `test/session-create-guard.test.js` |
 | NEW-14 | 启动请求进行中两个按钮都禁用，显示「启动中…」，防止连点建出多个会话 | 手工 | `test/session-create-guard.test.js` |
 | NEW-15 | 拒绝把服务启动目录、主目录、根目录 / 当作工程目录，分别给出中文原因；没选目录、继续模式没选对话时也有中文提示 | 手工 | `test/new-tab-dialog.test.js` |
-| NEW-16 | 要继续的对话已在别的标签打开时提示并切过去；对话在该目录下已不存在时提示；网络失败提示「创建会话失败，请检查连接后重试」 | 手工 | `test/new-tab-dialog.test.js` `test/claude-resume.test.js` |
+| NEW-16 | 要继续的对话已在别的标签打开时提示并切过去（被其他用户占用时只提示「其他用户正在使用这个对话」，不切换）；对话在该目录下已不存在时提示；网络失败提示「创建会话失败，请检查连接后重试」 | 手工 | `test/new-tab-dialog.test.js` `test/claude-resume.test.js` |
 | NEW-17 | 创建成功后把目录记到最近目录最前面（最多 8 个），并记住本次的模型、权限、强度 | 手工 | `test/new-tab-dialog.test.js` |
 | NEW-18 | 取消、×、点背景、Esc 都能关闭对话框；一个标签都没有时取消，会留下 Start 面板 | `control:cancelNewTabBtn` `control:closeNewTabBtn` `key:app.js:Escape` | `test/new-tab-dialog.test.js` |
 | NEW-19 | 因拒绝原因打开对话框时（例如在主目录里点 Start），顶部红字显示原因 | 手工 | `test/new-tab-dialog.test.js` |
@@ -166,13 +166,13 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-01 | 页面加载时显示「Connecting to Claude Code...」 | 手工 | — |
 | START-02 | Start 面板：模型、权限模式、思考强度三个下拉（选 Default 时用 Claude 自己的默认值），「Start Claude」和「Dangerous Claude」两个按钮，按钮文字随别名变化 | `control:claudeModelSelect` `control:claudePermissionSelect` `control:claudeEffortSelect` `control:startBtn` `control:dangerousSkipBtn` `ws-server:start_claude` `ws-client:app.js:claude_started` | `test/start-options.test.js` |
 | START-03 | 当前会话没有可用的工程目录时，按 Start 改为打开新建对话框，并带上已选选项和拒绝原因 | 手工 | `test/new-tab-dialog.test.js` |
-| START-04 | 本地标签与服务器会话一致时原样恢复；首次使用时采用服务器上的全部会话；服务器上没有会话时直接打开新建对话框；拉取列表失败时不清空本地标签并给出提示 | `route:GET /api/sessions/list` | — |
+| START-04 | 本地标签与服务器会话一致时原样恢复；首次使用时采用服务器上自己的全部会话；服务器上没有会话时直接打开新建对话框；拉取列表失败时不清空本地标签并给出提示 | `route:GET /api/sessions/list` | — |
 | START-05 | 本地标签与服务器不一致时弹出「Restore sessions」对话框：每行可勾选打开、选为当前、删除（先确认）；没勾的记为已忽略，以后不再为它弹窗；「+ New session」打开新建对话框 | `js-control:app.js:Make this the active session` `js-control:app.js:Delete session` | — |
 | START-06 | 新会话或 Claude 未运行的会话加入时**不再弹 Start 面板**，终端打印黄色提示后直接按默认启动选项自动启动（用户 2026-10-28：「这个弹窗能不能去掉，都使用默认值。在session管理中，给个地方设置默认值」）；默认值即「上次启动的选择」，可在设置面板编辑（SET-17）；正在看着的会话中 Claude 停止仍弹面板（见 TERM-28） | 手工 | `test/start-prompt-overlay.test.js` |
-| START-07 | 会话在别的窗口或设备被删除时，自动关掉本地对应的标签并提示 | `ws-client:app.js:session_deleted` | — |
+| START-07 | 会话在自己的别的窗口或设备上被删除时，自动关掉本地对应的标签并提示 | `ws-client:app.js:session_deleted` | — |
 | START-08 | 离开会话时终端清空、状态点变红；没有任何标签时显示 Start 面板 | `ws-client:app.js:session_left` `ws-server:leave_session` | — |
 | START-09 | 连续启动失败熔断：短时间内多次非零退出后，拒绝自动重试并提示新建会话 | 手工 | `test/start-circuit.test.js` |
-| START-10 | 通过 WebSocket 新建并加入会话 | `ws-server:create_session` `ws-client:app.js:session_created` | — |
+| START-10 | 通过 WebSocket 新建并加入会话（新会话归这个连接的登录用户所有） | `ws-server:create_session` `ws-client:app.js:session_created` | — |
 | START-11 | 恢复对话框顶部说明为什么弹出，并按情况补一句有几个标签指向已不存在的会话、有几个会话是本浏览器没见过的 | 手工 | — |
 | START-12 | 恢复对话框默认勾选上次开着的会话、默认选中上次的当前会话；确认后按原标签顺序排列，新勾的排在后面 | 手工 | — |
 | START-13 | 服务器上一个会话都没有时，本地记住的标签集合会被就地清空，下次刷新不再提示恢复 | 手工 | — |
@@ -184,10 +184,10 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
 | SES-01 | 工具栏的对话气泡按钮打开 Sessions 面板，头部显示当前目录（长路径截掉前面） | `control:historyBtn` `file:src/public/conversations.js` | — |
-| SES-02 | 「Sessions (N)」列出服务器上所有会话：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
+| SES-02 | 「Sessions (N)」列出服务器上自己的所有会话（看不到别的用户的）：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
 | SES-03 | 点会话行：已开标签的切过去，没开的新开一个标签 | 手工 | — |
-| SES-04 | 会话行的垃圾桶删除会话，先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
-| SES-05 | 「Conversations in this folder (N)」只列出没有会话占用的历史对话，点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
+| SES-04 | 会话行的垃圾桶删除会话（只能是自己的），先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
+| SES-05 | 「Conversations in this folder (N)」只列出没有会话占用的历史对话（被其他用户的会话占用的也算占用，不列出），点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
 | SES-06 | 空状态和出错提示：No sessions yet. / No previous conversations in this folder. / Every conversation here is already open. / Could not load sessions. / No folder selected | 手工 | — |
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |
 | SES-08 | 菜单里的 Sessions 弹窗显示同一份列表，两个同时打开时一起刷新；底部 New Session 打开新建对话框；手机上打开时锁住页面滚动 | `control:sessionsBtnMobile` `control:closeMobileSessionsModal` | — |
@@ -277,14 +277,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-03 | 菜单底部显示「v版本 · :端口 · 构建号」，区分 dev 和 stable | `route:GET /api/config` | — |
 | SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms，按会话分别保存，新会话继承最近保存的设置；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` `test/feature-guards.test.js` |
 | SET-05 | 显示 Claude Code 已安装版本、最新版、稳定版，以及是否有更新 | `route:GET /api/version` | `test/version-info.test.js` |
-| SET-06 | 历史保留量（MB，0.25–16，默认 2），服务器端设置对所有会话生效；超出范围时提示实际生效值 | `control:scrollbackChunks` `route:GET /api/settings/scrollback` `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
-| SET-07 | 计划目录：列出本会话的额外目录（可 × 删除）和全局目录（只读）；输入后 Add 或回车提交，被拒绝的目录弹出原因 | `control:planDirInput` `control:planDirAddBtn` `js-control:app.js:Remove` `route:GET /api/plan-dirs` `route:POST /api/plan-dirs` | `test/plan-dirs.test.js` |
+| SET-06 | 历史保留量（MB，0.25–16，默认 2），服务器端按用户保存的设置，对自己的所有会话生效、不影响别的用户；超出范围时提示实际生效值 | `control:scrollbackChunks` `route:GET /api/settings/scrollback` `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
+| SET-07 | 计划目录：列出本会话的额外目录（可 × 删除，只能改自己的会话）和全局目录（实例级，只读）；输入后 Add 或回车提交，被拒绝的目录弹出原因 | `control:planDirInput` `control:planDirAddBtn` `js-control:app.js:Remove` `route:GET /api/plan-dirs` `route:POST /api/plan-dirs` | `test/plan-dirs.test.js` |
 | SET-08 | 设置弹窗 × 或点背景关闭，不保存；手机上打开时锁住页面滚动 | `control:closeSettingsBtn` | — |
 | SET-09 | 「Reset button position」让浮动按钮恢复自动跟随输入框（只在手机上显示） | `control:fabResetBtn` | `test/fab-position.test.js` |
 | SET-10 | 版本行带颜色：有更新橙色、已是最新绿色；三种降级文案分别是「Checking…」「latest unknown (no network?)」「Could not read the version」 | 手工 | `test/version-info.test.js` |
-| SET-11 | 历史保留量保存失败时红色提示「Could not save the scrollback setting」；填非整数被服务器拒绝；设置先落盘再生效，存盘失败则运行中的值不变 | `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
-| SET-12 | 计划目录区的文案会列出自动覆盖的目录；没有会话时提示先开会话；没有额外目录时明说「No extra directories for this session.」 | 手工 | `test/plan-dirs.test.js` |
-| SET-13 | 全局计划目录行带 GLOBAL 标签、整行半透明且没有删除按钮；路径过长时从左边省略，保证结尾目录名看得见 | 手工 | — |
+| SET-11 | 历史保留量保存失败时红色提示「Could not save the scrollback setting」；填非整数被服务器拒绝；设置先落盘（写进自己的 `<uid>/scrollback.json`）再生效，存盘失败则运行中的值不变 | `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
+| SET-12 | 计划目录区的文案会列出自动覆盖的目录（只算自己的会话）；没有会话时提示先开会话；没有额外目录时明说「No extra directories for this session.」 | 手工 | `test/plan-dirs.test.js` |
+| SET-13 | 全局计划目录（实例级，所有用户共用、只读）行带 GLOBAL 标签、整行半透明且没有删除按钮；路径过长时从左边省略，保证结尾目录名看得见 | 手工 | — |
 | SET-14 | 被拒绝的计划目录以右上角卡片提示，3 秒后自动滑走；点「Reset button position」后弹出确认提示 | 手工 | `test/fab-position.test.js` |
 | SET-15 | 拖动字号、滚动动画滑块时旁边数字实时变化，但要按「Save Settings」才真正生效 | `control:fontSize` `control:smoothScroll` | — |
 | SET-16 | 菜单底部的版本行可以选中复制，悬停提示解释「build id 相同 = 两个实例代码相同」 | 手工 | — |
@@ -327,7 +327,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | UI-01 | 工具栏图标悬停时不出现底框，只把图标变成强调色；统一 44×44 点击区域 | 手工 | — |
 | UI-02 | 深色和浅色两套配色；浅色主题下 Claude 的输入框边线、消息底色都看得清（高对比 ANSI 配色 + 最低对比度校正） | `file:src/public/style.css` | `test/light-contrast.test.js` |
 | UI-03 | 页面加载时提前应用已保存的主题，避免闪烁，并设置浏览器 theme-color | `file:src/public/index.html` | — |
-| UI-04 | 计划模式：Claude 提交计划时弹出「Claude's Plan」弹窗，渲染 Markdown 并播放提示音；Accept 发回车批准，Reject 发 Esc 留在计划模式，× 只关闭弹窗 | `control:acceptPlanBtn` `control:rejectPlanBtn` `control:closePlanBtn` `ws-client:app.js:hook_event` | `test/hook-endpoint.test.js` `test/feature-guards.test.js` |
+| UI-04 | 计划模式：Claude 提交计划时（只在会话所有者的设备上）弹出「Claude's Plan」弹窗，渲染 Markdown 并播放提示音；Accept 发回车批准，Reject 发 Esc 留在计划模式，× 只关闭弹窗 | `control:acceptPlanBtn` `control:rejectPlanBtn` `control:closePlanBtn` `ws-client:app.js:hook_event` | `test/hook-endpoint.test.js` `test/feature-guards.test.js` |
 | UI-05 | 可安装为 PWA（CC Web，绿色机器人图标），浏览器允许时出现「Install App」按钮 | `route:GET /manifest.json` `file:src/public/icons.js` `file:src/public/icon-generator.js` | — |
 | UI-06 | Service Worker 每分钟检查更新，有新版本时询问刷新；离线时静态资源读缓存，API 返回 503 提示 | `file:src/public/service-worker.js` | — |
 | UI-07 | 标签页图标由服务器按尺寸动态生成 | `route:GET /` | — |
@@ -379,13 +379,13 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-06 | 注入设置：通知走终端响铃（terminal_bell），强制经典渲染器以保留滚动历史 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` `test/claude-bridge.test.js` |
 | CLA-07 | Claude 主题跟随 UI 的深浅色，使用 cc-web 自带的高对比主题 | `file:src/utils/claude-theme.js` | `test/claude-theme.test.js` |
 | CLA-08 | 子进程环境：彩色终端（TERM、FORCE_COLOR、COLORTERM）、同步输出减少闪烁、强制保存对话以便恢复 | `env:TERM` `env:FORCE_COLOR` `env:COLORTERM` `env:CLAUDE_CODE_FORCE_SYNC_OUTPUT` `env:CLAUDE_CODE_FORCE_SESSION_PERSISTENCE` | `test/claude-bridge.test.js` |
-| CLA-09 | Hook：ExitPlanMode 计划弹窗、SessionStart 跟踪 /clear 后的新对话、Notification 权限请求触发「待批准」、Stop 报告一轮回答结束（带最后一句回复的前 300 字）；由 `bin/cc-hook.js` 转发，任何失败都不阻塞 Claude | `hook:PreToolUse` `hook:SessionStart` `hook:Notification` `hook:Stop` `bin:cc-hook.js` `route:POST /api/hooks/:sessionId` | `test/hook-endpoint.test.js` `test/session-start-hook.test.js` |
+| CLA-09 | Hook：ExitPlanMode 计划弹窗、SessionStart 跟踪 /clear 后的新对话、Notification 权限请求触发「待批准」、Stop 报告一轮回答结束（带最后一句回复的前 300 字）；由 `bin/cc-hook.js` 转发，只推送给会话所有者的设备，任何失败都不阻塞 Claude | `hook:PreToolUse` `hook:SessionStart` `hook:Notification` `hook:Stop` `bin:cc-hook.js` `route:POST /api/hooks/:sessionId` | `test/hook-endpoint.test.js` `test/session-start-hook.test.js` |
 | CLA-10 | Hook 端点只接受本机回环地址，并校验每个会话单独的令牌；令牌经环境变量传递，不出现在命令行 | `env:CCWEB_HOOK_TOKEN` | `test/hook-endpoint.test.js` |
 | CLA-11 | 关闭 Claude 时先发 SIGTERM，5 秒还不退出才 SIGKILL，卡死的进程最终一定被结束 | `ws-server:stop` | — |
 | CLA-12 | 信任文件夹的提示不是盲按回车：先读出光标离「Yes, I trust this folder」差几行再按方向键确认；读不出来就把选择留给你（盲按会选中 No 直接退出） | 手工 | `test/claude-bridge.test.js` |
 | CLA-13 | 传给 Claude 的标签名先去掉控制字符并截断到 80 字，超长或带控制符的名字不会弄坏终端标题 | 手工 | `test/start-options.test.js` |
 | CLA-14 | 注入 `tui: default` 会压过用户全局的 fullscreen 设置，并让 Claude 不再反复询问是否切换渲染器 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` |
-| CLA-18 | 网页权限卡片（ccweb-companion mod 配套）：mod 把待执行的 Bash 命令 POST 到 hook 端点并挂起等待；网页弹出「Claude 想执行一条命令」卡片，允许/拒绝经 answer 端点回传，超时 120 秒自动放行（回退到终端流程）；端口经环境变量告知 mod | `route:POST /api/hooks/:sessionId/answer` `env:CCWEB_HOOK_PORT` `ws-client:app.js:hook_event` | `test/permission-card.test.js` |
+| CLA-18 | 网页权限卡片（ccweb-companion mod 配套）：mod 把待执行的 Bash 命令 POST 到 hook 端点并挂起等待；网页弹出「Claude 想执行一条命令」卡片，允许/拒绝经 answer 端点回传（只接受会话所有者的应答，别人的返回 404），超时 120 秒自动放行（回退到终端流程）；端口经环境变量告知 mod | `route:POST /api/hooks/:sessionId/answer` `env:CCWEB_HOOK_PORT` `ws-client:app.js:hook_event` | `test/permission-card.test.js` |
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`（原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
@@ -397,29 +397,30 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-02 | 认证默认开启：REST 认登录 Cookie 或 Authorization 请求头里的启动令牌（不认查询参数里的令牌），WebSocket 认同源的登录 Cookie 或 URL 里的令牌；`/auth-status` 查询是否需要认证、是否已登录、当前用户、是否还需创建管理员，`/auth-verify` 校验启动令牌，已有管理员时同时以管理员身份签发登录 Cookie；启动令牌（请求头、WebSocket、链接、`/auth-verify`）同一地址一分钟内猜错 10 次后，这一分钟内连正确的令牌也拒绝（REST 返回 429，WebSocket 拒绝连接），不带令牌或链接里的 `-` 不计数 | `route:GET /auth-status` `route:POST /auth-verify` | `test/feature-guards.test.js` |
 | SRV-03 | 登录框：用户名 + 密码登录，可切换为「用访问令牌登录」；还没有任何用户时先输启动令牌，再设置管理员用户名和密码（两次密码须一致）；空值、验证中、密码或令牌错误都有提示；成功后刷新；登录靠 HttpOnly Cookie 保持，页面里不保存令牌，重启服务、新开标签页都不用重新登录；`?token=` 链接仍可登录并立即从地址栏去掉；任何接口 401 时弹出登录框 | `file:src/public/auth.js` | — |
 | SRV-04 | 异步路由出错返回 500，不会让服务崩溃带走所有终端 | 手工 | `test/async-route-safety.test.js` |
-| SRV-05 | 会话按每个一个文件保存，每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
+| SRV-05 | 会话按每个一个文件保存（平台用户的会话存在 `<数据目录>/<uid>/sessions/`，按归属分别保存与恢复；还没有管理员时仍在数据目录根下），每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
 | SRV-06 | 同一数据目录已有别的实例在运行时拒绝启动；实例锁文件权限 0600，退出时删除 | `file:src/instance-lock.js` | `test/instance-lock.test.js` |
-| SRV-07 | 新建会话：名称、工作目录可选；`resumeId` 接续已有对话（非法 UUID 400，已在别的标签 409，不存在 404） | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
-| SRV-08 | 查看会话详情、健康检查 | `route:GET /api/sessions/:sessionId` `route:GET /api/health` | — |
-| SRV-09 | 删除会话：停止 Claude，通知所有连接的客户端，删除上传图片目录和会话文件，不删 Claude 自己的对话记录 | `route:DELETE /api/sessions/:sessionId` | — |
+| SRV-07 | 新建会话：名称、工作目录可选；`resumeId` 接续已有对话（非法 UUID 400，已在别的标签 409，不存在 404）；新会话归创建者所有；要接续的对话正被其他用户的会话占用时同样 409，但不返回对方的会话 id，提示「其他用户正在使用这个对话」 | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
+| SRV-08 | 查看会话详情（只限自己的会话，别人的按不存在处理返回 404）、健康检查（会话数与连接数只算自己的） | `route:GET /api/sessions/:sessionId` `route:GET /api/health` | — |
+| SRV-09 | 删除会话（只能删自己的，别人的返回 404）：停止 Claude，通知连着这个会话的客户端（都是会话所有者自己的设备），删除上传图片目录和会话文件，不删 Claude 自己的对话记录 | `route:DELETE /api/sessions/:sessionId` | — |
 | SRV-10 | 计划文件服务：已登录的浏览器靠 Cookie 认证，URL 里的令牌段为 `-`；仍接受 URL 里带启动令牌的旧链接；以 text/plain 返回便于 Markdown 插件渲染；白名单为 `.claude/plans/` 与全局或会话计划目录中的 .md，按真实路径校验，上限 2MB | `route:GET /api/plan` `route:GET /api/plan/:token/:file` `route:GET /api/plan/:token/:session/:file` | `test/plan-file.test.js` `test/plan-dirs.test.js` |
 | SRV-11 | 文件服务的安全：.html/.svg 默认只显示源码，渲染需一次性票据（30 秒、用一次即失效）；渲染时放进无网络的沙箱；统一 nosniff、no-referrer；中文文件名 | `route:GET /api/fs/file/:token/:file` `route:POST /api/fs/ticket` `file:src/utils/inline-assets.js` | `test/fs-browse.test.js` `test/inline-assets.test.js` |
 | SRV-12 | 选择或设置工作目录、清除已选目录（旧接口） | `route:POST /api/set-working-dir` `route:POST /api/folders/select` `route:POST /api/close-session` | — |
 | SRV-13 | 加入会话不再强制重绘，避免出现两个输入框 | 手工 | `test/pty-repaint.test.js` |
 | SRV-14 | 服务端入口与会话多路复用：Express + WebSocket 服务 | `file:src/server.js` | — |
-| SRV-15 | 会话文件损坏时改名留档而不是删除，同时跳过它继续恢复其他会话 | 手工 | `test/session-store.test.js` |
-| SRV-16 | 从旧版升级时单文件的 sessions.json 自动拆成每会话一个文件，原文件原样保留可回退 | 手工 | `test/session-store.test.js` |
-| SRV-17 | 会话数据目录按 0700 创建，同机其他用户看不到你的会话内容和滚动历史；认证令牌写进 0600 的实例锁文件而不是命令行 | 手工 | `test/instance-lock.test.js` |
-| SRV-18 | 自动保存只写自己认识的会话，从不删除数据目录里别人的会话文件；上次崩溃留下的实例锁下次启动自动清理 | 手工 | `test/session-store.test.js` `test/instance-lock.test.js` |
+| SRV-15 | 会话文件损坏时改名留档而不是删除，同时跳过它继续恢复其他会话（在各用户自己的会话目录里同样如此） | 手工 | `test/session-store.test.js` |
+| SRV-16 | 从旧版升级时单文件的 sessions.json 自动拆成每会话一个文件，原文件原样保留可回退；交给管理员之后（见 SRV-28）不再读取数据目录根下的旧文件，已删除的会话不会被它带回来 | 手工 | `test/session-store.test.js` |
+| SRV-17 | 会话数据目录按 0700 创建（每个平台用户的 `<uid>/` 目录也是），同机其他用户看不到你的会话内容和滚动历史；认证令牌写进 0600 的实例锁文件而不是命令行 | 手工 | `test/instance-lock.test.js` |
+| SRV-18 | 自动保存只写自己认识的会话、并写进会话所有者自己的目录，从不删除数据目录里别人的会话文件（别的实例的、别的用户的都一样）；上次崩溃留下的实例锁下次启动自动清理 | 手工 | `test/session-store.test.js` `test/instance-lock.test.js` |
 | SRV-19 | 撞上同数据目录的其他实例时，控制台列出对方端口、pid、启动时间并提示设 `CCW_DATA_DIR`，然后退出 | 手工 | `test/instance-lock.test.js` |
 | SRV-20 | 一次性票据最多同时保留 200 个，超出丢弃最旧的；每张 30 秒过期且用一次即失效 | `route:POST /api/fs/ticket` | `test/fs-browse.test.js` |
-| SRV-21 | 计划链接里的 `~/…` 会展开成家目录绝对路径；不在白名单、超过 2MB 或不是 .md 的一律 404（不泄露文件存不存在） | `route:GET /api/plan` | `test/plan-file.test.js` |
-| SRV-22 | 退出时除保存会话外，还会停掉所有正在跑的 Claude 进程并清理定时器 | 手工 | — |
-| SRV-23 | 数据目录默认在 `~/.cc-web/data`（`~/.cc-web` 按 0700 创建）；首次启动把旧布局的 `~/.claude-code-web` 一次性原子迁入，迁移失败则继续用原目录、绝不抛错 | `file:src/utils/data-dir.js` | `test/data-dir.test.js` |
+| SRV-21 | 计划链接只在自己的会话范围内查找：指定会话时必须是自己的会话，不指定时只合并自己会话的工作目录；计划链接里的 `~/…` 会展开成家目录绝对路径；不在白名单、超过 2MB 或不是 .md 的一律 404（不泄露文件存不存在） | `route:GET /api/plan` | `test/plan-file.test.js` |
+| SRV-22 | 退出时除保存会话（各自写进所有者的目录）外，还会停掉所有正在跑的 Claude 进程并清理定时器 | 手工 | — |
+| SRV-23 | 数据目录默认在 `~/.cc-web/data`（`~/.cc-web` 按 0700 创建）；首次启动把旧布局的 `~/.claude-code-web` 一次性原子迁入，迁移失败则继续用原目录、绝不抛错；有平台用户后，每个用户的数据在其中的 `<uid>/` 子目录（会话、空间、历史保留量），用户与登录会话在 `platform/` | `file:src/utils/data-dir.js` | `test/data-dir.test.js` |
 | SRV-24 | 用户名 + 密码登录：成功后签发 HttpOnly、SameSite=Strict 的登录 Cookie，30 天有效、使用中自动续期（服务端续期时同时重发 Cookie），服务重启后仍然有效；经 https 访问（含 ngrok 或本机代理转发的 https）时 Cookie 带 Secure；密码错误、用户不存在、账号停用一律答「Invalid username or password」；同一地址每分钟最多 10 次、同一用户名每分钟最多 50 次（被地址限流挡下的请求不计入用户名），超出返回 429；经 ngrok 或本机反向代理访问时按 X-Forwarded-For 识别地址；`/api/auth/me` 返回当前用户 | `route:POST /api/auth/login` `route:GET /api/auth/me` `file:src/utils/password.js` `file:src/utils/cookies.js` | `test/auth-login.test.js` |
 | SRV-25 | 退出登录：服务端作废这个登录会话并清除 Cookie，同时关闭用这个登录打开的 WebSocket（其他标签页里的终端随之断开）| `route:POST /api/auth/logout` | `test/auth-login.test.js` |
 | SRV-26 | 首次创建管理员：还没有任何用户时，凭启动令牌设置第一个账号（用户名 2–32 位字母数字 `_ . -`，密码至少 8 位），它就是管理员并直接登录；已有用户后此接口返回 409；启动时控制台提示「用这个令牌创建管理员」 | `route:POST /api/auth/setup` | `test/auth-login.test.js` |
 | SRV-27 | 用户与登录会话的存储：`<数据目录>/platform/` 下每个用户、每个登录会话各一个文件（0600，原子写）；密码只存 scrypt 加盐哈希，登录会话只存 Cookie 值的 SHA-256；Cookie 名带端口（`ccw_sid_<端口>`），同机的 stable 和 dev 互不顶掉登录；带 Cookie 的跨站写请求和跨站 WebSocket 一律拒绝（403） | `file:src/utils/user-store.js` | `test/auth-login.test.js` |
+| SRV-28 | 单用户数据交给第一个管理员：有管理员后（服务启动时，或第一个管理员刚建好时），数据目录根下原有的会话文件逐个 rename 进管理员的 `<uid>/sessions/`、`spaces.json` 一并移过去、`scrollback.json` 复制过去（原文件保留），内存里的会话与空间改归管理员；只移不删，移不动的留在原处、下次自动保存照样写进管理员目录；写 `migrated-to-admin.json` 标记，只做一次；关闭认证（`--disable-auth`）时不做 | 手工 | `test/multi-user-data.test.js` |
 ## 命令行
 
 | ID | 功能 | 入口 | 守卫 |
@@ -432,8 +433,8 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLI-06 | `--dev` 输出更多日志 | `cli:--dev` | — |
 | CLI-07 | `--ngrok-auth-token` 与 `--ngrok-domain` 一起开启公网隧道；只给一个时报错；隧道失败不影响服务 | `cli:--ngrok-auth-token` `cli:--ngrok-domain` | — |
 | CLI-08 | `--plans-dir` 或环境变量 `CCW_PLANS_DIR` 预置全局计划目录 | `cli:--plans-dir` | `test/plan-dirs.test.js` |
-| CLI-09 | `CCW_DATA_DIR` 指定数据目录，两个实例靠它隔离 | 手工 | `test/instance-lock.test.js` |
-| CLI-10 | Ctrl+C / SIGTERM 优雅退出：保存会话、撤下实例锁、关闭隧道 | 手工 | — |
+| CLI-09 | `CCW_DATA_DIR` 指定数据目录，两个实例靠它隔离（目录里各平台用户的数据在 `<uid>/` 子目录） | 手工 | `test/instance-lock.test.js` |
+| CLI-10 | Ctrl+C / SIGTERM 优雅退出：保存会话（各自写进所有者的目录）、撤下实例锁、关闭隧道 | 手工 | — |
 | CLI-11 | `--https` 只给一个证书参数时启动失败并说明原因；`--auth-file` 指向的文件读不了或为空时打印原因退出，不会悄悄改用随机令牌 | `cli:--https` `cli:--auth-file` | `test/instance-lock.test.js` |
 | CLI-12 | 版本查询的耐用性：`claude --version` 5 秒超时、npm 查询 8 秒超时且最多读 64KB、结果缓存 6 小时而失败不缓存；查不出来时显示未知而不是谎报已是最新 | `route:GET /api/version` | `test/version-info.test.js` |
 ## 已知缺陷与未接入（只登记，未修；修不修由用户决定）

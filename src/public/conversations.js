@@ -261,12 +261,14 @@
         meta: [
           relativeTime(conv.updatedAt),
           conv.id.slice(0, 8),
-          conv.openInTab ? 'open in a tab' : ''
+          conv.inUseByOther ? '其他用户正在使用' : (conv.openInTab ? 'open in a tab' : '')
         ].filter(Boolean).join(' · ')
       });
 
       if (conv.openInTab) {
         row.title = 'Already open in a tab';
+        // Held by another user's tab: still not selectable, and not ours to open.
+        if (conv.inUseByOther) row.title = '其他用户正在使用这个对话';
         return row; // not selectable: one conversation, one tab
       }
 
