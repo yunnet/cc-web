@@ -129,11 +129,12 @@ class ClaudeBridge {
       // the server tracks where it went. See server.resumeIdFor.
       resumeId = '',
       // The session owner's own Claude directory (CLAUDE_CONFIG_DIR) and the
-      // platform key to run it with. Both empty for the unowned tenant, which
-      // keeps using ~/.claude and whatever login it holds. See
-      // utils/claude-config.js.
+      // platform credential to run it with: the shared subscription token, or
+      // the platform key. All empty for the unowned tenant, which keeps using
+      // ~/.claude and whatever login it holds. See utils/claude-config.js.
       claudeConfigDir = null,
-      apiKey = ''
+      apiKey = '',
+      oauthToken = ''
     } = options;
 
     // Args shared by a fresh launch and a resume.
@@ -215,7 +216,7 @@ class ClaudeBridge {
       // Run by cc-statusline.js so the user keeps the status line they had.
       if (userStatusLine) childEnv.CCWEB_USER_STATUSLINE = userStatusLine.command;
       delete childEnv.CLAUDE_CODE_CHILD_SESSION;
-      ClaudeBridge.applyOwnerEnv(childEnv, { claudeConfigDir, apiKey });
+      ClaudeBridge.applyOwnerEnv(childEnv, { claudeConfigDir, apiKey, oauthToken });
       return spawn(this.claudeCommand, [...idArgs, ...baseArgs], {
         cwd: workingDir,
         env: childEnv,
@@ -578,15 +579,17 @@ class ClaudeBridge {
   }
 
   // A platform user's Claude runs on their own directory (CLAUDE_CONFIG_DIR),
-  // and on the platform key or nothing: credentials the server inherited are
-  // not theirs to use. Without a directory (the unowned tenant) the env is left
-  // exactly as it was. The same rule as claudeConfig.applyEnv, spelled out here
-  // because this is the spawn env FEATURES.md accounts for.
-  static applyOwnerEnv(childEnv, { claudeConfigDir = null, apiKey = '' } = {}) {
+  // and on the platform's credential or nothing: the shared subscription token
+  // when one is configured, else the platform key. Credentials the server
+  // inherited are not theirs to use. Without a directory (the unowned tenant)
+  // the env is left exactly as it was. The same rule as claudeConfig.applyEnv,
+  // spelled out here because this is the spawn env FEATURES.md accounts for.
+  static applyOwnerEnv(childEnv, { claudeConfigDir = null, apiKey = '', oauthToken = '' } = {}) {
     if (!claudeConfigDir) return childEnv;
     for (const name of claudeConfig.CREDENTIAL_ENV) delete childEnv[name];
     childEnv.CLAUDE_CONFIG_DIR = claudeConfigDir;
-    if (apiKey) childEnv.ANTHROPIC_API_KEY = apiKey;
+    if (oauthToken) childEnv.CLAUDE_CODE_OAUTH_TOKEN = oauthToken;
+    else if (apiKey) childEnv.ANTHROPIC_API_KEY = apiKey;
     return childEnv;
   }
 

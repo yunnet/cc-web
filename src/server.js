@@ -134,15 +134,16 @@ class ClaudeCodeWebServer {
   // at the next start. The unowned tenant gets nothing — no directory, no key.
   prepareClaudeFor(ownerId) {
     const claudeConfigDir = this.claudeDirFor(ownerId);
-    if (!claudeConfigDir) return { claudeConfigDir: null, apiKey: '' };
-    const apiKey = claudeConfig.readPlatformKey(this.dataDirFile('platform'));
+    if (!claudeConfigDir) return { claudeConfigDir: null, apiKey: '', oauthToken: '' };
+    // The shared subscription when configured, else the platform key.
+    const { apiKey, oauthToken } = claudeConfig.platformCredentials(this.dataDirFile('platform'));
     claudeConfig.seedConfig(claudeConfigDir, { apiKey });
     if (!this.themedClaudeDirs) this.themedClaudeDirs = new Set();
     if (!this.themedClaudeDirs.has(claudeConfigDir)) {
       claudeTheme.ensureThemes(claudeConfigDir);
       this.themedClaudeDirs.add(claudeConfigDir);
     }
-    return { claudeConfigDir, apiKey };
+    return { claudeConfigDir, apiKey, oauthToken };
   }
 
   // The unowned tenant's spaces, under the name every caller used before there
