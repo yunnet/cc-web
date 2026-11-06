@@ -97,14 +97,33 @@ function emptyAcc() {
     skills: new Map(),
     commands: new Map(),
     firstAt: null,
-    lastAt: null
+    lastAt: null,
+    // For the overview's conversation list: where it ran and what it is
+    // called — the title Claude or a person gave it, else the first prompt.
+    cwd: null,
+    aiTitle: null,
+    customTitle: null,
+    firstPrompt: null
   };
 }
 
 const bump = (map, key, n = 1) => map.set(key, (map.get(key) || 0) + n);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+// The opening of the first thing a person typed: the fallback title, the
+// same pick as claude-history's (no command echoes, reminders, tool results).
+const NOT_A_PROMPT = /^\s*<(local-command-caveat|command-name|command-message|command-args|system-reminder|user-prompt-submit-hook)/;
+
 function addRecord(acc, record) {
+  if (record.type === 'ai-title' && typeof record.aiTitle === 'string' && record.aiTitle.trim()) {
+    acc.aiTitle = record.aiTitle.trim().slice(0, 120);
+    return;
+  }
+  if (record.type === 'custom-title' && typeof record.customTitle === 'string' && record.customTitle.trim()) {
+    acc.customTitle = record.customTitle.trim().slice(0, 120);
+    return;
+  }
+  if (!acc.cwd && typeof record.cwd === 'string') acc.cwd = record.cwd;
   const at = typeof record.timestamp === 'string' ? record.timestamp : null;
   if (at) {
     if (!acc.firstAt || at < acc.firstAt) acc.firstAt = at;
@@ -120,6 +139,9 @@ function addRecord(acc, record) {
     if (typeof content === 'string') {
       const m = /<command-name>\/?([^<\s]{1,60})<\/command-name>/.exec(content);
       if (m) bump(acc.commands, m[1]);
+      else if (!acc.firstPrompt && !record.isMeta && content.trim() && !NOT_A_PROMPT.test(content)) {
+        acc.firstPrompt = content.trim().replace(/\s+/g, ' ').slice(0, 120);
+      }
     }
     return;
   }
@@ -175,7 +197,14 @@ function addRecord(acc, record) {
 
 // Only these lines can matter; everything else (tool results, attachments,
 // hook output — most of the bytes) is skipped without parsing.
-const WANTED = ['"type":"assistant"', 'compact_boundary', '<command-name>'];
+const WANTED = ['"type":"assistant"', 'compact_boundary', '<command-name>', '-title"'];
+
+// Until a conversation's first prompt is found, plain user lines are parsed
+// too — except tool results, which are most of the bytes and never a prompt.
+function wanted(line, acc) {
+  if (WANTED.some((w) => line.includes(w))) return true;
+  return !acc.firstPrompt && line.includes('"type":"user"') && !line.includes('"tool_result"');
+}
 
 // file -> { offset, ino, acc }. Bounded: an overview reads many files.
 const cache = new Map();
@@ -193,7 +222,7 @@ async function readFrom(file, entry, size) {
       const line = buf.subarray(start, nl);
       consumed += nl - start + 1;
       start = nl + 1;
-      if (!WANTED.some((w) => line.includes(w))) continue;
+      if (!wanted(line, entry.acc)) continue;
       let record;
       try { record = JSON.parse(line.toString('utf8')); } catch (_) { continue; }
       addRecord(entry.acc, record);
@@ -314,7 +343,150 @@ async function conversationUsage(dir, conversationId, { root = claudeHistory.pro
   return summary;
 }
 
+// ── The overview: every conversation under one Claude projects directory.
+//
+// Measured on this machine (2026-11-06): 157 transcripts, 332 MB — a cold
+// scan is ~2 s, and after it every call reads only what was appended. A
+// request waits at most `budgetMs` for the scan and answers with what is read
+// so far plus `scanning: true`; the scan carries on and the browser asks again.
+// Days are the browser's local days (tzOffsetMin is getTimezoneOffset()), and
+// a request counts on the day it was made, not the day its file last changed.
+
+const scans = new Map(); // root -> promise of the running scan
+
+async function listTranscripts(root, sinceMs) {
+  const out = [];
+  let projects;
+  try { projects = await fsp.readdir(root, { withFileTypes: true }); } catch (_) { return out; }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const dir = path.join(root, project.name);
+    let names;
+    try { names = await fsp.readdir(dir); } catch (_) { continue; }
+    for (const name of names) {
+      if (!name.endsWith('.jsonl') || !claudeHistory.UUID.test(name.slice(0, -6))) continue;
+      const file = path.join(dir, name);
+      let st;
+      try { st = await fsp.stat(file); } catch (_) { continue; }
+      if (st.mtimeMs < sinceMs) continue;
+      const id = name.slice(0, -6);
+      out.push({ id, project: project.name, file, subagents: await subagentFiles(dir, id) });
+    }
+  }
+  return out;
+}
+
+async function scanAll(files, concurrency = 4) {
+  const queue = files.flatMap((f) => [f.file, ...f.subagents]);
+  const worker = async () => {
+    while (queue.length) {
+      const file = queue.shift();
+      try { await accumulate(file); } catch (_) { /* unreadable: skipped */ }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+}
+
+const dayOf = (t, tzOffsetMin) => {
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? new Date(ms - tzOffsetMin * 60000).toISOString().slice(0, 10) : null;
+};
+
+function dayList(endDay, n) {
+  const out = [];
+  const end = Date.parse(endDay + 'T00:00:00Z');
+  for (let i = n - 1; i >= 0; i--) out.push(new Date(end - i * 86400000).toISOString().slice(0, 10));
+  return out;
+}
+
+async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, now = Date.now(), chartDays = 7 } = {}) {
+  const files = await listTranscripts(root, sinceMs);
+  let scan = scans.get(root);
+  if (!scan) {
+    scan = scanAll(files).finally(() => scans.delete(root));
+    scans.set(root, scan);
+  }
+  let done = false;
+  await Promise.race([
+    scan.then(() => { done = true; }),
+    new Promise((r) => setTimeout(r, budgetMs))
+  ]);
+
+  const today = dayOf(new Date(now).toISOString(), tzOffsetMin);
+  const chart = dayList(today, chartDays);
+  const heat = dayList(today, 56); // eight weeks
+  const byDay = new Map();
+  const dayBucket = (d) => {
+    let b = byDay.get(d);
+    if (!b) { b = { tokens: 0, costUsd: 0, requests: 0 }; byDay.set(d, b); }
+    return b;
+  };
+  const inRange = [];
+  const tools = new Map(), programs = new Map(), skills = new Map(), commands = new Map();
+  const sessions = [];
+  let read = 0;
+
+  for (const f of files) {
+    const entry = cache.get(f.file);
+    if (!entry) continue;
+    read++;
+    const acc = entry.acc;
+    const subs = f.subagents.map((s) => cache.get(s)).filter(Boolean).map((e) => e.acc);
+    const own = [];
+    for (const r of acc.requests.concat(...subs.map((s) => s.requests))) {
+      const ms = Date.parse(r.t);
+      // Requests on the eight-week heatmap, whatever the range.
+      const d = dayOf(r.t, tzOffsetMin);
+      const tokensOf = r.input + r.cacheRead + r.cacheCreate + r.output;
+      if (d) {
+        const b = dayBucket(d);
+        b.tokens += tokensOf;
+        b.requests++;
+        const c = costOf(r);
+        if (c !== null) b.costUsd += c;
+      }
+      if (Number.isFinite(ms) && ms >= sinceMs) own.push(r);
+    }
+    if (!own.length) continue;
+    inRange.push(...own);
+    const t = totalsOf(own);
+    const last = acc.requests[acc.requests.length - 1];
+    sessions.push({
+      id: f.id,
+      project: f.project,
+      cwd: acc.cwd,
+      title: acc.customTitle || acc.aiTitle || acc.firstPrompt || null,
+      requests: t.requests,
+      tokens: t.input + t.cacheRead + t.cacheCreate + t.output,
+      costUsd: t.costUsd,
+      cacheHitRate: t.cacheHitRate,
+      ctx: last ? last.input + last.cacheRead + last.cacheCreate : null,
+      lastAt: acc.lastAt,
+      subagents: f.subagents.length
+    });
+    for (const [map, from] of [[tools, acc.tools], [programs, acc.programs], [skills, acc.skills], [commands, acc.commands]]) {
+      for (const [k, v] of from) bump(map, k, v);
+    }
+  }
+
+  sessions.sort((a, b) => String(b.lastAt || '').localeCompare(String(a.lastAt || '')));
+  const totals = totalsOf(inRange);
+  totals.sessions = sessions.length;
+  const series = (days) => days.map((d) => ({ day: d, ...(byDay.get(d) || { tokens: 0, costUsd: 0, requests: 0 }) }));
+  return {
+    scanning: !done,
+    files: { read, total: files.length },
+    totals,
+    days: series(chart),
+    heatmap: series(heat),
+    sessions: sessions.slice(0, 300),
+    sessionsTotal: sessions.length,
+    top: { tools: top(tools), programs: top(programs), skills: top(skills), commands: top(commands) }
+  };
+}
+
 module.exports = {
+  overview,
   PRICES,
   priceFor,
   costOf,

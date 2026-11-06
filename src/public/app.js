@@ -1359,7 +1359,7 @@ class ClaudeCodeWebInterface {
         const usageBtnMobile = document.getElementById('usageBtnMobile');
         if (usageBtnMobile) {
             usageBtnMobile.addEventListener('click', () => {
-                if (window.usagePanel) window.usagePanel.open();
+                if (window.usagePanel) window.usagePanel.open(null, 'overview');
                 this.closeMobileMenu();
             });
         }

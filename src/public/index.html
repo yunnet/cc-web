@@ -571,7 +571,13 @@
                     <h2 id="usageTitle">上下文与用量</h2>
                     <button class="close-btn" id="closeUsageBtn">&times;</button>
                 </div>
-                <div class="modal-body" id="usageBody"></div>
+                <div class="modal-body">
+                    <div class="skills-tabs" role="tablist">
+                        <button class="skills-tab active" id="usageTabSession" type="button">本标签</button>
+                        <button class="skills-tab" id="usageTabOverview" type="button">总览</button>
+                    </div>
+                    <div id="usageBody"></div>
+                </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" id="usageRefreshBtn" type="button">刷新</button>
                     <button class="btn btn-secondary" id="usageDoneBtn" type="button">关闭</button>

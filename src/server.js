@@ -1107,6 +1107,32 @@ class ClaudeCodeWebServer {
         res.json({ workingDir: validation.path, usage });
       }));
 
+    // Every conversation in the caller's own Claude directory, summed: the
+    // usage panel's 总览. Each platform user runs Claude on their own
+    // directory (M3), so reading projectsDirFor(actor) is the isolation — no
+    // one sees another user's conversations. range is 7d / 30d / all; tz is
+    // the browser's getTimezoneOffset(), so days are the reader's days.
+    this.app.get('/api/usage/overview',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const rangeParam = ClaudeCodeWebServer.singleQueryValue(req.query.range);
+        const tzParam = ClaudeCodeWebServer.singleQueryValue(req.query.tz);
+        const range = rangeParam.ok && ['7d', '30d', 'all'].includes(rangeParam.value) ? rangeParam.value : '7d';
+        const tz = tzParam.ok && /^-?\d{1,4}$/.test(tzParam.value || '') && Math.abs(Number(tzParam.value)) <= 14 * 60 ? Number(tzParam.value) : 0;
+        const actor = this.actorOf(req.user);
+        const now = Date.now();
+        const sinceMs = range === 'all' ? 0 : now - (range === '7d' ? 7 : 30) * 86400000;
+        const result = await claudeUsage.overview(this.projectsDirFor(actor), {
+          sinceMs, tzOffsetMin: tz, now, chartDays: range === '7d' ? 7 : 30
+        });
+        // A conversation a tab of this user already holds opens by switching.
+        for (const s of result.sessions) {
+          const holder = this.sessionHoldingConversation(s.id);
+          if (holder && this.getOwnedSession(actor, holder)) s.openSessionId = holder;
+        }
+        result.range = range;
+        res.json(result);
+      }));
+
     // Get session details
     this.app.get('/api/sessions/:sessionId', (req, res) => {
       const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);

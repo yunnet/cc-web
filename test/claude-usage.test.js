@@ -73,9 +73,9 @@ describe('claude-usage: reading a transcript', function() {
     );
     const prompt = s.totals.input + s.totals.cacheRead + s.totals.cacheCreate;
     assert.strictEqual(s.totals.cacheHitRate, s.totals.cacheRead / prompt);
-    // The span runs from the first response: plain user lines are skipped
-    // unparsed, which is most of what keeps a 41 MB file fast.
-    assert.strictEqual(s.firstAt, '2026-11-05T01:00:05.000Z');
+    // The first prompt is read (the overview's fallback title), so the span
+    // starts there.
+    assert.strictEqual(s.firstAt, '2026-11-05T01:00:00.000Z');
     assert.strictEqual(s.lastAt, '2026-11-05T01:03:01.000Z');
   });
 
