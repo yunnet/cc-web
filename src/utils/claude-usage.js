@@ -399,7 +399,9 @@ function dayList(endDay, n) {
   return out;
 }
 
-async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, now = Date.now(), chartDays = 7 } = {}) {
+// include(cwd), when given, keeps only the conversations it accepts: a user
+// limited to some folders reads the shared ~/.claude through it.
+async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, now = Date.now(), chartDays = 7, include = null } = {}) {
   const files = await listTranscripts(root, sinceMs);
   let scan = scans.get(root);
   if (!scan) {
@@ -431,6 +433,7 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
     if (!entry) continue;
     read++;
     const acc = entry.acc;
+    if (include && !include(acc.cwd)) continue;
     const subs = f.subagents.map((s) => cache.get(s)).filter(Boolean).map((e) => e.acc);
     const own = [];
     for (const r of acc.requests.concat(...subs.map((s) => s.requests))) {

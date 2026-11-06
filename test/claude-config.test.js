@@ -244,7 +244,7 @@ process.stdout.write(JSON.stringify({ installed: [], available: [{ pluginId: 'a@
   });
 });
 
-describe('per-user Claude directory on the server (M3)', function () {
+describe('Claude directory on the server (shared ~/.claude since 2026-11-06)', function () {
   let server;
   let listener;
   let port;
@@ -321,69 +321,68 @@ describe('per-user Claude directory on the server (M3)', function () {
     });
   }
 
-  it('gives every platform user, the administrator included, a directory of their own', function () {
-    assert.strictEqual(server.claudeDirFor(alice.user.id), path.join(dir, alice.user.id, 'claude'));
-    assert.strictEqual(server.claudeDirFor(bob.user.id), path.join(dir, bob.user.id, 'claude'));
-    assert.strictEqual(server.claudeDirFor(null), null);
-    assert.strictEqual(server.projectsDirFor(null), path.join(home, '.claude', 'projects'));
+  // User 2026-11-06: 「完全和 main 一样」 — every user's Claude runs on ~/.claude.
+  it('runs every platform user, the administrator included, on ~/.claude', function () {
+    for (const id of [alice.user.id, bob.user.id, null]) {
+      assert.strictEqual(server.claudeDirFor(id), null);
+      assert.strictEqual(server.projectsDirFor(id), path.join(home, '.claude', 'projects'));
+    }
+    assert.strictEqual(server.legacyClaudeDirFor(alice.user.id), path.join(dir, alice.user.id, 'claude'));
+    assert.strictEqual(server.legacyClaudeDirFor(null), null);
   });
 
-  it('prepares a user directory with the platform key, and the unowned tenant with nothing', function () {
-    fs.mkdirSync(path.join(dir, 'platform'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'platform', 'anthropic-key'), 'sk-ant-platform-key-000000000000000000\n');
-    const prepared = server.prepareClaudeFor(alice.user.id);
-    assert.strictEqual(prepared.apiKey, 'sk-ant-platform-key-000000000000000000');
-    const seeded = JSON.parse(fs.readFileSync(path.join(prepared.claudeConfigDir, '.claude.json'), 'utf8'));
-    assert.deepStrictEqual(seeded.customApiKeyResponses.approved, ['key-000000000000000000'.slice(-20)]);
-    assert.ok(fs.existsSync(path.join(prepared.claudeConfigDir, 'themes')));
-
-    assert.deepStrictEqual(server.prepareClaudeFor(null), { claudeConfigDir: null, apiKey: '', oauthToken: '' });
-    assert.ok(!fs.existsSync(path.join(home, '.claude')), 'nothing is written into ~/.claude');
-  });
-
-  it('gives every user, the administrator included, the one shared subscription when it is configured', function () {
+  it('hands out no platform credential and writes nothing, like the single-user cc-web', function () {
     fs.mkdirSync(path.join(dir, 'platform'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'platform', 'anthropic-key'), 'sk-ant-platform-key-000000000000000000\n');
     fs.writeFileSync(path.join(dir, 'platform', 'claude-oauth-token'), 'sk-ant-oat01-shared\n');
-    for (const who of [alice, bob]) {
-      const prepared = server.prepareClaudeFor(who.user.id);
-      assert.strictEqual(prepared.oauthToken, 'sk-ant-oat01-shared');
-      assert.strictEqual(prepared.apiKey, '');
-      const seeded = JSON.parse(fs.readFileSync(path.join(prepared.claudeConfigDir, '.claude.json'), 'utf8'));
-      assert.strictEqual(seeded.customApiKeyResponses, undefined, 'no key approved: none is handed out');
-      assert.strictEqual(seeded.hasCompletedOnboarding, true);
+    for (const id of [alice.user.id, bob.user.id, null]) {
+      assert.deepStrictEqual(server.prepareClaudeFor(id), { claudeConfigDir: null, apiKey: '', oauthToken: '' });
     }
+    assert.ok(!fs.existsSync(path.join(home, '.claude')), 'nothing is written into ~/.claude');
+    assert.ok(!fs.existsSync(path.join(dir, alice.user.id, 'claude')), 'no per-user directory is made');
   });
 
-  it('lists only the caller\'s own conversations and resumes only those', async function () {
-    writeConversation(server.projectsDirFor(alice.user.id), work, ID_A, 'alice asks');
-    writeConversation(server.projectsDirFor(bob.user.id), work, ID_B, 'bob asks');
-    writeConversation(path.join(home, '.claude', 'projects'), work, ID_B.replace(/2/g, '3'), 'shared');
-
+  it('lists the shared history to everyone and resumes from it', async function () {
+    writeConversation(path.join(home, '.claude', 'projects'), work, ID_A, 'shared');
     const q = `/api/claude-sessions?dir=${encodeURIComponent(work)}`;
-    const a = await request('GET', q, { cookie: alice.cookie });
-    assert.strictEqual(a.status, 200);
-    assert.deepStrictEqual(a.json.conversations.map((c) => c.id), [ID_A]);
-    const b = await request('GET', q, { cookie: bob.cookie });
-    assert.deepStrictEqual(b.json.conversations.map((c) => c.id), [ID_B]);
-
-    // Bob cannot resume Alice's conversation: it is not in his history.
-    const steal = await request('POST', '/api/sessions/create', { cookie: bob.cookie, body: { workingDir: work, resumeId: ID_A } });
-    assert.strictEqual(steal.status, 404);
-    const own = await request('POST', '/api/sessions/create', { cookie: alice.cookie, body: { workingDir: work, resumeId: ID_A } });
+    for (const who of [alice, bob]) {
+      const res = await request('GET', q, { cookie: who.cookie });
+      assert.strictEqual(res.status, 200);
+      assert.deepStrictEqual(res.json.conversations.map((c) => c.id), [ID_A]);
+    }
+    const own = await request('POST', '/api/sessions/create', { cookie: bob.cookie, body: { workingDir: work, resumeId: ID_A } });
     assert.strictEqual(own.status, 200);
   });
 
-  it('reads the prompt rail from the owner\'s directory', async function () {
-    writeConversation(server.projectsDirFor(alice.user.id), work, ID_A, 'from alice dir');
+  it('reads the prompt rail from ~/.claude', async function () {
+    writeConversation(path.join(home, '.claude', 'projects'), work, ID_A, 'from the shared dir');
     const created = await request('POST', '/api/sessions/create', { cookie: alice.cookie, body: { workingDir: work, resumeId: ID_A } });
     const res = await request('GET', `/api/sessions/${created.json.sessionId}/prompts`, { cookie: alice.cookie });
     assert.strictEqual(res.status, 200);
-    assert.deepStrictEqual(res.json.prompts.map((p) => p.text), ['from alice dir']);
+    assert.deepStrictEqual(res.json.prompts.map((p) => p.text), ['from the shared dir']);
   });
 
-  it('points the skills panel at the caller\'s directory', function () {
-    assert.strictEqual(server.skillsContext(undefined, bob.user.id).claudeConfigDir, server.claudeDirFor(bob.user.id));
+  it('shows a folder-limited user only their folders in the overview', async function () {
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(path.dirname(work), 'ccw-m3-other-')));
+    try {
+      const root = path.join(home, '.claude', 'projects');
+      for (const [d, id] of [[work, ID_A], [other, ID_B]]) {
+        const proj = path.join(root, claudeHistory.projectDirName(d));
+        fs.mkdirSync(proj, { recursive: true });
+        const rec = { type: 'assistant', cwd: d, sessionId: id, timestamp: new Date().toISOString(),
+          message: { id: `msg-${id}`, model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 5 } } };
+        fs.writeFileSync(path.join(proj, `${id}.jsonl`), `${JSON.stringify(rec)}\n`);
+      }
+      const ids = async (who) => (await request('GET', '/api/usage/overview?range=7d', { cookie: who.cookie })).json.sessions.map((s) => s.id).sort();
+      assert.deepStrictEqual(await ids(alice), [ID_A, ID_B].sort());
+      assert.deepStrictEqual(await ids(bob), [ID_A]);
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it('points the skills panel at ~/.claude for everyone', function () {
+    assert.strictEqual(server.skillsContext(undefined, bob.user.id).claudeConfigDir, null);
     assert.strictEqual(server.skillsContext(undefined, null).claudeConfigDir, null);
   });
 });

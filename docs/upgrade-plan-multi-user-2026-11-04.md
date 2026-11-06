@@ -359,3 +359,12 @@ M1 → 你验证登录体验 → M2 → M3 → M4。
 - 已知代价：所有人共用同一份 5 小时 / 7 天额度，一个人用完大家都受限；令牌和 key 一样，用户在自己终端里能看到。
 - 代码：`src/utils/claude-config.js`（`readPlatformOAuthToken`、`platformCredentials`、`applyEnv`）、`server.prepareClaudeFor`、`ClaudeBridge.applyOwnerEnv`；FEATURES CLA-20 补一句、新增 CLA-21。提交在 `feat/context-usage` 分支上，可单独挑到多用户分支。
 
+## 变更：所有人直接用 ~/.claude（2026-11-06，取代上一节和 M3 的每人目录）
+
+用户原话：「能不能和main分支一样，共用吗？」，在「只共用登录」与「完全和 main 一样」之间选了后者。
+
+- `server.claudeDirFor()` 对所有用户返回 null：Claude 不再设 `CLAUDE_CONFIG_DIR`，直接用 `~/.claude` 的登录、对话、设置、插件和技能，和 32352（main）一致；不注入平台 key 或订阅令牌（CLA-20、CLA-21 停用），也不预置 `.claude.json`。
+- 已经存在的 `<数据目录>/<uid>/claude`（`legacyClaudeDirFor`）只读：会话下次启动时把它那条对话复制回 `~/.claude`，只复制不覆盖。
+- 代价：对话历史、插件、技能所有人共用，普通用户在技能面板装或卸插件会影响所有人。
+- 总览：管理员看全部；只能浏览部分目录的普通用户只看到 cwd 在这些目录里的对话（`overview({ include })`）。
+- 受影响条目：CLA-04、CLA-19、CLA-20、CLA-21、TERM-49、START-15、SES-05、SRV-07、SKILL-03/05/12/13、CTX-07、CTX-08。

@@ -115,10 +115,18 @@ class ClaudeCodeWebServer {
   // — used before any administrator exists and with --disable-auth. Running
   // sessions all stay in this.claudeSessions, each carrying its ownerId.
 
-  // An owner's own Claude directory (CLAUDE_CONFIG_DIR): <dataDir>/<uid>/claude.
-  // null for the unowned tenant, which keeps using ~/.claude. Every platform
-  // user has one, the first administrator included (M3, option B).
-  claudeDirFor(ownerId) {
+  // Which Claude directory (CLAUDE_CONFIG_DIR) an owner's Claude runs on: null
+  // for everyone = ~/.claude, its login, history, settings and plugins, exactly
+  // like the single-user cc-web (user 2026-11-06: 「能不能和main分支一样，共用
+  // 吗？」 → 「完全和 main 一样」). This replaces M3's <dataDir>/<uid>/claude;
+  // the signature stays so every reader still asks per owner.
+  claudeDirFor(_ownerId) {
+    return null;
+  }
+
+  // Where M3 kept an owner's Claude, read only to bring a conversation started
+  // there back into ~/.claude (startClaude).
+  legacyClaudeDirFor(ownerId) {
     return ownerId ? path.join(this.sessionStore.storageDir, ownerId, 'claude') : null;
   }
 
@@ -1108,11 +1116,11 @@ class ClaudeCodeWebServer {
         res.json({ workingDir: validation.path, usage });
       }));
 
-    // Every conversation in the caller's own Claude directory, summed: the
-    // usage panel's 总览. Each platform user runs Claude on their own
-    // directory (M3), so reading projectsDirFor(actor) is the isolation — no
-    // one sees another user's conversations. range is 7d / 30d / all; tz is
-    // the browser's getTimezoneOffset(), so days are the reader's days.
+    // Every conversation in ~/.claude, summed: the usage panel's 总览. Everyone
+    // shares that directory, so a user whose browsing is limited sees only the
+    // conversations whose folder validatePath lets them open. range is 7d /
+    // 30d / all; tz is the browser's getTimezoneOffset(), so days are the
+    // reader's days.
     this.app.get('/api/usage/overview',
       ClaudeCodeWebServer.asyncRoute(async (req, res) => {
         const rangeParam = ClaudeCodeWebServer.singleQueryValue(req.query.range);
@@ -1122,8 +1130,10 @@ class ClaudeCodeWebServer {
         const actor = this.actorOf(req.user);
         const now = Date.now();
         const sinceMs = range === 'all' ? 0 : now - (range === '7d' ? 7 : 30) * 86400000;
+        const limited = this.browseRoots(req.user) !== null;
         const result = await claudeUsage.overview(this.projectsDirFor(actor), {
-          sinceMs, tzOffsetMin: tz, now, chartDays: range === '7d' ? 7 : 30
+          sinceMs, tzOffsetMin: tz, now, chartDays: range === '7d' ? 7 : 30,
+          include: limited ? (cwd) => !!cwd && this.validatePath(cwd, req.user).valid : null
         });
         // A conversation a tab of this user already holds opens by switching.
         for (const s of result.sessions) {
@@ -2214,12 +2224,12 @@ class ClaudeCodeWebServer {
       // bridge (ClaudeBridge.launchArgs); this only decides which keys exist.
       const { model, permissionMode, effort, dangerouslySkipPermissions } = options || {};
       const claudeEnv = this.prepareClaudeFor(session.ownerId || null);
-      // A session that last ran on the shared ~/.claude (before M3) resumes
-      // under its owner's own directory now; bring its conversation along so
-      // --resume still finds it.
-      if (claudeEnv.claudeConfigDir && session.claudeStarted) {
+      // A session that last ran on its owner's M3 directory resumes on
+      // ~/.claude now; bring its conversation along so --resume still finds it.
+      const legacyDir = this.legacyClaudeDirFor(session.ownerId || null);
+      if (legacyDir && session.claudeStarted) {
         await claudeHistory.adoptConversation(session.workingDir, this.resumeIdFor(session), {
-          from: claudeConfig.projectsDir(null),
+          from: claudeConfig.projectsDir(legacyDir),
           to: claudeConfig.projectsDir(claudeEnv.claudeConfigDir)
         });
       }

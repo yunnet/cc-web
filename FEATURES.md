@@ -63,7 +63,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-45 | 回放用的字节预算与落盘用的是同一个（都是会话所有者自己的历史保留量）：最新的一段即使单独超预算也一定保留，最后一屏不会丢 | 手工 | `test/scrollback-setting.test.js` |
 | TERM-46 | WebSocket 收到解析不了的消息时只回一条错误，不断线 | 手工 | — |
 | TERM-48 | **回合轨道**：终端右缘透明轨道，每个提交过的问题一枚刻度（minimap 式、点击跳行）；**悬停轨道弹出提问列表**——全部提问成行、当前视野所在提问高亮并在列表居中（点行跳转、移开自动收起、列表内悬停不收）；「当前」= 视口中线以上最近的提问。**锚点即终端**：TUI 把每个提问渲染成 `❯ `/`> ` 开头的行，轨道直接扫缓冲取这些行——不存在匹配失败（首版对照转录清单匹配，在老回合已被输出缓冲裁掉的长会话上全数落空，实测 4.7MB 会话 0 锚点，改为扫行后同会话 3 锚点）；重复渲染的同一问只留最后一处；终端区 ≤900px 隐藏；触屏加宽命中区。**诚实限制**：刷新后不在重建缓冲内的老提问无刻度；进行中回合不出刻度 | `file:src/public/turn-rail.js` | — |
-| TERM-49 | 会话提问清单接口 `GET /api/sessions/:id/prompts`（只限自己的会话，别人的返回 404）：按序返回该会话转录（在会话所有者自己的 Claude 目录里）里的真实用户提问（每条 ≤200 字单行 + 时间戳；过滤命令/系统包装、tool_result、子代理与 meta 记录——与 extractTitle 同一过滤）；**增量解析**——每文件缓存 {offset, prompts} 只读上次之后的完整行（首读全量、之后只读新增；半行写跨界续读；文件变小视为同 id 新对话重置），长会话结尾全是工具链也能拿到全部提问；无转录/非法 id/未知目录返回空清单不抛错；符号链接目录按真实路径回退 | `route:GET /api/sessions/:sessionId/prompts` | `test/claude-history.test.js` |
+| TERM-49 | 会话提问清单接口 `GET /api/sessions/:id/prompts`（只限自己的会话，别人的返回 404）：按序返回该会话转录（在 `~/.claude` 里，所有用户共用）里的真实用户提问（每条 ≤200 字单行 + 时间戳；过滤命令/系统包装、tool_result、子代理与 meta 记录——与 extractTitle 同一过滤）；**增量解析**——每文件缓存 {offset, prompts} 只读上次之后的完整行（首读全量、之后只读新增；半行写跨界续读；文件变小视为同 id 新对话重置），长会话结尾全是工具链也能拿到全部提问；无转录/非法 id/未知目录返回空清单不抛错；符号链接目录按真实路径回退 | `route:GET /api/sessions/:sessionId/prompts` | `test/claude-history.test.js` |
 ## 标签页与标签标记
 
 | ID | 功能 | 入口 | 守卫 |
@@ -177,7 +177,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-12 | 恢复对话框默认勾选上次开着的会话、默认选中上次的当前会话；确认后按原标签顺序排列，新勾的排在后面 | 手工 | — |
 | START-13 | 服务器上一个会话都没有时，本地记住的标签集合会被就地清空，下次刷新不再提示恢复 | 手工 | — |
 | START-14 | 已选好目录但当前没有任何会话时按 Start，会自动新建一个以时间命名的会话再启动 Claude | 手工 | `test/session-create-guard.test.js` |
-| START-15 | 会话 id 被占用（卡死的幽灵会话）时终端黄字提示，服务端删掉空转录（在会话所有者自己的 Claude 目录里）并自动重开一次 | 手工 | `test/claude-resume.test.js` |
+| START-15 | 会话 id 被占用（卡死的幽灵会话）时终端黄字提示，服务端删掉空转录（在 `~/.claude` 里）并自动重开一次 | 手工 | `test/claude-resume.test.js` |
 | START-16 | 同一会话里 Claude 已在运行时再点 Start，返回「Claude is already running」，不会起第二个进程；没加入会话就启动则提示 No session joined | 手工 | — |
 ## Sessions 面板（会话与对话）
 
@@ -187,7 +187,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SES-02 | 「Sessions (N)」列出服务器上自己的所有会话（看不到别的用户的）：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
 | SES-03 | 点会话行：已开标签的切过去，没开的新开一个标签 | 手工 | — |
 | SES-04 | 会话行的垃圾桶删除会话（只能是自己的），先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
-| SES-05 | 「Conversations in this folder (N)」只列出自己的 Claude 目录里、没有会话占用的历史对话（被其他用户的会话占用的也算占用，不列出），点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
+| SES-05 | 「Conversations in this folder (N)」列出 `~/.claude` 里（所有用户共用）、没有会话占用的历史对话（被其他用户的会话占用的也算占用，不列出），点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
 | SES-06 | 空状态和出错提示：No sessions yet. / No previous conversations in this folder. / Every conversation here is already open. / Could not load sessions. / No folder selected | 手工 | — |
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |
 | SES-08 | 菜单里的 Sessions 弹窗显示同一份列表，两个同时打开时一起刷新；底部 New Session 打开新建对话框；手机上打开时锁住页面滚动 | `control:sessionsBtnMobile` `control:closeMobileSessionsModal` | — |
@@ -298,17 +298,17 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 |---|---|---|---|
 | SKILL-01 | 菜单里的「Skills」和设置里的「Manage skills」打开同一个技能面板（和 Sessions 的双入口同理，两处渲染同一份列表，不会互相矛盾） | `control:skillsBtnMobile` `control:skillsOpenBtn` | `test/skills-panel.test.js` |
 | SKILL-02 | 面板分三页：已安装、发现、市场；页签高 44px，同一时刻只显示一页 | `control:skillsTabInstalled` `control:skillsTabDiscover` `control:skillsTabMarkets` | `test/skills-panel.test.js` |
-| SKILL-03 | 「已安装」列出自己的 Claude 装的插件（版本、范围、启用状态、它带的技能名）和两个技能目录（个人：平台用户是 `<uid>/claude/skills`，还没有管理员时是 `~/.claude/skills`；本项目 `.claude/skills`） | `route:GET /api/skills` `file:src/skills.js` | `test/skills-read.test.js` `test/skills-routes.test.js` |
+| SKILL-03 | 「已安装」列出 `~/.claude` 装的插件（所有用户共用）（版本、范围、启用状态、它带的技能名）和两个技能目录（个人：`~/.claude/skills`；本项目 `.claude/skills`） | `route:GET /api/skills` `file:src/skills.js` | `test/skills-read.test.js` `test/skills-routes.test.js` |
 | SKILL-04 | 点任意一行展开它的 SKILL.md 正文（只读、按纯文本渲染，最大 256KB） | `route:GET /api/skills/file` | `test/skills-routes.test.js` |
-| SKILL-05 | 插件可以「停用 / 启用」和「卸载」（只动自己的 Claude，别的用户不受影响），都带二次确认，卸载说明「它带的技能会一起消失，已记录的对话不受影响」 | `route:POST /api/skills/action` | `test/skills-write.test.js` |
+| SKILL-05 | 插件可以「停用 / 启用」和「卸载」（动的是共用的 `~/.claude`，所有用户都受影响），都带二次确认，卸载说明「它带的技能会一起消失，已记录的对话不受影响」 | `route:POST /api/skills/action` | `test/skills-write.test.js` |
 | SKILL-06 | 本进程删不掉的技能目录（属主是别的用户）显示「只读」且卸载按钮禁用，悬停说明是哪个目录 | `file:src/skills.js` | `test/skills-read.test.js` |
 | SKILL-07 | 「发现」列出自己接入的市场里可安装的插件，按安装量排序，带描述和来源（git 地址 + 固定 sha） | `route:GET /api/skills/catalog` | `test/skills-routes.test.js` |
 | SKILL-08 | 搜索框按名字和描述过滤（防抖 250ms，一个词只发一次请求） | `control:skillsSearchInput` | `test/skills-read.test.js` |
 | SKILL-09 | 搜到的若是自己已经装好的插件，单独分组「你已经装了」并给「去管理」——因为 CLI 的可装列表本就不含已装项，否则会像「搜不到」 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
 | SKILL-10 | 「推荐给你」最多 8 条，每条写明理由：命中当前项目里的文件（package.json、go.mod、.git…）或安装量；自己已装的不推荐 | `route:GET /api/skills/catalog` | `test/skills-routes.test.js` |
 | SKILL-11 | 安装前二次确认，列出来源，并提示「安装第三方技能等于把别人写的指令交给 Claude 去读」 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
-| SKILL-12 | 插件若要求先运行市场声明的命令，**绝不替用户同意**（安装进的是自己的 Claude）：把命令原文和 sha256 原样弹给用户看，确认后才以 `--accept-command` 重跑 | `file:src/skills.js` | `test/skills-write.test.js` |
-| SKILL-13 | 「市场」列出自己的 Claude 已接入的市场（来源、可更新、可移除），底部可按 `owner/repo` 或 https 网址添加 | `control:skillsMarketInput` `control:skillsMarketAddBtn` | `test/skills-write.test.js` |
+| SKILL-12 | 插件若要求先运行市场声明的命令，**绝不替用户同意**（安装进的是共用的 `~/.claude`）：把命令原文和 sha256 原样弹给用户看，确认后才以 `--accept-command` 重跑 | `file:src/skills.js` | `test/skills-write.test.js` |
+| SKILL-13 | 「市场」列出 `~/.claude` 已接入的市场（来源、可更新、可移除），底部可按 `owner/repo` 或 https 网址添加 | `control:skillsMarketInput` `control:skillsMarketAddBtn` | `test/skills-write.test.js` |
 | SKILL-14 | 同一时刻只允许一个写操作，第二个直接拒绝（409「另一个技能操作正在进行」），不排队 | `route:POST /api/skills/action` | `test/skills-write.test.js` `test/skills-routes.test.js` |
 | SKILL-15 | 成功后提示「已在运行的 Claude 不受影响，下次启动会话时生效」（只对自己的会话生效）——面板不自动重启任何会话 | `file:src/public/skills.js` | `test/skills-write.test.js` |
 | SKILL-16 | 面板底部一行状态：正在安装 / 失败原因 / 「找不到 claude 命令，插件部分无法读取（技能目录仍然正常）」；常见失败码译成中文 | `file:src/public/skills.js` | `test/skills-panel.test.js` |
@@ -375,7 +375,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-01 | 自动查找 claude 可执行文件（多个常见位置），找不到时退回 PATH 上的 `claude` | `file:src/claude-bridge.js` | `test/claude-bridge.test.js` |
 | CLA-02 | 启动参数：模型、权限模式、思考强度按白名单传给 Claude，不在白名单的丢弃；可选跳过权限；浏览器只能传这四个选项，不能覆盖工作目录或 hook 脚本 | `ws-server:start_claude` | `test/start-options.test.js` `test/claude-bridge.test.js` |
 | CLA-03 | 手动命名的会话名以 `--name` 传给 Claude（显示在输入框、终端标题并作为对话标题）；自动生成的名字不传 | 手工 | `test/start-options.test.js` |
-| CLA-04 | 首次启动用 `--session-id` 绑定对话，之后（包括服务重启后）都用 `--resume` 接续；自己会话的 resume 失败时用同一 id 重建；从历史里选中的对话恢复失败时红字说明，不静默新建；平台用户以前记在共享 `~/.claude` 里的会话，下次启动时先把这一条对话复制进自己的 Claude 目录再接续（只复制不移动，已有的不覆盖） | 手工 | `test/claude-resume.test.js` |
+| CLA-04 | 首次启动用 `--session-id` 绑定对话，之后（包括服务重启后）都用 `--resume` 接续；自己会话的 resume 失败时用同一 id 重建；从历史里选中的对话恢复失败时红字说明，不静默新建；平台用户以前记在自己 Claude 目录（`<数据目录>/<uid>/claude`）里的会话，下次启动时先把这一条对话复制回 `~/.claude` 再接续（只复制不移动，已有的不覆盖） | 手工 | `test/claude-resume.test.js` |
 | CLA-05 | 自动确认「是否信任此文件夹」提示 | 手工 | `test/claude-bridge.test.js` |
 | CLA-06 | 注入设置：通知走终端响铃（terminal_bell），强制经典渲染器以保留滚动历史 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` `test/claude-bridge.test.js` |
 | CLA-07 | Claude 主题跟随 UI 的深浅色，使用 cc-web 自带的高对比主题 | `file:src/utils/claude-theme.js` | `test/claude-theme.test.js` |
@@ -387,9 +387,9 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-13 | 传给 Claude 的标签名先去掉控制字符并截断到 80 字，超长或带控制符的名字不会弄坏终端标题 | 手工 | `test/start-options.test.js` |
 | CLA-14 | 注入 `tui: default` 会压过该用户自己 Claude 设置里的 fullscreen，并让 Claude 不再反复询问是否切换渲染器 | `env:CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `test/renderer-mode.test.js` |
 | CLA-18 | 网页权限卡片（ccweb-companion mod 配套）：mod 把待执行的 Bash 命令 POST 到 hook 端点并挂起等待；网页弹出「Claude 想执行一条命令」卡片，允许/拒绝经 answer 端点回传（只接受会话所有者的应答，别人的返回 404），超时 120 秒自动放行（回退到终端流程）；端口经环境变量告知 mod | `route:POST /api/hooks/:sessionId/answer` `env:CCWEB_HOOK_PORT` `ws-client:app.js:hook_event` | `test/permission-card.test.js` |
-| CLA-19 | 每个平台用户（第一个管理员也一样）有自己的 Claude：配置目录 `<数据目录>/<uid>/claude` 以 `CLAUDE_CONFIG_DIR` 交给 Claude，登录、设置、对话记录、技能、插件、主题都在里面，互不相通；第一次为这个用户启动 Claude 前预置 `.claude.json`（已完成引导、主题，有平台 key 时记下已批准这个 key），只补缺的、不覆盖；还没有管理员（或关闭认证）时仍用 `~/.claude`，什么都不注入 | `env:CLAUDE_CONFIG_DIR` `file:src/utils/claude-config.js` | `test/claude-config.test.js` |
-| CLA-20 | 平台 key：读 `CCW_ANTHROPIC_API_KEY` 环境变量，没有就读 `<数据目录>/platform/anthropic-key` 第一行，每次启动 Claude 时现读（改了文件下次启动就生效，不用重启 cc-web）；注入给每个有自己 Claude 目录的用户（含管理员，用户 2026-11-05「管理员也用平台key」）；服务进程继承来的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 对这些用户一律清掉；没配 key 时不注入，用户在终端里自己 `/login`；配置了平台订阅令牌时改用令牌、不再注入 key（见 CLA-21） | `env:ANTHROPIC_API_KEY` | `test/claude-config.test.js` |
-| CLA-21 | 所有平台用户共用同一个订阅账号（用户 2026-11-06：「不把个人订阅登录分给平台用户, 这个地方改一下，当前所有人使用同一个订阅用户。」）：管理员用 `claude setup-token` 生成长期令牌，写进 `<数据目录>/platform/claude-oauth-token` 第一行（或环境变量 `CCW_CLAUDE_OAUTH_TOKEN`），每次启动 Claude 时现读，以 `CLAUDE_CODE_OAUTH_TOKEN` 注入给每个有自己 Claude 目录的用户（含管理员），不用 `/login`、额度算在这个订阅上；令牌和平台 key 同时配置时只用令牌（两个都给 Claude 会优先用 key、改按 API 计费）；每人的 Claude 目录、对话记录、技能仍各自独立；令牌和 key 一样，用户在自己终端里能看到 | `env:CLAUDE_CODE_OAUTH_TOKEN` | `test/claude-config.test.js` |
+| CLA-19 | 所有平台用户（含管理员）的 Claude 都直接用 `~/.claude`，和单用户版一样（用户 2026-11-06：「能不能和main分支一样，共用吗？」，选「完全和 main 一样」）：登录、设置、对话记录、技能、插件、主题全部共用，不设 `CLAUDE_CONFIG_DIR`、不注入任何凭证、不预置 `.claude.json`；以前每人一个目录（`<数据目录>/<uid>/claude`，M3）的做法取消，那里的对话在会话下次启动时复制回 `~/.claude`（见 CLA-04）；`CLAUDE_CONFIG_DIR` 的注入代码保留但不再使用 | `env:CLAUDE_CONFIG_DIR` `file:src/utils/claude-config.js` | `test/claude-config.test.js` |
+| CLA-20 | **已停用**（用户 2026-11-06：「能不能和main分支一样，共用吗？」，选「完全和 main 一样」，见 CLA-19：不再给任何用户注入）平台 key：读 `CCW_ANTHROPIC_API_KEY` 环境变量，没有就读 `<数据目录>/platform/anthropic-key` 第一行，每次启动 Claude 时现读（改了文件下次启动就生效，不用重启 cc-web）；注入给每个有自己 Claude 目录的用户（含管理员，用户 2026-11-05「管理员也用平台key」）；服务进程继承来的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 对这些用户一律清掉；没配 key 时不注入，用户在终端里自己 `/login`；配置了平台订阅令牌时改用令牌、不再注入 key（见 CLA-21） | `env:ANTHROPIC_API_KEY` | `test/claude-config.test.js` |
+| CLA-21 | **已停用**（用户 2026-11-06：「能不能和main分支一样，共用吗？」，选「完全和 main 一样」，见 CLA-19：所有人直接共用 `~/.claude` 的登录，令牌文件不再读取）所有平台用户共用同一个订阅账号（用户 2026-11-06：「不把个人订阅登录分给平台用户, 这个地方改一下，当前所有人使用同一个订阅用户。」）：管理员用 `claude setup-token` 生成长期令牌，写进 `<数据目录>/platform/claude-oauth-token` 第一行（或环境变量 `CCW_CLAUDE_OAUTH_TOKEN`），每次启动 Claude 时现读，以 `CLAUDE_CODE_OAUTH_TOKEN` 注入给每个有自己 Claude 目录的用户（含管理员），不用 `/login`、额度算在这个订阅上；令牌和平台 key 同时配置时只用令牌（两个都给 Claude 会优先用 key、改按 API 计费）；每人的 Claude 目录、对话记录、技能仍各自独立；令牌和 key 一样，用户在自己终端里能看到 | `env:CLAUDE_CODE_OAUTH_TOKEN` | `test/claude-config.test.js` |
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`，平台用户的写入各自 Claude 目录的 `themes/`（第一次为这个用户启动 Claude 时写，原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
@@ -402,8 +402,8 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CTX-04 | 「上下文与用量」面板：点标签上的圆环或标签右键菜单「上下文与用量」打开「本标签」页（菜单里的「用量」打开「总览」页，两页可切换，「本标签」是当前标签）；读这个标签当前对话的记录（`/clear` 后跟到新对话），显示请求数、总 Token（悬停看输入/缓存读/缓存写/输出）、缓存命中率、估算花费（标注「API 折算」，模型没有价格的请求不计入并注明）、时长、子 Agent 个数与用量；还没有对话记录时说明原因；可刷新，点遮罩或关闭按钮关闭 | `control:usageBtnMobile` `control:closeUsageBtn` `control:usageRefreshBtn` `control:usageDoneBtn` `control:usageTabSession` `route:GET /api/sessions/:sessionId/usage` `file:src/public/usage-panel.js` | `test/usage-panel.test.js` `test/claude-usage.test.js` |
 | CTX-05 | 面板里的「当前上下文」条：最近一次请求的上下文按缓存读/缓存写/新输入分色，知道窗口大小时按窗口比例画并显示剩余与百分比；「每个请求的上下文」趋势图：每个请求一根柱，「总量」按来源堆叠、「增量」显示比上一个请求涨了或缩了多少（缩为红色向下）；压缩处画红色虚线和 ✂，悬停显示自动或手动与压缩前大小；悬停柱子看该请求的时间、各部分 Token、输出与模型；超过 2000 个请求只画最近的并注明；打开或刷新时滚到最新一端，切换总量与增量时保持阅读位置 | `file:src/public/usage-panel.js` | `test/usage-panel.test.js` |
 | CTX-06 | 面板里的排行：工具、Bash 程序（跳过 `cd`、环境变量与 sudo，带空格的带引号路径也认得）、读改写过的文件（显示末两级路径，悬停看全路径与读/改/写次数）、技能与斜杠命令，各取前 15 | `file:src/public/usage-panel.js` | `test/claude-usage.test.js` `test/usage-panel.test.js` |
-| CTX-07 | 读对话记录的方式：同一个响应拆成多条记录时按消息 id 只算一次；只解析可能有用的行，几十 MB 的记录也只要零点几秒（41MB 实测约 0.2 秒）；记录只会增长，之后只读新增部分（实测约 1 毫秒），被替换或变短时从头读；子 Agent 记录（`<对话>/subagents/`）单独汇总；平台用户读自己的 Claude 目录；历史对话也可按 `GET /api/claude-sessions/:id/usage?dir=` 读取，目录按浏览范围校验 | `route:GET /api/claude-sessions/:conversationId/usage` `file:src/utils/claude-usage.js` | `test/claude-usage.test.js` |
-| CTX-08 | 「总览」页：当前用户自己 Claude 目录下的全部对话（平台用户互不可见），可选 7 天 / 30 天 / 全部；对话数、请求、Token、缓存命中、估算花费（API 折算）；每日用量柱状图（7 天按天、30 天与全部为最近 30 天，悬停看 Token、请求数与花费），按请求发生的那天（浏览器本地日期）计，不按文件修改时间；最近 8 周的热力图（按周一到周日排，按活跃日四分位分四档，悬停看当天用量）；这些对话累计的工具、Bash 程序、技能与斜杠命令排行 | `control:usageTabOverview` `route:GET /api/usage/overview` | `test/usage-overview.test.js` |
+| CTX-07 | 读对话记录的方式：同一个响应拆成多条记录时按消息 id 只算一次；只解析可能有用的行，几十 MB 的记录也只要零点几秒（41MB 实测约 0.2 秒）；记录只会增长，之后只读新增部分（实测约 1 毫秒），被替换或变短时从头读；子 Agent 记录（`<对话>/subagents/`）单独汇总；读 `~/.claude`（所有用户共用）；历史对话也可按 `GET /api/claude-sessions/:id/usage?dir=` 读取，目录按浏览范围校验 | `route:GET /api/claude-sessions/:conversationId/usage` `file:src/utils/claude-usage.js` | `test/claude-usage.test.js` |
+| CTX-08 | 「总览」页：`~/.claude` 下的全部对话（所有用户共用；只能浏览部分目录的普通用户只看到这些目录里的对话，用户 2026-11-06：「能不能和main分支一样，共用吗？」，选「完全和 main 一样」），可选 7 天 / 30 天 / 全部；对话数、请求、Token、缓存命中、估算花费（API 折算）；每日用量柱状图（7 天按天、30 天与全部为最近 30 天，悬停看 Token、请求数与花费），按请求发生的那天（浏览器本地日期）计，不按文件修改时间；最近 8 周的热力图（按周一到周日排，按活跃日四分位分四档，悬停看当天用量）；这些对话累计的工具、Bash 程序、技能与斜杠命令排行 | `control:usageTabOverview` `route:GET /api/usage/overview` | `test/usage-overview.test.js` |
 | CTX-09 | 「总览」里的对话列表：标题（自己起的名字优先，其次 Claude 的标题，再次第一句提问）、目录、多久以前、Token、花费；可按最近 / Token / 花费排序，搜索框即输即筛（标题或目录），刷新与轮询时保留搜索和滚动位置；已在标签中打开的标「已打开」，点击切换过去；没打开的点击在新标签中继续这段对话（与 Sessions 面板同一方式）；超过 300 个只列前 300 并注明 | `file:src/public/usage-panel.js` | `test/usage-overview.test.js` |
 | CTX-10 | 第一次扫描很大的 Claude 目录时先返回已读完的部分并显示「正在读取对话记录（已读 / 总数）」，每 1.5 秒再取一次直到读完；之后只读新增部分（本机 157 个、332MB 记录实测：冷读约 1.1 秒，再读约 30 毫秒）；关掉面板就停止轮询 | `route:GET /api/usage/overview` | `test/usage-overview.test.js` |
 | CTX-03 | statusLine 中继的自保上限：回传 1 秒超时、用户命令 5 秒超时、整体 6 秒内必定结束，任何失败都以 0 退出、不输出 cc-web 自己的内容，绝不拖住 Claude 的界面 | `bin:cc-statusline.js` | `test/statusline.test.js` |
@@ -418,7 +418,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SRV-04 | 异步路由出错返回 500，不会让服务崩溃带走所有终端 | 手工 | `test/async-route-safety.test.js` |
 | SRV-05 | 会话按每个一个文件保存（平台用户的会话存在 `<数据目录>/<uid>/sessions/`，按归属分别保存与恢复；还没有管理员时仍在数据目录根下），每 30 秒自动保存；服务重启后自动恢复；7 天没有活动的会话自动清除；损坏文件跳过不影响其他；写入用临时文件加原子重命名 | `route:GET /api/sessions/persistence` `file:src/utils/session-store.js` | `test/session-store.test.js` |
 | SRV-06 | 同一数据目录已有别的实例在运行时拒绝启动；实例锁文件权限 0600，退出时删除 | `file:src/instance-lock.js` | `test/instance-lock.test.js` |
-| SRV-07 | 新建会话：名称、工作目录可选（不给时用自己的第一个可浏览目录；普通用户的工作目录必须在可浏览目录内，见 ACC-07）；`resumeId` 接续已有对话（只在自己的 Claude 目录里找；非法 UUID 400，已在别的标签 409，不存在 404）；新会话归创建者所有；要接续的对话正被其他用户的会话占用时同样 409，但不返回对方的会话 id，提示「其他用户正在使用这个对话」 | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
+| SRV-07 | 新建会话：名称、工作目录可选（不给时用自己的第一个可浏览目录；普通用户的工作目录必须在可浏览目录内，见 ACC-07）；`resumeId` 接续已有对话（在 `~/.claude` 里找；非法 UUID 400，已在别的标签 409，不存在 404）；新会话归创建者所有；要接续的对话正被其他用户的会话占用时同样 409，但不返回对方的会话 id，提示「其他用户正在使用这个对话」 | `route:POST /api/sessions/create` | `test/claude-resume.test.js` `test/session-create-guard.test.js` |
 | SRV-08 | 查看会话详情（只限自己的会话，别人的按不存在处理返回 404）、健康检查（会话数与连接数只算自己的） | `route:GET /api/sessions/:sessionId` `route:GET /api/health` | — |
 | SRV-09 | 删除会话（只能删自己的，别人的返回 404）：停止 Claude，通知连着这个会话的客户端（都是会话所有者自己的设备），删除上传图片目录和会话文件，不删 Claude 自己的对话记录 | `route:DELETE /api/sessions/:sessionId` | — |
 | SRV-10 | 计划文件服务：已登录的浏览器靠 Cookie 认证，URL 里的令牌段为 `-`；仍接受 URL 里带启动令牌的旧链接；以 text/plain 返回便于 Markdown 插件渲染；白名单为 `.claude/plans/` 与全局或会话计划目录中的 .md，按真实路径校验，上限 2MB | `route:GET /api/plan` `route:GET /api/plan/:token/:file` `route:GET /api/plan/:token/:session/:file` | `test/plan-file.test.js` `test/plan-dirs.test.js` |
