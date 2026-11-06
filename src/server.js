@@ -16,6 +16,7 @@ const AuthManager = require('./utils/auth');
 const { safeEqual } = require('./utils/password');
 const { parseCookies, serializeCookie } = require('./utils/cookies');
 const claudeHistory = require('./utils/claude-history');
+const claudeUsage = require('./utils/claude-usage');
 const claudeTheme = require('./utils/claude-theme');
 const claudeConfig = require('./utils/claude-config');
 const { inlineLocalAssets } = require('./utils/inline-assets');
@@ -1074,6 +1075,36 @@ class ClaudeCodeWebServer {
           return res.status(404).json({ error: 'Session not found' });
         }
         res.json(await claudeHistory.listUserPrompts(session.workingDir, session.id, { root: this.projectsDirFor(session.ownerId || null) }));
+      }));
+
+    // What one tab's conversation used — tokens, the per-request trend,
+    // compactions, tools — for the usage panel (src/public/usage-panel.js).
+    // Read-only, header auth; the conversation is the one Claude is writing
+    // to now (resumeIdFor), found in the owner's own Claude directory.
+    this.app.get('/api/sessions/:sessionId/usage',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const session = this.getOwnedSession(this.actorOf(req.user), req.params.sessionId);
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        const usage = await claudeUsage.conversationUsage(session.workingDir, this.resumeIdFor(session), {
+          root: this.projectsDirFor(session.ownerId || null)
+        });
+        res.json({ name: session.name, workingDir: session.workingDir, liveUsage: session.liveUsage || null, usage });
+      }));
+
+    // The same for a conversation no tab holds (the Sessions panel's history
+    // rows). The folder is checked like the conversation list's.
+    this.app.get('/api/claude-sessions/:conversationId/usage',
+      ClaudeCodeWebServer.asyncRoute(async (req, res) => {
+        const dirParam = ClaudeCodeWebServer.singleQueryValue(req.query.dir);
+        if (!dirParam.ok || !dirParam.value) return res.status(400).json({ error: 'Invalid dir parameter' });
+        const validation = this.validatePath(dirParam.value, req.user);
+        if (!validation.valid) return res.status(403).json({ error: validation.error });
+        if (!claudeHistory.UUID.test(req.params.conversationId)) return res.status(400).json({ error: 'Invalid conversation id' });
+        const usage = await claudeUsage.conversationUsage(validation.path, req.params.conversationId, {
+          root: this.projectsDirFor(this.actorOf(req.user))
+        });
+        if (!usage) return res.status(404).json({ error: 'Conversation not found' });
+        res.json({ workingDir: validation.path, usage });
       }));
 
     // Get session details

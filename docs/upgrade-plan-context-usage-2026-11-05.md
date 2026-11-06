@@ -28,6 +28,7 @@ cc-web 现在只把 Claude 的 PTY 字节原样转发，用户看不到**上下�
 - **子 Agent 的记录**在 `<projectDir>/<uuid>/subagents/agent-*.jsonl`（`isSidechain:true`），主 jsonl 里没有 sidechain 记录。
 - 测量用的快照已存为 `test/fixtures/statusline-input.json`（路径已脱敏）。
 - **进度（2026-11-06）**：多用户 M1–M4 已提交到 `feat/multi-user-m4`，本功能在其上开分支 `feat/context-usage`（工作目录 `cc-web-ctx`）。第 1 层已完成并通过端到端验证（见 `test/SMOKE.md` S48）。与计划的出入：① 不新增 `usage_update` 消息，复用 `hook_event`（event 为 `ccweb_statusline`），两个视图原有的分发直接可用；② 不做每秒节流，因为实测每轮只调用一次，只保留「数值变了才推送」；③ 分屏窗格没有单独的标题条圆环，标签上的圆环已覆盖分屏里的会话；④ 实测 `total_cost_usd` 只计当前这个 Claude 进程，恢复对话后从 $0.00 算起，所以提示写「本次运行」，整段对话的总花费放到第 2 层（从 jsonl 计算）。
+- **第 2 层（2026-11-06）**：已完成。与计划的出入：① 缓存只放在内存里（按字节偏移增量读，41MB 首次约 0.2 秒、之后约 1 毫秒），写入 `usage-cache.json` 留到第 3 层，因为只有冷启动扫描全部对话时才需要；② Sessions 面板历史对话行上的入口没有做，路由已经有（`GET /api/claude-sessions/:id/usage`），第 3 层的总览会话列表会用到它；③ 价格表取自 claude-api 参考（缓存于 2026-10-06），表里没有的模型不估价；④ 增量模式按 98 分位缩放，压缩那根被截断，提示里保留真实数值。
 
 ## 第 1 层：标签上的实时上下文占用环
 

@@ -671,6 +671,13 @@ class SessionTabManager {
             </span>
         `;
 
+        // The context ring opens the usage panel for this tab, without
+        // switching to it.
+        tab.querySelector('.tab-ctx').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.usagePanel) window.usagePanel.open(sessionId);
+        });
+
         // Tab click handler
         tab.addEventListener('click', async (e) => {
             if (!e.target.closest('.tab-close') && !e.target.closest('.tab-menu') && !e.target.closest('.tab-pin')) {
@@ -994,6 +1001,7 @@ class SessionTabManager {
             return el;
         };
         menu.appendChild(addItem('Close Others', () => this.closeOthers(sessionId)));
+        menu.appendChild(addItem('上下文与用量', () => window.usagePanel && window.usagePanel.open(sessionId)));
         // Pin/unpin — leads the task to the front of its group (either sort
         // mode), per-device.
         if (this.sidebar) {

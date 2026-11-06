@@ -4985,3 +4985,104 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 .users-secret .btn { margin-left: 8px; }
+
+/* Usage panel (usage-panel.js): one tab's context and token use. The body is
+   what scrolls; the trend scrolls sideways on its own. */
+#usageModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    width: min(860px, calc(100vw - 32px));
+    max-width: none;
+}
+#usageModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.tab-ctx { cursor: pointer; }
+.usage-empty { padding: 24px 4px; color: var(--text-secondary); font-size: 13px; }
+.usage-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.usage-kpi {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    min-width: 0;
+}
+.usage-kpi-value { font-size: 18px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.usage-kpi-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.usage-section { margin-bottom: 16px; }
+.usage-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+.usage-bar {
+    display: flex;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+}
+.usage-seg { display: block; height: 100%; }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.usage-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.usage-legend i.u-free { background: var(--bg-tertiary); border: 1px solid var(--border); }
+/* The three sources of a prompt, the same colours in the bar, legend and trend. */
+.usage-seg.u-read, .usage-legend i.u-read { background: var(--text-secondary); }
+.usage-seg.u-write, .usage-legend i.u-write { background: var(--warning); }
+.usage-seg.u-input, .usage-legend i.u-input { background: var(--accent); }
+.usage-trend-svg rect.u-read { fill: var(--text-secondary); opacity: 0.55; }
+.usage-trend-svg rect.u-write { fill: var(--warning); }
+.usage-trend-svg rect.u-input { fill: var(--accent); }
+.usage-trend-svg rect.u-shrink { fill: var(--error); }
+.usage-trend-svg .u-compact line { stroke: var(--error); stroke-width: 1; stroke-dasharray: 3 2; }
+.usage-trend-svg .u-compact text { fill: var(--error); font-size: 10px; }
+.usage-trend-svg .u-zero { stroke: var(--border); stroke-width: 1; }
+.usage-trend-svg g:hover rect { opacity: 1; filter: brightness(1.25); }
+.usage-trend {
+    overflow-x: auto;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+}
+.usage-trend-svg { display: block; }
+.usage-mode { margin-left: auto; display: inline-flex; gap: 4px; }
+.usage-mode-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 2px 10px;
+    min-height: 28px;
+    cursor: pointer;
+}
+.usage-mode-btn.active { color: var(--text-primary); border-color: var(--accent); }
+.usage-tops {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+.usage-top-row {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+.usage-top-name { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.usage-top-count { position: relative; z-index: 1; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.usage-top-bar { position: absolute; left: 0; top: 2px; bottom: 2px; background: var(--accent); opacity: 0.14; border-radius: 3px; }
+.usage-trend { scrollbar-color: var(--border) transparent; scrollbar-width: thin; }
