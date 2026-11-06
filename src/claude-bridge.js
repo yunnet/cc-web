@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const claudeTheme = require('./utils/claude-theme');
+const claudeConfig = require('./utils/claude-config');
 
 class ClaudeBridge {
   constructor() {
@@ -123,7 +124,13 @@ class ClaudeBridge {
       // cc-web session id because that is what `--session-id` bound on the first
       // start — but Claude can move itself to a new transcript (`/clear`), and
       // the server tracks where it went. See server.resumeIdFor.
-      resumeId = ''
+      resumeId = '',
+      // The session owner's own Claude directory (CLAUDE_CONFIG_DIR) and the
+      // platform key to run it with. Both empty for the unowned tenant, which
+      // keeps using ~/.claude and whatever login it holds. See
+      // utils/claude-config.js.
+      claudeConfigDir = null,
+      apiKey = ''
     } = options;
 
     // Args shared by a fresh launch and a resume.
@@ -133,7 +140,7 @@ class ClaudeBridge {
     // the client's onBell turns it into a beep + notification. Injected via
     // --settings so the user's own settings.json is untouched.
     baseArgs.push('--settings', JSON.stringify(
-      this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme })
+      this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme, claudeConfigDir })
     ));
 
 
@@ -201,6 +208,7 @@ class ClaudeBridge {
       // is not secret but env beats another argv surface.
       if (hookToken && hookPort) childEnv.CCWEB_HOOK_PORT = String(hookPort);
       delete childEnv.CLAUDE_CODE_CHILD_SESSION;
+      ClaudeBridge.applyOwnerEnv(childEnv, { claudeConfigDir, apiKey });
       return spawn(this.claudeCommand, [...idArgs, ...baseArgs], {
         cwd: workingDir,
         env: childEnv,
@@ -317,7 +325,7 @@ class ClaudeBridge {
           const looksInUse = inUseNoted || dataBuffer.toLowerCase().includes('already in use');
           if (mode === 'fresh' && !phantomRecovered && code !== 0 && (Date.now() - launchedAt) < 8000 && looksInUse) {
             phantomRecovered = true;
-            if (this.clearEmptyTranscript(sessionId)) {
+            if (this.clearEmptyTranscript(sessionId, claudeConfigDir)) {
               // We are inside a PTY event handler — the enclosing try/catch has
               // long since returned, so a spawn failure here would surface as an
               // uncaughtException and take the server down. Fall through to the
@@ -418,7 +426,7 @@ class ClaudeBridge {
   // reclaimed with --session-id. Safe: it only removes a tiny file with no real
   // conversation. Globs across project dirs so we don't depend on the dir-encoding.
   // Also drops the id's session-env dir, which is dead once the transcript is.
-  clearEmptyTranscript(sessionId) {
+  clearEmptyTranscript(sessionId, claudeConfigDir = null) {
     // The id is interpolated into paths we then delete — one of them recursively,
     // inside the user's home. Ids are server-minted uuids, but they also round-trip
     // through sessions.json, so re-check the shape rather than trust the caller.
@@ -426,8 +434,8 @@ class ClaudeBridge {
       return false;
     }
     try {
-      const os = require('os');
-      const root = path.join(os.homedir(), '.claude', 'projects');
+      const home = claudeConfig.claudeHome(claudeConfigDir);
+      const root = claudeConfig.projectsDir(claudeConfigDir);
       if (!fs.existsSync(root)) return false;
       for (const proj of fs.readdirSync(root)) {
         const f = path.join(root, proj, `${sessionId}.jsonl`);
@@ -437,7 +445,7 @@ class ClaudeBridge {
         const content = fs.readFileSync(f, 'utf8');
         if (/"type"\s*:\s*"(user|assistant)"/.test(content)) continue; // has real turns
         fs.unlinkSync(f);
-        try { fs.rmSync(path.join(os.homedir(), '.claude', 'session-env', sessionId), { recursive: true, force: true }); } catch (_) {}
+        try { fs.rmSync(path.join(home, 'session-env', sessionId), { recursive: true, force: true }); } catch (_) {}
         return true;
       }
     } catch (_) { /* best-effort */ }
@@ -484,7 +492,15 @@ class ClaudeBridge {
     // word its own cursor-column escape, so a row only reads as text once the
     // escapes and the spaces they stand in for are gone. Blank rows drop out so
     // "one row down" means one OPTION down, which is what the arrow key moves.
+    //
+    // A row can also end without a newline at all: 2.1.304 places every row
+    // of the prompt with an absolute cursor move (`ESC[14;2H❯ No, exit` then
+    // `ESC[15;4HYes, I trust this folder`, measured 2026-11-05 in a fresh
+    // CLAUDE_CONFIG_DIR). Strip those like the rest and the whole prompt
+    // collapses into one row with no cursor to find — so a move to a row, or
+    // down a row, counts as a line break first.
     const rows = String(text || '')
+      .replace(/\x1b\[[0-9]*(?:;[0-9]*)?[Hf]|\x1b\[[0-9]*[BE]/g, '\n')
       .replace(/\x1b\[[0-9;?<>=!]*[a-zA-Z]/g, '')
       .replace(/\r\n|\r/g, '\n')
       .split('\n')
@@ -554,11 +570,24 @@ class ClaudeBridge {
     return args;
   }
 
-  static themeForUi(uiTheme) {
-    return claudeTheme.themeForUi(uiTheme);
+  // A platform user's Claude runs on their own directory (CLAUDE_CONFIG_DIR),
+  // and on the platform key or nothing: credentials the server inherited are
+  // not theirs to use. Without a directory (the unowned tenant) the env is left
+  // exactly as it was. The same rule as claudeConfig.applyEnv, spelled out here
+  // because this is the spawn env FEATURES.md accounts for.
+  static applyOwnerEnv(childEnv, { claudeConfigDir = null, apiKey = '' } = {}) {
+    if (!claudeConfigDir) return childEnv;
+    for (const name of claudeConfig.CREDENTIAL_ENV) delete childEnv[name];
+    childEnv.CLAUDE_CONFIG_DIR = claudeConfigDir;
+    if (apiKey) childEnv.ANTHROPIC_API_KEY = apiKey;
+    return childEnv;
   }
 
-  buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '' } = {}) {
+  static themeForUi(uiTheme, claudeConfigDir) {
+    return claudeTheme.themeForUi(uiTheme, claudeConfigDir);
+  }
+
+  buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '', claudeConfigDir = null } = {}) {
     // `tui` is Claude's own renderer setting — the one `/tui` writes. Values are
     // exactly ["default","fullscreen"]; "default" IS the classic renderer, and
     // it is the only way to name it (there is no "classic" value). Injecting it
@@ -573,7 +602,7 @@ class ClaudeBridge {
     // (measured: env var beats an explicit `"tui": "fullscreen"`).
     const settings = { preferredNotifChannel: 'terminal_bell', tui: 'default' };
     if (uiTheme === 'light' || uiTheme === 'dark') {
-      settings.theme = ClaudeBridge.themeForUi(uiTheme);
+      settings.theme = ClaudeBridge.themeForUi(uiTheme, claudeConfigDir);
     }
     if (hookScript && hookPort && hookToken) {
       // The token is passed to cc-hook.js via the CCWEB_HOOK_TOKEN env var (set

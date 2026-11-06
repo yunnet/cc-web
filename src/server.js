@@ -16,6 +16,7 @@ const { safeEqual } = require('./utils/password');
 const { parseCookies, serializeCookie } = require('./utils/cookies');
 const claudeHistory = require('./utils/claude-history');
 const claudeTheme = require('./utils/claude-theme');
+const claudeConfig = require('./utils/claude-config');
 const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
@@ -111,6 +112,36 @@ class ClaudeCodeWebServer {
   // unowned tenant (ownerId null) is the data dir root — the single-user layout
   // — used before any administrator exists and with --disable-auth. Running
   // sessions all stay in this.claudeSessions, each carrying its ownerId.
+
+  // An owner's own Claude directory (CLAUDE_CONFIG_DIR): <dataDir>/<uid>/claude.
+  // null for the unowned tenant, which keeps using ~/.claude. Every platform
+  // user has one, the first administrator included (M3, option B).
+  claudeDirFor(ownerId) {
+    return ownerId ? path.join(this.sessionStore.storageDir, ownerId, 'claude') : null;
+  }
+
+  // Where that owner's Claude keeps its transcripts — what the history list,
+  // the resume check and the prompt rail read.
+  projectsDirFor(ownerId) {
+    return claudeConfig.projectsDir(this.claudeDirFor(ownerId));
+  }
+
+  // Everything a spawn needs from the owner's Claude directory, made ready:
+  // first-run answers seeded, cc-web's themes written (once per directory per
+  // process), and the platform key, read fresh so a changed key file applies
+  // at the next start. The unowned tenant gets nothing — no directory, no key.
+  prepareClaudeFor(ownerId) {
+    const claudeConfigDir = this.claudeDirFor(ownerId);
+    if (!claudeConfigDir) return { claudeConfigDir: null, apiKey: '' };
+    const apiKey = claudeConfig.readPlatformKey(this.dataDirFile('platform'));
+    claudeConfig.seedConfig(claudeConfigDir, { apiKey });
+    if (!this.themedClaudeDirs) this.themedClaudeDirs = new Set();
+    if (!this.themedClaudeDirs.has(claudeConfigDir)) {
+      claudeTheme.ensureThemes(claudeConfigDir);
+      this.themedClaudeDirs.add(claudeConfigDir);
+    }
+    return { claudeConfigDir, apiKey };
+  }
 
   // The unowned tenant's spaces, under the name every caller used before there
   // were tenants.
@@ -980,7 +1011,7 @@ class ClaudeCodeWebServer {
         if (!session) {
           return res.status(404).json({ error: 'Session not found' });
         }
-        res.json(await claudeHistory.listUserPrompts(session.workingDir, session.id));
+        res.json(await claudeHistory.listUserPrompts(session.workingDir, session.id, { root: this.projectsDirFor(session.ownerId || null) }));
       }));
 
     // Get session details
@@ -1737,8 +1768,8 @@ class ClaudeCodeWebServer {
       // One conversation, one tab: two Claude processes resuming the same
       // transcript would interleave writes into it. The list greys these out;
       // this is the check that holds when another device got there first.
-      // Another user's tab counts too — Claude's transcripts are shared until
-      // each user has their own history — but its id is not ours to hand out.
+      // Another user's tab counts too — each user has their own transcripts
+      // now, so only a guessed id gets here — but its id is not ours to hand out.
       const holder = this.sessionHoldingConversation(resumeId);
       if (holder) {
         const holderSession = this.claudeSessions.get(holder);
@@ -1756,7 +1787,7 @@ class ClaudeCodeWebServer {
       }
       // `--resume` only finds a conversation recorded in the same directory, so
       // a mismatch here would surface later as a failed start.
-      if (!(await claudeHistory.hasConversation(validWorkingDir, resumeId))) {
+      if (!(await claudeHistory.hasConversation(validWorkingDir, resumeId, { root: this.projectsDirFor(ownerId) }))) {
         return res.status(404).json({
           error: 'Conversation not found',
           message: 'No Claude conversation with that id in this directory.'
@@ -1831,11 +1862,12 @@ class ClaudeCodeWebServer {
     if (!validation.valid) return res.status(403).json({ error: validation.error });
     dir = validation.path;
 
-    const conversations = await claudeHistory.listConversations(dir, { limit: 50 });
+    const conversations = await claudeHistory.listConversations(dir, { limit: 50, root: this.projectsDirFor(ownerId) });
     res.json({
       dir,
-      // A conversation another user's tab holds is just as taken (the
-      // transcripts are shared), but it is not a tab of ours to switch to.
+      // A conversation another user's tab holds is just as taken, but it is
+      // not a tab of ours to switch to. (With a Claude directory per user this
+      // only happens for an id both happen to have — kept as the backstop.)
       conversations: conversations.map((c) => {
         const holder = this.claudeSessions.get(c.id);
         const inUseByOther = !!holder && (holder.ownerId || null) !== ownerId;
@@ -2057,7 +2089,18 @@ class ClaudeCodeWebServer {
       // (a file node would run as the hook). Values are whitelisted by the
       // bridge (ClaudeBridge.launchArgs); this only decides which keys exist.
       const { model, permissionMode, effort, dangerouslySkipPermissions } = options || {};
+      const claudeEnv = this.prepareClaudeFor(session.ownerId || null);
+      // A session that last ran on the shared ~/.claude (before M3) resumes
+      // under its owner's own directory now; bring its conversation along so
+      // --resume still finds it.
+      if (claudeEnv.claudeConfigDir && session.claudeStarted) {
+        await claudeHistory.adoptConversation(session.workingDir, this.resumeIdFor(session), {
+          from: claudeConfig.projectsDir(null),
+          to: claudeConfig.projectsDir(claudeEnv.claudeConfigDir)
+        });
+      }
       await this.claudeBridge.startSession(sessionId, {
+        ...claudeEnv,
         model, permissionMode, effort, dangerouslySkipPermissions: dangerouslySkipPermissions === true,
         name: session.nameIsCustom ? session.name : '',
         workingDir: session.workingDir,
@@ -3316,7 +3359,9 @@ class ClaudeCodeWebServer {
     const session = sessionId ? this.getOwnedSession(ownerId, sessionId) : null;
     return {
       claudeCommand: this.claudeBridge ? this.claudeBridge.claudeCommand : 'claude',
-      workingDir: (session && session.workingDir) || this.baseFolder || process.cwd()
+      workingDir: (session && session.workingDir) || this.baseFolder || process.cwd(),
+      // The caller's own Claude: their plugins, marketplaces and skills.
+      claudeConfigDir: this.claudeDirFor(ownerId)
     };
   }
 
@@ -3366,9 +3411,9 @@ class ClaudeCodeWebServer {
     if (path.basename(real).toLowerCase() !== 'skill.md') return res.status(400).json({ error: 'not a SKILL.md' });
 
     const roots = [
-      skills.userSkillsDir(),
+      skills.userSkillsDir(ctx.claudeConfigDir),
       skills.projectSkillsDir(ctx.workingDir),
-      path.join(os.homedir(), '.claude', 'plugins')
+      skills.pluginsDir(ctx.claudeConfigDir)
     ].filter(Boolean).map((r) => { try { return fs.realpathSync(r); } catch (_) { return null; } }).filter(Boolean);
     if (!roots.some((root) => real === root || real.startsWith(root + path.sep))) {
       return res.status(403).json({ error: 'that file is not a skill' });

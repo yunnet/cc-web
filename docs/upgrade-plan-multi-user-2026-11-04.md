@@ -121,7 +121,7 @@ getOwnedSession(user, id) {
   - `src/utils/claude-history.js`：`listConversations`、`hasConversation`、`listUserPrompts`
   - `src/claude-bridge.js:440`：`session-env` 清理路径
   - `src/server.js:2910`：plugins 路径；以及 skills 扫描
-- 迁移来的 admin：`claudeConfigDir` 为空 → 不注入，继续使用 `~/.claude`，老历史可见。
+- ~~迁移来的 admin：`claudeConfigDir` 为空 → 不注入，继续使用 `~/.claude`，老历史可见。~~ 2026-11-05 改为方案 B：管理员也用自己的目录和平台 key（见 M3 细化）。
 
 ### 8.1 平台统一 API key（决策 4）
 
@@ -154,7 +154,7 @@ getOwnedSession(user, id) {
 **自动迁移**（首次以新版本启动，检测到"存在旧数据且无任何用户"）：
 1. 创建 `admin` 用户；初始密码依次取 `--auth-file` → `CCWEB_AUTH` → `--auth`，都没有则走 setup 链接。
 2. `data/sessions/`、`spaces.json`、`scrollback.json`、`plan-dirs.json` rename 到 `<adminUid>/`（后两者合并进 `settings.json`，原文件保留）；所有会话补 `ownerId=<adminUid>`。
-3. admin 的 `claudeConfigDir` 置空，继续用 `~/.claude`。
+3. ~~admin 的 `claudeConfigDir` 置空，继续用 `~/.claude`。~~ 改为方案 B：admin 也用 `<adminUid>/claude`；已有会话的对话在下次启动时逐条复制过去（见 M3 细化）。
 4. 遵循 `data-dir.js` 原则：同文件系统 rename、不删除、失败回退原位、best-effort 不阻塞启动；幂等，重复启动不重复迁移。
 
 **回滚**：
@@ -175,7 +175,7 @@ getOwnedSession(user, id) {
 
 - ✅ M1 — 认证（2026-11-05，分支 `feat/multi-user-m1`，未提交）：全量测试 676 通过（原 646 + 新增 30，`test/auth-login.test.js`；含 /code-review 10 条意见的处理：8 条修复、#5 令牌猜错限流、#8 反向代理写进 README）；在临时实例（32354，临时数据目录）上用浏览器实测：令牌 → 建管理员 → 登录、页面不存令牌且 Cookie 对 JS 不可见、**重启服务后刷新仍保持登录**、WebSocket 用 Cookie 连通、`-` 令牌段的 plan 链接走 Cookie、退出后回到登录框、错误密码提示、正确密码登录。FEATURES.md 实际改动 SRV-02/03/10、GAP-01，新增 SRV-24~27；SRV-11、FILE-07、FILE-26 描述里没有提到令牌，未改。待你验证后部署 dev(32353)。
 - ✅ M2 — 数据归属（2026-11-05，分支 `feat/multi-user-m2`，未提交）：全量测试 688 通过（M1 的 676 + 新增 12，`test/multi-user-data.test.js`）；用 stable 真实数据的副本在临时实例上实测：建第一个管理员时 7 个会话和空间自动移进管理员目录、重启后不再读根目录；第二个用户 REST 看不到也碰不到管理员的会话和空间（列表空、详情 404、计数 0），WebSocket 自动加入被忽略、join 答「Session not found」，管理员自己 join 正常。
-- ⏳ M3 — Claude 按用户隔离
+- ✅ M3 — Claude 按用户隔离 + 平台 key（2026-11-05，分支 `feat/multi-user-m3`，未提交）：全量测试 713 通过（M2 的 688 + 新增 24，`test/claude-config.test.js`，+1 信任提示解析）。临时实例（32354，临时 home / 数据目录，假平台 key）实测：管理员的一个 M3 之前的会话启动时，对话从 `~/.claude` 复制进 `<uid>/claude/projects/` 并成功 `--resume`（显示原对话）；没有主题选择、没有「是否使用这个 API key」，状态栏「API Usage Billing」；继承的 `ANTHROPIC_AUTH_TOKEN` 未传给 Claude；`~/.claude` 未被写入对话。**顺带修复**：2.1.304 的信任文件夹提示用绝对光标定位画每一行（没有换行），CLA-12 的解析把整屏读成一行、找不到光标，提示一直停着（默认在「No, exit」）——以前管理员的文件夹大多已信任所以很少遇到，每人一个新目录后每个文件夹都会遇到。改为把光标定位当换行，实测自动确认成功；CLA-12 描述不变。FEATURES.md 改动 TERM-49、START-06/15、SES-05、SRV-07、SKILL-03/05/07/09/10/12/13/15/20/21、CLA-04/14/16，新增 CLA-19（每人的 Claude 目录与首次预置）、CLA-20（平台 key）。CLA-05/12 未改：信任文件夹的提示本来就由 cc-web 自动确认，换目录后照样自动确认，不会让用户每个文件夹再答一次（确认时我说错了，这里更正）。CLA-15、SES-09 描述不涉及目录，未改。
 - ⏳ M4 — 管理与体验
 - ⏳ M5 — 移除旧 token 路径与参数（全部验证通过后，逐项确认）
 - ⏳ M6 — LLM 网关：按人计量与限额
@@ -225,6 +225,23 @@ getOwnedSession(user, id) {
 - 注入 `CLAUDE_CONFIG_DIR`；改造 claude-history、session-env、plugins、skills 路径。
 - 平台 key 配置与注入 `ANTHROPIC_API_KEY`；预置每个用户的 Claude 初始配置，跳过首次引导。
 - 产出：对话历史、resume 列表各自独立；新用户不需要 `/login` 就能用。
+
+开工前细化（2026-11-05，基于代码梳理和对 Claude CLI 2.1.304 的实测）：
+
+- **实测结论**：
+  - `CLAUDE_CONFIG_DIR` 生效：新目录下 CLI 显示「Not logged in」，配置、转录（`projects/`）、`sessions/` 都写进该目录，不碰 `~/.claude`。
+  - 全新目录首次启动依次出现：主题选择 → 信任此文件夹 → （设了 `ANTHROPIC_API_KEY` 时）「Detected a custom API key… Do you want to use this API key?」，默认选项是 **No**。
+  - 在 `.claude.json` 预置 `hasCompletedOnboarding: true` + `theme` 跳过主题选择；预置 `customApiKeyResponses.approved: [key 的后 20 位]` 跳过 key 确认；三者都预置时直接进入可输入状态，状态栏显示「API Usage Billing」。
+  - 管理员当前用的是 `~/.claude` 里的订阅登录（`.credentials.json` / `oauthAccount`），服务进程环境里没有 `ANTHROPIC_API_KEY` 等凭证变量。
+- **每个用户的 Claude 目录**：`<dataDir>/<uid>/claude`，spawn 时注入 `CLAUDE_CONFIG_DIR`。**第一个管理员也一样**（2026-11-05 选方案 B：「管理员也用平台key」→「B」），不再用 `~/.claude`。无主桶（未建管理员 / `--disable-auth`）不注入，继续用 `~/.claude`。
+  - **已有会话的对话**：M3 之前所有人的对话都记在 `~/.claude`。某个会话下次启动、要 `--resume` 时，如果它的对话不在所有者目录里，就从 `~/.claude/projects` 把**这一条**对话（连同它的子代理目录）复制过去再接续；只复制不移动，已有的不覆盖。否则它会找不到对话、悄悄新开一个空的。
+  - 管理员以前的其他历史对话（没有会话占着的）不复制：「Conversations in this folder」从空开始，原文件留在 `~/.claude`。技能、插件也要在自己的目录里重新装。
+- **首次预置**：第一次为某用户启动 Claude 前，写入 `.claude.json`：`hasCompletedOnboarding`、`theme`、（有平台 key 时）key 的批准记录。已存在的字段不覆盖；平台 key 换了就补上新 key 的批准记录。**「信任此文件夹」不预置**：它本来就由 cc-web 在终端里自动确认（CLA-05/12），换目录后行为不变。
+- **平台 key**：读 `CCW_ANTHROPIC_API_KEY` 环境变量，或 `<dataDir>/platform/anthropic-key`（0600，第一行）。注入给每个有自己 Claude 目录的用户（含管理员）。每次启动 Claude 时现读，改了文件下次启动就生效。没配置时不注入，用户需在终端里自己 `/login`。从服务进程继承来的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN`，对有自己目录的用户一律清掉，避免管理员的凭证漏给别人。M6 的网关会取代直接注入。
+- **按用户读取的地方**：对话列表与接续检查（`/api/claude-sessions`、`createSession` 的 404 检查）、提问清单（TERM-49）、会话 id 被占用时的空转录清理（START-15，`clearEmptyTranscript` + `session-env`）都改为读会话所有者的 Claude 目录。
+- **主题**：cc-web 自带的两套 Claude 主题（CLA-16）在为某用户首次启动时也写进该用户目录的 `themes/`。
+- **技能面板**：`claude plugin …` 命令带上调用者的 `CLAUDE_CONFIG_DIR`，个人技能目录、插件文件读取的白名单改为调用者自己的目录；「可装」列表缓存按目录分开；写操作的互斥锁保持全服务一个（简单，写操作很少）。
+- **不变**：别人占用对话时的 409（各用户转录分开后实际不会再发生，代码保留作保险）；binary 查找；`claude --version`。
 
 ### M4 — 管理与体验（前端为主 · 低风险 · 约 2–3 天）
 - `/api/admin/*` 与管理页、管理员创建 + 邀请码注册、首次登录强制改密码、设备列表与吊销、rootDirs 约束、用户菜单。
@@ -303,4 +320,5 @@ M1 → 你验证登录体验 → M2 → M3 → M4。
 | 2026-11-05 | M1 | SRV-02、SRV-03、SRV-10、SRV-11、FILE-07、FILE-26、GAP-01 | 按 M1 细化方案改动（只增不删：加 Cookie 会话、用户名密码登录、首次用启动令牌建管理员、链接令牌段用 `-` 走 Cookie、登录限流）；新增登录相关接口登记 | "确认，开始M1" |
 | 2026-11-05 | M1 | SRV-02 | 启动令牌加猜错限流：同一地址一分钟猜错 10 次后，该分钟内拒绝（REST 429、WebSocket 拒连），覆盖请求头、WebSocket、plan / file 链接、`/auth-verify`（/code-review #5） | "5加限流，8写文档" |
 | 2026-11-05 | M2 | SRV-05/07/08/09/10/15/16/17/18/21/22/23、CLI-09/10、TERM-22/29/42/45/49、START-04/07/10、SES-02/04/05、NEW-12/16、SPACE-01/02/03/04/06/08、TAB-06、SET-06/07/11/12/13、CLA-09/18、UI-04 | 按 M2 细化方案改为按用户归属（只看、只改自己的；存储进 `<uid>/`；scrollback 按用户；全局计划目录保持实例级；健康 / 持久化统计只算自己的；别人占用的对话照样 409 但不给对方会话 id）；新增「单用户数据迁移到第一个管理员」登记 | "确认，开始M2" |
+| 2026-11-05 | M3 | TERM-49、START-06/15、SES-05、SRV-07、SKILL-03/05/07/09/10/12/13/15/20/21、CLA-04/14/16 | 按 M3 细化方案改为读写会话所有者 / 调用者自己的 Claude 目录（对话记录、提问清单、空转录清理、技能与插件、主题、可装列表缓存）；旧会话的对话下次启动时复制进所有者目录；新增 CLA-19（每人的 Claude 目录与首次预置）、CLA-20（平台 key，含管理员） | "管理员也用平台key"；目录方案 "B" |
 | 2026-11-04 | M5 | CLI-04 `--disable-auth` | 移除：关闭认证的模式取消，所有访问都必须登录 | "选C"（针对"A 保留视为 admin / B 仅限 127.0.0.1 / C 移除"三个选项） |

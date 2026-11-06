@@ -24,10 +24,10 @@
 // below, under "── Reading what is installed".
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 const { readPrefix } = require('./utils/read-prefix');
+const claudeConfig = require('./utils/claude-config');
 // Killing a timed-out `claude` means killing what it forked (git, curl, npm).
 // git-branches already solved exactly this, including the experiment showing
 // process groups are the wrong tool here — reuse it rather than repeat it.
@@ -240,8 +240,15 @@ const MAX_BUFFER = 8 * 1024 * 1024;
 // The TTL only stops a double-click from spawning two.
 const CATALOG_TTL_MS = 30000;
 
-function userSkillsDir() {
-  return path.join(os.homedir(), '.claude', 'skills');
+// configDir is the caller's own Claude directory (a platform user's
+// CLAUDE_CONFIG_DIR); without one it is ~/.claude. Everything below that takes
+// `claudeConfigDir` acts on that user's Claude and nobody else's.
+function userSkillsDir(configDir) {
+  return path.join(claudeConfig.claudeHome(configDir), 'skills');
+}
+
+function pluginsDir(configDir) {
+  return path.join(claudeConfig.claudeHome(configDir), 'plugins');
 }
 
 function projectSkillsDir(workingDir) {
@@ -336,7 +343,7 @@ function runCli(claudeCommand, args, opts = {}) {
     const child = execFile(
       file,
       args,
-      { maxBuffer: MAX_BUFFER, windowsHide: true, cwd, env: { ...process.env } },
+      { maxBuffer: MAX_BUFFER, windowsHide: true, cwd, env: claudeConfig.applyEnv({ ...process.env }, { configDir: opts.claudeConfigDir }) },
       (error, stdout, stderr) => {
         if (timer) clearTimeout(timer);
         if (timedOut) return;
@@ -368,18 +375,18 @@ function isDirectory(p) {
 // Plugins come from the CLI (it owns that state); the two skills directories
 // are read straight off disk, because nothing installs or uninstalls them.
 async function listInstalled(options = {}) {
-  const { claudeCommand, workingDir } = options;
-  const res = await runCli(claudeCommand, ['plugin', 'list', '--json'], { cwd: workingDir });
+  const { claudeCommand, workingDir, claudeConfigDir } = options;
+  const res = await runCli(claudeCommand, ['plugin', 'list', '--json'], { cwd: workingDir, claudeConfigDir });
   const plugins = parseInstalled(res.stdout).map((p) => ({ ...p, skills: pluginSkills(p.installPath) }));
 
-  const dirs = listDirSkills(userSkillsDir(), 'user');
+  const dirs = listDirSkills(userSkillsDir(claudeConfigDir), 'user');
   const projectRoot = projectSkillsDir(workingDir);
   const projectSkills = projectRoot ? listDirSkills(projectRoot, 'project') : [];
 
   return {
     plugins,
     skills: dirs.concat(projectSkills),
-    userSkillsDir: userSkillsDir(),
+    userSkillsDir: userSkillsDir(claudeConfigDir),
     projectSkillsDir: projectRoot,
     // Why the plugin half may be empty, so the panel can say so instead of
     // looking broken.
@@ -387,16 +394,20 @@ async function listInstalled(options = {}) {
   };
 }
 
-let catalogCache = { at: 0, data: null };
+// One per Claude directory ('' is ~/.claude): what is installable depends on
+// that user's marketplaces, and what is installed on that user's plugins.
+let catalogCache = new Map();
 
 // The installable catalogue. 299 entries / 180 KB / 0.44s on this machine, so
 // it is fetched on demand and held for half a minute — no background refresh,
 // no timer. This server has been brought down once by a scan on a timer.
 async function catalog(options = {}) {
-  const { claudeCommand, workingDir, force } = options;
+  const { claudeCommand, workingDir, force, claudeConfigDir } = options;
+  const key = claudeConfigDir || '';
   const now = Date.now();
-  if (!force && catalogCache.data && now - catalogCache.at < CATALOG_TTL_MS) return catalogCache.data;
-  const res = await runCli(claudeCommand, ['plugin', 'list', '--available', '--json'], { cwd: workingDir });
+  const cached = catalogCache.get(key);
+  if (!force && cached && now - cached.at < CATALOG_TTL_MS) return cached.data;
+  const res = await runCli(claudeCommand, ['plugin', 'list', '--available', '--json'], { cwd: workingDir, claudeConfigDir });
   const parsed = parseCatalog(res.stdout);
   const data = {
     ...parsed,
@@ -404,16 +415,18 @@ async function catalog(options = {}) {
     fetchedAt: now
   };
   // A failed fetch is not cached: a network blip should not be sticky.
-  if (!data.problem && data.available.length) catalogCache = { at: now, data };
+  if (!data.problem && data.available.length) catalogCache.set(key, { at: now, data });
   return data;
 }
 
-function clearCatalogCache() {
-  catalogCache = { at: 0, data: null };
+// With no argument, every user's; otherwise just that Claude directory's.
+function clearCatalogCache(claudeConfigDir) {
+  if (claudeConfigDir === undefined) catalogCache = new Map();
+  else catalogCache.delete(claudeConfigDir || '');
 }
 
 async function listMarketplaces(options = {}) {
-  const res = await runCli(options.claudeCommand, ['plugin', 'marketplace', 'list', '--json'], { cwd: options.workingDir });
+  const res = await runCli(options.claudeCommand, ['plugin', 'marketplace', 'list', '--json'], { cwd: options.workingDir, claudeConfigDir: options.claudeConfigDir });
   return parseMarketplaces(res.stdout);
 }
 
@@ -578,6 +591,7 @@ async function runAction(action, params = {}) {
   try {
     res = await runCli(params.claudeCommand, args, {
       cwd: params.workingDir,
+      claudeConfigDir: params.claudeConfigDir,
       timeoutMs: actionTimeout(action, params.timeoutMs)
     });
   } finally {
@@ -599,7 +613,7 @@ async function runAction(action, params = {}) {
     };
 
   // What is installed just changed, so the cached catalogue is stale.
-  if (out.ok) clearCatalogCache();
+  if (out.ok) clearCatalogCache(params.claudeConfigDir || null);
   // Nothing takes effect in a Claude that is already running.
   out.restartRequired = out.ok && action !== 'marketplace-update';
   return out;
@@ -630,6 +644,7 @@ module.exports = {
   sourceSummary,
   stripAnsi,
   userSkillsDir,
+  pluginsDir,
   projectSkillsDir,
   isWritable,
   listDirSkills,

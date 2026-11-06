@@ -37,6 +37,30 @@ you out. The token keeps working as a fallback sign-in for the administrator.
 
 Use `--disable-auth` to turn it off (local development only).
 
+### Each user's own Claude, on the platform key
+
+Every user — the administrator included — runs Claude on a configuration
+directory of their own, `<data dir>/<uid>/claude` (passed as `CLAUDE_CONFIG_DIR`):
+login, settings, conversation history, skills, plugins and themes are not shared.
+Until an administrator exists (and with `--disable-auth`) Claude keeps using
+`~/.claude`.
+
+Give everyone one Anthropic API key, either way:
+
+```bash
+CCW_ANTHROPIC_API_KEY=sk-ant-... npm start
+# or, read at every Claude start (no restart needed):
+echo 'sk-ant-...' > ~/.cc-web/data/platform/anthropic-key && chmod 600 ~/.cc-web/data/platform/anthropic-key
+```
+
+cc-web answers Claude's first-run questions in each new directory (onboarding,
+theme, "use this API key?"), so a new user lands straight at the prompt. Without a
+key, each user signs in with `/login` in their own terminal. Credentials the server
+process itself inherited (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`) are never passed on. A session started before this
+change has its conversation copied from `~/.claude` into its owner's directory the
+next time it starts; other old history stays in `~/.claude`.
+
 ### Behind a reverse proxy
 
 Sign-in and every write made with the login cookie are refused (403) when the
@@ -191,6 +215,7 @@ CLAUDE_ALIAS=Alice node bin/cc-web.js
 | `CCWEB_AUTH` | Authentication token. Beats `--auth`, loses to `--auth-file`. `/proc/<pid>/environ` is readable only by the owner, unlike `cmdline`. |
 | `CCW_DATA_DIR` | Where sessions, plan dirs and the instance registry live. Defaults to `~/.cc-web/data` — the first start moves an old `~/.claude-code-web` there in one atomic rename. Point a second instance at another directory to isolate it. |
 | `CCW_PLANS_DIR` | Same as `--plans-dir`. If `<data dir>/plan-dirs.json` exists, it wins over the flag at startup — the file is only ever read, never written (`GAP-22`). |
+| `CCW_ANTHROPIC_API_KEY` | The platform Anthropic API key every user's Claude runs on. Beats `<data dir>/platform/anthropic-key`. |
 | `CLAUDE_ALIAS` | Same as `--claude-alias`. |
 
 ## Sessions
@@ -270,7 +295,9 @@ what Claude can already do, and what it could:
 
 - **Installed** — every plugin `claude plugin` knows about, with its version, scope,
   on/off state and the skills it brings, followed by the skills sitting in
-  `~/.claude/skills` and the current project's `.claude/skills`. Click a row to read
+  your own Claude directory's `skills/` (`~/.claude/skills` before any user
+  exists) and the current project's `.claude/skills`. Plugins and marketplaces are
+  per user too. Click a row to read
   its `SKILL.md`.
 - **Discover** — the marketplace catalogue (299 entries here), searchable, sorted by
   install count, with up to eight recommendations for the folder the session is in —

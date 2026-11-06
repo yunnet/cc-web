@@ -320,6 +320,19 @@ describe('ClaudeBridge', function() {
       assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(currentPrompt), 1);
     });
 
+    it('reads a prompt whose rows are placed by absolute cursor moves (2.1.304)', function() {
+      // Captured from a fresh CLAUDE_CONFIG_DIR: no newlines between the rows,
+      // each one starts with ESC[row;colH. The OSC 8 link stays in as sent.
+      const positioned =
+        '\u001b[7;2HQuick\u001b[1Csafety\u001b[1Ccheck:\u001b[1CIs\u001b[1Cthis' +
+        '\u001b[38;2;153;153;153m\u001b]8;id=u-1;https://code.claude.com/docs/en/security\u001b\\' +
+        '\u001b[12;2HSecurity guide\u001b[38;2;177;185;249m\u001b]8;;\u001b\\' +
+        '\u001b[14;2H❯\u001b[1CNo,\u001b[1Cexit\u001b[m\u001b[15;4HYes,\u001b[1CI\u001b[1Ctrust' +
+        '\u001b[1Cthis\u001b[1Cfolder\u001b[38;2;153;153;153m\u001b[17;2HEnter\u001b[1Cto\u001b[1Cconfirm';
+      assert.strictEqual(ClaudeBridge.looksLikeTrustPrompt(positioned), true);
+      assert.strictEqual(ClaudeBridge.trustPromptCursorDelta(positioned), 1);
+    });
+
     it('returns 0 when the cursor already sits on the accept option', function() {
       const old =
         '\u001b[2G\u001b[38;2;87;105;247m\u276f\u001b[4G1.\u001b[7GYes,\u001b[12GI\u001b[14Gtrust' +

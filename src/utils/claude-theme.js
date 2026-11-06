@@ -23,7 +23,9 @@ const path = require('path');
 // (see getTerminalTheme in public/splits.js), so Claude's chrome and the
 // terminal's own colours stay one family.
 
-const THEMES_DIR = () => path.join(os.homedir(), '.claude', 'themes');
+// configDir is a platform user's own Claude directory (see claude-config.js);
+// without one it is ~/.claude, as it always was.
+const THEMES_DIR = (configDir) => path.join(configDir || path.join(os.homedir(), '.claude'), 'themes');
 
 // Backgrounds the ratios below are computed against: white for light, and the
 // terminal's own #0d1117 for dark. Kept next to the colours so a future edit
@@ -83,13 +85,13 @@ const THEMES = {
 // Built-in presets to fall back on — what cc-web injected before this module.
 const BUILT_IN = { light: 'light-ansi', dark: 'dark' };
 
-// Which slugs are actually on disk. Populated by ensureThemes(); empty until
-// then, so themeForUi() answers with the built-ins rather than pointing Claude
-// at a file that may not exist.
-let available = {};
+// Which slugs are actually on disk, per Claude directory ('' is ~/.claude).
+// Populated by ensureThemes(); empty until then, so themeForUi() answers with
+// the built-ins rather than pointing Claude at a file that may not exist.
+let available = new Map();
 
-function themeFile(slug) {
-  return path.join(THEMES_DIR(), `${slug}.json`);
+function themeFile(slug, configDir) {
+  return path.join(THEMES_DIR(configDir), `${slug}.json`);
 }
 
 // Write both theme files. Best-effort per theme: a failure on one must not cost
@@ -99,10 +101,10 @@ function themeFile(slug) {
 // Call this BEFORE the first Claude spawn. Claude watches ~/.claude/themes/ and
 // hot-reloads edits, but only if the directory existed when it started; created
 // later, it takes one restart to be noticed.
-function ensureThemes() {
+function ensureThemes(configDir) {
   const result = {};
   for (const [ui, spec] of Object.entries(THEMES)) {
-    const target = themeFile(spec.slug);
+    const target = themeFile(spec.slug, configDir);
     // pid in the temp name so two servers cannot clobber each other's partial
     // write, then rename to swap atomically — same shape as the scrollback
     // setting in server.js and SessionStore.writeOne.
@@ -116,7 +118,7 @@ function ensureThemes() {
       try { fs.unlinkSync(tmp); } catch (_e) { /* nothing to clean up */ }
     }
   }
-  available = result;
+  available.set(configDir || '', result);
   return result;
 }
 
@@ -126,9 +128,10 @@ function ensureThemes() {
 // that does not resolve does NOT fall back to something sensible — measured,
 // Claude silently drops to the DARK preset, which in light mode is a dark theme
 // on a white terminal. Worse than never having tried.
-function themeForUi(uiTheme) {
+function themeForUi(uiTheme, configDir) {
   const key = uiTheme === 'light' ? 'light' : 'dark';
-  return available[key] ? `custom:${available[key]}` : BUILT_IN[key];
+  const onDisk = available.get(configDir || '') || {};
+  return onDisk[key] ? `custom:${onDisk[key]}` : BUILT_IN[key];
 }
 
 module.exports = {
@@ -140,5 +143,5 @@ module.exports = {
   BUILT_IN,
   THEMES_DIR,
   themeFile,
-  _reset: () => { available = {}; }
+  _reset: () => { available = new Map(); }
 };
