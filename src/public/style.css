@@ -2683,8 +2683,8 @@ body.sidebar-hidden .sidebar-rail {
 /* Desktop: the session menu (Sessions / Close Session / Reconnect / Clear /
    Settings) lives in the slide-in menu this button opens. It was mobile-only,
    which left desktop users with no way to exit a session or switch project
-   folder — only the gear was reachable. Show it on desktop too, on the right
-   next to the gear. Mobile keeps its own rule below (hamburger on the left). */
+   folder — only the gear was reachable. Show it on desktop too. Since
+   2026-11-06 it sits at the right end of the header on every width. */
 @media (min-width: 769px) {
     .hamburger-btn { display: flex; }
 }
@@ -2709,25 +2709,27 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 .mobile-menu {
+    /* Slides in from the RIGHT: the gear that opens it moved to the right end
+       of the header (2026-11-06), and a drawer opens from its own side. */
     position: fixed;
     top: 0;
-    left: -300px;
+    right: -300px;
     width: 280px;
     height: 100%;
     background-color: var(--bg-secondary);
-    border-right: 1px solid var(--border);
+    border-left: 1px solid var(--border);
     z-index: 3000;
-    transition: left 0.3s ease;
+    transition: right 0.3s ease;
     display: flex;
     flex-direction: column;
 }
 
 .mobile-menu.active {
-    left: 0;
-    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+    right: 0;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
 }
 
-/* Version/build marker pinned to the bottom-left of the left drawer (margin-top
+/* Version/build marker pinned to the bottom of the menu drawer (margin-top
    auto pushes it down; .mobile-menu is a flex column). Lets dev/stable be told
    apart and compared. */
 .mobile-menu-footer {
@@ -5015,3 +5017,97 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 .users-secret .btn { margin-left: 8px; }
+
+/* --- cc-web mark, top-left of the header (2026-11-06) ---
+   A hexagon outline running cyan into violet, a terminal prompt with a
+   blinking cursor inside, and two circuit nodes on its corners. Colours are
+   tokens so the light theme gets a deeper pair that still reads on white. */
+:root {
+    --logo-a: #22d3ee;
+    --logo-b: #a78bfa;
+}
+
+[data-theme="light"] {
+    --logo-a: #0891b2;
+    --logo-b: #7c3aed;
+}
+
+.app-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 8px 0 0;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.app-logo-mark {
+    /* As large as the 44px header allows without growing it: the hexagon's
+       nodes overhang the box (overflow: visible), so 34 leaves them clear. */
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    overflow: visible;
+}
+
+.app-logo-stop-a { stop-color: var(--logo-a); }
+.app-logo-stop-b { stop-color: var(--logo-b); }
+
+.app-logo-hex {
+    fill: url(#ccwLogoGrad);
+    fill-opacity: 0.12;
+    stroke: url(#ccwLogoGrad);
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+}
+
+.app-logo-trace {
+    fill: none;
+    stroke: url(#ccwLogoGrad);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    opacity: 0.7;
+}
+
+.app-logo-node { fill: var(--logo-a); }
+.app-logo-node + .app-logo-node { fill: var(--logo-b); }
+
+.app-logo-prompt {
+    fill: none;
+    stroke: var(--text-primary);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.app-logo-cursor {
+    fill: url(#ccwLogoGrad);
+    animation: app-logo-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes app-logo-blink {
+    50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-logo-cursor { animation: none; }
+}
+
+.app-logo-word {
+    font-family: var(--font-mono);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: linear-gradient(90deg, var(--logo-a), var(--logo-b));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .app-logo-word { display: none; }
+    .app-logo { padding: 0 4px 0 0; }
+    .app-logo-mark { width: 30px; height: 30px; }
+}

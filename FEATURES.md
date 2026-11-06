@@ -272,7 +272,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| SET-01 | 工具栏齿轮按钮打开侧滑菜单（打开时齿轮高亮）；点菜单外任意处关闭，那一下点击照常生效；× 关闭 | `control:hamburgerBtn` `control:closeMenuBtn` | — |
+| SET-01 | 页头右端（账号按钮左边）的齿轮按钮打开从右侧滑出的菜单（打开时齿轮高亮）；点菜单外任意处关闭，那一下点击照常生效；× 关闭 | `control:hamburgerBtn` `control:closeMenuBtn` | — |
 | SET-02 | 菜单里「Settings」打开设置（唯一入口），「Sessions」打开会话弹窗 | `control:settingsBtnMobile` | — |
 | SET-03 | 菜单底部显示「v版本 · :端口 · 构建号」，区分 dev 和 stable | `route:GET /api/config` | — |
 | SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms，按会话分别保存，新会话继承最近保存的设置；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` `test/feature-guards.test.js` |
@@ -339,6 +339,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | UI-13 | 「Install App」按钮固定在右下角，点完或安装完成后自己消失；安装后的 PWA 以独立窗口打开，长按图标有「New Session」快捷方式 | 手工 | — |
 | UI-14 | 界面字体与终端字体都本地托管，整站不发任何外部请求；中日韩字符退回系统字体 | 手工 | — |
 | UI-15 | 输入框聚焦时去掉系统默认焦点框，改用强调色边框 | 手工 | — |
+| UI-16 | 页头左上角是 cc-web 标志：六边形轮廓（青到紫渐变）里一个终端提示符 `>` 和闪烁的光标，两个角上各一个电路节点，后面跟渐变色的「cc-web」字样；手机上只留图形；浅色主题换成更深的一对颜色；系统设置减少动效时光标不闪；只是装饰，不能点（用户 2026-11-06：「帮我设计一个cc-web的图标放那里，要求要有科技感」） | 手工 | — |
 ## 手机
 
 | ID | 功能 | 入口 | 守卫 |

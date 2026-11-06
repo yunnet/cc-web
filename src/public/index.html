@@ -75,14 +75,26 @@
              Tasks live in the sidebar below; the + here creates one in the
              active space (or opens the plain dialog when nothing is active). -->
         <header class="app-header" id="appHeader">
-            <!-- Menu button — opens the slide-in menu with Sessions / Close
-                 Session / Reconnect / Clear / Settings. -->
-            <button class="hamburger-btn" id="hamburgerBtn" title="Settings" aria-label="Open settings menu">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3"/>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            <!-- cc-web mark: a hexagon with a terminal prompt and two circuit
+                 nodes, cyan into violet. Decoration only — not a control. The
+                 wordmark hides on phones. -->
+            <span class="app-logo" id="appLogo" role="img" aria-label="cc-web">
+                <svg class="app-logo-mark" viewBox="0 0 32 32" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="ccwLogoGrad" x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+                            <stop offset="0" class="app-logo-stop-a"/>
+                            <stop offset="1" class="app-logo-stop-b"/>
+                        </linearGradient>
+                    </defs>
+                    <path class="app-logo-hex" d="M16 2.5 L27.7 9.25 V22.75 L16 29.5 L4.3 22.75 V9.25 Z"/>
+                    <path class="app-logo-trace" d="M16 2.5 V6.5 M27.7 22.75 H24"/>
+                    <circle class="app-logo-node" cx="16" cy="2.5" r="1.6"/>
+                    <circle class="app-logo-node" cx="27.7" cy="22.75" r="1.6"/>
+                    <path class="app-logo-prompt" d="M10.5 12 L14.5 16 L10.5 20"/>
+                    <rect class="app-logo-cursor" x="16" y="18.6" width="6" height="2.2" rx="1.1"/>
                 </svg>
-            </button>
+                <span class="app-logo-word">cc-web</span>
+            </span>
             <!-- Spaces sidebar toggle, both ways: on desktop it folds the sidebar to
                  the rail and back; on narrow screens it opens and closes the
                  slide-in drawer (see style.css). -->
@@ -153,6 +165,14 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
                 </svg>
+                </button>
+                <!-- Menu button (right side since 2026-11-06) — opens the slide-in menu with Sessions / Close
+                     Session / Reconnect / Clear / Settings. -->
+                <button class="hamburger-btn" id="hamburgerBtn" title="Settings" aria-label="Open settings menu">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
                 </button>
                 <!-- Who is signed in; opens the 账号 panel (account.js). Shown
                      only for a signed-in platform user. -->
