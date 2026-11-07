@@ -246,6 +246,12 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GIT-13 | 扫描上限：最多 50 个仓库（多出的写「+N not shown」）、最多看 2000 个子目录（没看到的写「N dirs not examined」）；一个都没扫到时有专门的说明文案 | `route:GET /api/git/branches` | `test/git-branches.test.js` |
 | GIT-14 | 拉取 60 秒超时后连同子进程按进程树杀掉，不留后台僵尸；状态查询每仓库 10 秒超时、最多 4 个并发；所有 git 操作在服务端排队执行 | `route:POST /api/git/pull` | `test/git-branches.test.js` `test/async-route-safety.test.js` |
 | GIT-15 | 对不是 git 仓库的目录点拉取，服务端先拒绝、根本不执行 git；仓库名必须是单段路径（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/git/pull` | `test/git-branches.test.js` |
+| GIT-16 | 点某行分支名（或聚焦后回车）在该行下方展开分支列表：先本地，再「远程」里本地还没有的分支；点一项就切过去（远程分支切换时自动建跟踪分支），当前分支打勾不可点；再点一次或 Esc 收起 | `key:git-branches.js:Enter` `route:POST /api/git/refs` | `test/git-branches.test.js` |
+| GIT-17 | 每行左侧勾选框，头部「全选」（部分选中时显示半选）；勾选至少一个时出现操作栏「已选 N 个 · 切换分支 · 新建分支 · 改名」；重新加载后仍在的仓库保持勾选；表单打开时 Esc 先关表单再关面板 | `control:branchSelectAll` `control:branchOpSwitch` `control:branchOpCreate` `control:branchOpRename` `control:branchFormCancel` `control:branchFormSubmit` | 手工 |
+| GIT-18 | 批量切换：把勾选的仓库切到同一个分支，候选列出各仓库分支的并集并标「N/M 个仓库有」，也可直接输入；用 `git switch`，不冲突的未提交改动随之带过去，会被覆盖时 git 拒绝、该行显示「会覆盖未提交改动」，不丢改动 | `control:branchFormInput` `route:POST /api/git/switch` | `test/git-branches.test.js` |
+| GIT-19 | 批量新建：基于各仓库当前分支，在勾选的仓库里新建同名分支；「创建后切换过去」默认勾上，取消则只建不切；已存在的仓库报「分支已存在」，其他照常 | `control:branchCheckout` `route:POST /api/git/create` | `test/git-branches.test.js` |
+| GIT-20 | 改名：把勾选仓库各自的当前分支改成新名字（`git branch -m`），只改本地、远程不动；所选仓库都在同一分支时预填该名；游离 HEAD 报「游离 HEAD 无法改名」，重名报「分支已存在」 | `route:POST /api/git/rename` | `test/git-branches.test.js` |
+| GIT-21 | 分支操作的安全约束：分支名先在服务端校验（git 引用规则、不能以 `-` 开头、不能是 HEAD/@），不合法直接 400、表单提示「分支名不合法」且不执行 git；仓库名必须是单段路径；逐仓库执行并在该行显示结果，一个失败不影响其他，失败原因停 6 秒（刷新后仍保留）；全部只动本地，不推送（普通用户只限自己的可浏览目录，越界该行报「无权访问」，见 ACC-07） | `route:POST /api/git/switch` `route:POST /api/git/create` `route:POST /api/git/rename` | `test/git-branches.test.js` |
 ## 分屏
 
 | ID | 功能 | 入口 | 守卫 |

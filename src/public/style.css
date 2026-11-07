@@ -3677,6 +3677,184 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 [data-theme="light"] .branch-ref.pull-bad { color: #c4232f; }
 
 /* ---------------------------------------------------------------------------
+   Branch operations: tick boxes, the per-row switch picker, and the action
+   bar + form for switch / create / rename across the ticked repos.
+   Self-contained like the blocks above: every rule names a .branch-* class.
+   --------------------------------------------------------------------------- */
+
+.branch-check {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.branch-row .branch-name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.branch-head .branch-dir {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.branch-ref.switchable {
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.branch-ref.switchable:hover,
+.branch-ref.switchable:focus-visible {
+    text-decoration: underline;
+    outline: none;
+}
+
+.branch-picker {
+    margin: 0 12px 6px 34px;
+    padding: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.branch-pick-head {
+    padding: 4px 6px 2px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.branch-pick-item {
+    display: block;
+    width: 100%;
+    padding: 3px 6px;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    text-align: left;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.branch-pick-item:hover:not(:disabled) {
+    background-color: var(--bg-secondary);
+}
+
+.branch-pick-item:disabled {
+    color: var(--text-secondary);
+    cursor: default;
+}
+
+.branch-actions {
+    padding: 8px 8px 8px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.branch-actions[hidden],
+.branch-form[hidden],
+.branch-form-checkout[hidden] {
+    display: none;
+}
+
+.branch-actions-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.branch-sel-count {
+    flex: 1 1 auto;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.branch-op-btn {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.branch-op-btn:hover:not(:disabled),
+.branch-op-btn.active {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.branch-op-btn.primary {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.branch-op-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.branch-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.branch-form-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.branch-form-hint.error { color: #ff7b72; }
+[data-theme="light"] .branch-form-hint.error { color: #c4232f; }
+
+.branch-form-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+}
+
+.branch-form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.branch-form-checkout {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.branch-form-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+/* ---------------------------------------------------------------------------
    File explorer upload (#explorerUploadBtn, .folder-list.drag-over)
 
    Self-contained, like the .row-pull block above and for the same reason:

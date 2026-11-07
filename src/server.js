@@ -1457,6 +1457,15 @@ class ClaudeCodeWebServer {
     // otherwise amount to "run git in any directory you can name".
     this.app.post('/api/git/pull', ClaudeCodeWebServer.asyncRoute((req, res) => this.pullRepo(req, res)));
 
+    // Switch, create and rename branches across the repos ticked in the panel.
+    // Local only — nothing is pushed and no remote branch is touched. Same
+    // narrowing as pull (single-segment repo names, must be a repository) and
+    // the branch name is validated before git sees it. /refs feeds the picker.
+    this.app.post('/api/git/refs', ClaudeCodeWebServer.asyncRoute((req, res) => this.listRepoRefs(req, res)));
+    this.app.post('/api/git/switch', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'switch')));
+    this.app.post('/api/git/create', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'create')));
+    this.app.post('/api/git/rename', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'rename')));
+
     // Runtime-editable plan directories (additive to auto-discovery). Normal
     // header auth. GET returns the configured dirs plus active session roots (the
     // latter are already auto-covered, shown for context). POST replaces the list
@@ -2781,6 +2790,95 @@ class ClaudeCodeWebServer {
     return this.queueGitJob(() => gitBranches.attachStatus(repos));
   }
 
+  static isRepoSegment(name) {
+    return typeof name === 'string' && !!name && !name.includes('/') && !name.includes('\\') && name !== '..';
+  }
+
+  // Parent directory + one repo name → { repoPath }, or { status, body } saying
+  // why not. Every write in the branch panel goes through this.
+  resolveRepoTarget(raw, name, user) {
+    if (typeof raw !== 'string' || !raw) {
+      return { status: 400, body: { error: 'path is required' } };
+    }
+    if (name !== undefined && !ClaudeCodeWebServer.isRepoSegment(name)) {
+      return { status: 400, body: { error: 'name must be a single path segment' } };
+    }
+    // '.' is how the scan reports "the directory itself is the repository".
+    const target = (!name || name === '.') ? raw : path.join(raw, name);
+    const validation = this.validatePath(target, user);
+    if (!validation.valid) {
+      return { status: 403, body: { error: validation.error, message: 'Access to this directory is not allowed', reason: 'forbidden' } };
+    }
+    // Second gate, and the important one: these endpoints execute a write. A
+    // path that is not a repository is refused before git is invoked at all.
+    if (!gitBranches.readHead(validation.path)) {
+      return { status: 400, body: { error: 'Not a git repository', reason: 'not-a-repo' } };
+    }
+    return { repoPath: validation.path };
+  }
+
+  // The `names` of a multi-repo request: 1..MAX_REPOS single path segments.
+  static repoNames(body) {
+    const names = body && body.names;
+    if (!Array.isArray(names) || !names.length || names.length > gitBranches.MAX_REPOS) return null;
+    if (!names.every((n) => ClaudeCodeWebServer.isRepoSegment(n))) return null;
+    return [...new Set(names)];
+  }
+
+  // POST /api/git/refs { path, names[] }
+  // Each repo's local branches, plus the remote-only ones a switch could track.
+  async listRepoRefs(req, res) {
+    const body = req.body || {};
+    if (typeof body.path !== 'string' || !body.path) return res.status(400).json({ error: 'path is required' });
+    const names = ClaudeCodeWebServer.repoNames(body);
+    if (!names) return res.status(400).json({ error: `names must be 1-${gitBranches.MAX_REPOS} single path segments` });
+    const repos = {};
+    await this.queueGitJob(async () => {
+      for (const name of names) {
+        const target = this.resolveRepoTarget(body.path, name, req.user);
+        repos[name] = target.repoPath
+          ? ((await gitBranches.listRefs(target.repoPath)) || { error: 'failed' })
+          : { error: target.body.reason || 'failed' };
+      }
+    });
+    res.json({ repos });
+  }
+
+  // POST /api/git/{switch,create,rename} { path, names[], branch[, checkout] }
+  //
+  // One repo after another inside a single queued job, each with its own
+  // result, so one refusal never stops the rest. The branch name is checked
+  // once up front: a bad name is the caller's mistake, not a per-repo outcome.
+  async branchOp(req, res, op) {
+    const body = req.body || {};
+    if (typeof body.path !== 'string' || !body.path) return res.status(400).json({ error: 'path is required' });
+    const names = ClaudeCodeWebServer.repoNames(body);
+    if (!names) return res.status(400).json({ error: `names must be 1-${gitBranches.MAX_REPOS} single path segments` });
+    if (!(await gitBranches.isValidBranchName(body.branch))) {
+      return res.status(400).json({ error: 'invalid branch name', reason: 'invalid-name' });
+    }
+    const run = {
+      switch: (p) => gitBranches.switchBranch(p, body.branch),
+      create: (p) => gitBranches.createBranch(p, body.branch, { checkout: body.checkout !== false }),
+      rename: (p) => gitBranches.renameBranch(p, body.branch),
+    }[op];
+    try {
+      const results = await this.queueGitJob(async () => {
+        const out = [];
+        for (const name of names) {
+          const target = this.resolveRepoTarget(body.path, name, req.user);
+          out.push(target.repoPath
+            ? { name, ...(await run(target.repoPath)) }
+            : { name, ok: false, reason: target.body.reason || 'failed', message: target.body.error });
+        }
+        return out;
+      });
+      res.json({ results });
+    } catch (error) {
+      res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
+    }
+  }
+
   // POST /api/git/pull { path, name }
   //
   // Takes the parent directory plus a repo NAME rather than a full path,
@@ -2789,27 +2887,10 @@ class ClaudeCodeWebServer {
   // filesystem layout. `name` is one path segment, checked as such, so
   // rejoining cannot climb anywhere.
   async pullRepo(req, res) {
-    const raw = req.body && req.body.path;
-    const name = req.body && req.body.name;
-    if (typeof raw !== 'string' || !raw) {
-      return res.status(400).json({ error: 'path is required' });
-    }
-    if (name !== undefined && (typeof name !== 'string' || !name || name.includes('/') || name.includes('\\') || name === '..')) {
-      return res.status(400).json({ error: 'name must be a single path segment' });
-    }
-    // '.' is how the scan reports "the directory itself is the repository".
-    const target = (!name || name === '.') ? raw : path.join(raw, name);
-    const validation = this.validatePath(target, req.user);
-    if (!validation.valid) {
-      return res.status(403).json({ error: validation.error, message: 'Access to this directory is not allowed' });
-    }
-    // Second gate, and the important one: this endpoint executes a write. A path
-    // that is not a repository is refused before git is invoked at all.
-    if (!gitBranches.readHead(validation.path)) {
-      return res.status(400).json({ error: 'Not a git repository', reason: 'not-a-repo' });
-    }
+    const target = this.resolveRepoTarget(req.body && req.body.path, req.body && req.body.name, req.user);
+    if (!target.repoPath) return res.status(target.status).json(target.body);
     try {
-      const result = await this.queueGitJob(() => gitBranches.pullRepo(validation.path));
+      const result = await this.queueGitJob(() => gitBranches.pullRepo(target.repoPath));
       res.json(result);
     } catch (error) {
       res.status(500).json({ ok: false, reason: 'failed', message: gitBranches.redactCredentials(error.message) });

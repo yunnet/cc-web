@@ -138,6 +138,7 @@
                     </button>
                     <div class="branch-panel" id="branchPanel">
                         <div class="branch-head">
+                            <input type="checkbox" class="branch-check" id="branchSelectAll" title="全选" aria-label="全选">
                             <span class="branch-dir" id="branchDir"></span>
                             <button class="branch-refresh" id="branchRefreshBtn" title="Refresh" aria-label="Refresh branches">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -147,6 +148,28 @@
                             </button>
                         </div>
                         <div class="branch-list" id="branchList"></div>
+                        <!-- Shown while at least one repo is ticked: switch / create /
+                             rename across the ticked repos, local only. -->
+                        <div class="branch-actions" id="branchActions" hidden>
+                            <div class="branch-actions-bar">
+                                <span class="branch-sel-count" id="branchSelCount"></span>
+                                <button type="button" class="branch-op-btn" id="branchOpSwitch" data-op="switch">切换分支</button>
+                                <button type="button" class="branch-op-btn" id="branchOpCreate" data-op="create">新建分支</button>
+                                <button type="button" class="branch-op-btn" id="branchOpRename" data-op="rename">改名</button>
+                            </div>
+                            <form class="branch-form" id="branchForm" hidden autocomplete="off">
+                                <div class="branch-form-hint" id="branchFormHint"></div>
+                                <input type="text" class="branch-form-input" id="branchFormInput" list="branchFormList" spellcheck="false" aria-label="分支名">
+                                <datalist id="branchFormList"></datalist>
+                                <label class="branch-form-checkout" id="branchCheckoutWrap">
+                                    <input type="checkbox" id="branchCheckout" checked> 创建后切换过去
+                                </label>
+                                <div class="branch-form-buttons">
+                                    <button type="button" class="branch-op-btn" id="branchFormCancel">取消</button>
+                                    <button type="submit" class="branch-op-btn primary" id="branchFormSubmit">确认</button>
+                                </div>
+                            </form>
+                        </div>
                         <div class="branch-foot">
                             <span class="branch-foot-info" id="branchFooterInfo"></span>
                             <button class="branch-status-btn" id="branchStatusBtn">Check changes</button>

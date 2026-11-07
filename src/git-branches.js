@@ -352,6 +352,124 @@ async function pullRepo(repoPath) {
   });
 }
 
+// Switching, creating and renaming are local ref moves — no network — so they
+// get the status ceiling, not the pull one.
+const BRANCH_OP_TIMEOUT_MS = 15000;
+
+// One git call for the branch operations below. Never through a shell, never a
+// credential prompt, and the output is scrubbed before anyone sees it.
+function runGit(repoPath, args, timeout = BRANCH_OP_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', repoPath, ...args],
+      { timeout, maxBuffer: STATUS_MAX_BUFFER, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } },
+      (error, stdout, stderr) => {
+        resolve({
+          ok: !error,
+          stdout: String(stdout || ''),
+          out: redactCredentials(`${stdout || ''}${stderr || ''}`).trim(),
+          error,
+        });
+      },
+    );
+  });
+}
+
+// A name git would accept as a branch, and one that can never be read as an
+// option: every caller puts the name on a git command line, so a leading `-`
+// is refused outright. The check is the pure syntax form
+// (`check-ref-format refs/heads/<name>`), not `--branch`, which expands `@`
+// and `@{-1}` against whatever repository the server happens to run in.
+async function isValidBranchName(name) {
+  if (typeof name !== 'string' || !name || name.length > 200 || name.startsWith('-') || name === 'HEAD' || name === '@') return false;
+  if (/[\x00-\x20\x7f]/.test(name)) return false;
+  const r = await runGit(process.cwd(), ['check-ref-format', `refs/heads/${name}`]);
+  return r.ok;
+}
+
+function failure(reason, out, fallback) {
+  return { ok: false, reason, message: (out || '').split('\n')[0] || fallback || reason };
+}
+
+// Local branches, plus remote branches with no local counterpart — the ones a
+// `git switch <name>` would turn into a new tracking branch.
+async function listRefs(repoPath) {
+  const r = await runGit(repoPath, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']);
+  if (!r.ok) return null;
+  const local = [];
+  const remote = new Set();
+  for (const ref of r.stdout.split('\n').map((s) => s.trim()).filter(Boolean)) {
+    if (ref.startsWith('refs/heads/')) {
+      local.push(ref.slice('refs/heads/'.length));
+    } else if (ref.startsWith('refs/remotes/')) {
+      const rest = ref.slice('refs/remotes/'.length);
+      const slash = rest.indexOf('/');
+      if (slash < 0) continue;
+      const name = rest.slice(slash + 1);
+      if (name && name !== 'HEAD') remote.add(name);
+    }
+  }
+  const head = readHead(repoPath);
+  return {
+    current: head && !head.detached ? head.branch : null,
+    detached: !!(head && head.detached),
+    local,
+    remote: [...remote].filter((n) => !local.includes(n)).sort(),
+  };
+}
+
+// `git switch` rather than checkout: it refuses to touch anything that would
+// overwrite uncommitted work, and carries non-conflicting changes along — so
+// the panel never needs its own dirty check here, and never loses work.
+async function switchBranch(repoPath, branch) {
+  const head = readHead(repoPath);
+  if (!head) return { ok: false, reason: 'not-a-repo' };
+  if (!(await isValidBranchName(branch))) return { ok: false, reason: 'invalid-name' };
+  if (!head.detached && head.branch === branch) return { ok: true, reason: 'already', from: branch, to: branch };
+
+  const r = await runGit(repoPath, ['switch', branch]);
+  if (!r.ok) {
+    if (/would be overwritten|overwritten by checkout/i.test(r.out)) return failure('would-overwrite', r.out);
+    if (/invalid reference|did not match|not a commit|no such branch/i.test(r.out)) return failure('not-found', r.out);
+    return failure('failed', r.out, r.error && r.error.message);
+  }
+  return { ok: true, reason: 'switched', from: head.branch, to: branch };
+}
+
+// A new branch from wherever HEAD is now. With `checkout` it also moves there,
+// which is what "start the task branch" usually means.
+async function createBranch(repoPath, branch, { checkout = true } = {}) {
+  const head = readHead(repoPath);
+  if (!head) return { ok: false, reason: 'not-a-repo' };
+  if (!(await isValidBranchName(branch))) return { ok: false, reason: 'invalid-name' };
+
+  const r = await runGit(repoPath, checkout ? ['switch', '-c', branch] : ['branch', branch]);
+  if (!r.ok) {
+    if (/already exists/i.test(r.out)) return failure('exists', r.out);
+    return failure('failed', r.out, r.error && r.error.message);
+  }
+  return { ok: true, reason: 'created', from: head.branch, to: checkout ? branch : head.branch };
+}
+
+// Rename the CURRENT branch, locally only. Its upstream setting is left alone,
+// so it keeps pulling from the old remote branch until someone pushes the new
+// name — the panel says so up front.
+async function renameBranch(repoPath, newName) {
+  const head = readHead(repoPath);
+  if (!head) return { ok: false, reason: 'not-a-repo' };
+  if (head.detached) return { ok: false, reason: 'detached' };
+  if (!(await isValidBranchName(newName))) return { ok: false, reason: 'invalid-name' };
+  if (head.branch === newName) return { ok: true, reason: 'already', from: newName, to: newName };
+
+  const r = await runGit(repoPath, ['branch', '-m', head.branch, newName]);
+  if (!r.ok) {
+    if (/already exists/i.test(r.out)) return failure('exists', r.out);
+    return failure('failed', r.out, r.error && r.error.message);
+  }
+  return { ok: true, reason: 'renamed', from: head.branch, to: newName };
+}
+
 // Attach working-tree status to an already-scanned repo list. Bounded
 // concurrency: 11 simultaneous `git status` runs on a cold cache is a real
 // I/O spike, and this server shares its single thread with live terminals.
@@ -367,4 +485,5 @@ async function attachStatus(repos) {
   return repos;
 }
 
-module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, redactCredentials, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };
+module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, redactCredentials,
+  isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };

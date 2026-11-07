@@ -479,3 +479,246 @@ describe('git pull', function () {
     });
   });
 });
+
+describe('branch operations: switch / create / rename', function () {
+  this.timeout(30000);
+
+  const out = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+  const current = (cwd) => out(cwd, 'rev-parse', '--abbrev-ref', 'HEAD');
+
+  let root;
+  let repo;
+
+  beforeEach(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-branchop-'));
+    repo = path.join(root, 'repo');
+    makeRepo(repo);
+    git(repo, 'config', 'core.autocrlf', 'false');
+    git(repo, 'branch', '-M', 'main');
+    git(repo, 'branch', 'dev');
+  });
+
+  afterEach(function () {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function addRemote(...refspecs) {
+    const bare = path.join(root, 'origin.git');
+    execFileSync('git', ['init', '-q', '--bare', bare], { stdio: 'pipe' });
+    git(repo, 'remote', 'add', 'origin', bare);
+    git(repo, 'push', '-q', 'origin', ...refspecs);
+    git(repo, 'fetch', '-q', 'origin');
+  }
+
+  describe('isValidBranchName', function () {
+    it('accepts ordinary names and refuses anything git or a command line would choke on', async function () {
+      for (const ok of ['feat/x', 'task-123', 'release_1.2']) {
+        assert.strictEqual(await gitBranches.isValidBranchName(ok), true, ok);
+      }
+      for (const bad of ['', '-x', '--force', 'a..b', 'a b', 'x.lock', 'a~1', 'a:b', '@', 'a\nb', null, 5]) {
+        assert.strictEqual(await gitBranches.isValidBranchName(bad), false, JSON.stringify(bad));
+      }
+    });
+  });
+
+  describe('listRefs', function () {
+    it('lists local branches and the remote-only ones, not the remote HEAD', async function () {
+      addRemote('main', 'dev', 'main:remote-only');
+      git(repo, 'remote', 'set-head', 'origin', 'main');
+
+      const refs = await gitBranches.listRefs(repo);
+      assert.strictEqual(refs.current, 'main');
+      assert.deepStrictEqual(refs.local.sort(), ['dev', 'main']);
+      assert.deepStrictEqual(refs.remote, ['remote-only']);
+    });
+  });
+
+  describe('switchBranch', function () {
+    it('switches to a local branch', async function () {
+      const r = await gitBranches.switchBranch(repo, 'dev');
+      assert.deepStrictEqual([r.ok, r.reason], [true, 'switched']);
+      assert.strictEqual(current(repo), 'dev');
+    });
+
+    it('says so when already there', async function () {
+      const r = await gitBranches.switchBranch(repo, 'main');
+      assert.deepStrictEqual([r.ok, r.reason], [true, 'already']);
+    });
+
+    it('turns a remote-only branch into a local tracking branch', async function () {
+      addRemote('main:remote-only');
+      const r = await gitBranches.switchBranch(repo, 'remote-only');
+      assert.strictEqual(r.ok, true, r.message);
+      assert.strictEqual(current(repo), 'remote-only');
+      assert.strictEqual(out(repo, 'rev-parse', '--abbrev-ref', 'remote-only@{upstream}'), 'origin/remote-only');
+    });
+
+    it('reports a branch that does not exist', async function () {
+      const r = await gitBranches.switchBranch(repo, 'nope');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'not-found']);
+      assert.strictEqual(current(repo), 'main');
+    });
+
+    it('refuses to overwrite uncommitted work, and leaves it as it was', async function () {
+      git(repo, 'switch', '-q', 'dev');
+      fs.writeFileSync(path.join(repo, 'file.txt'), 'dev version\n');
+      git(repo, 'commit', '-qam', 'dev change');
+      git(repo, 'switch', '-q', 'main');
+      fs.writeFileSync(path.join(repo, 'file.txt'), 'my unsaved work\n');
+
+      const r = await gitBranches.switchBranch(repo, 'dev');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'would-overwrite']);
+      assert.strictEqual(current(repo), 'main');
+      assert.strictEqual(fs.readFileSync(path.join(repo, 'file.txt'), 'utf8'), 'my unsaved work\n');
+    });
+
+    it('carries uncommitted work that does not conflict', async function () {
+      fs.writeFileSync(path.join(repo, 'file.txt'), 'edited\n');
+      const r = await gitBranches.switchBranch(repo, 'dev');
+      assert.strictEqual(r.ok, true);
+      assert.strictEqual(fs.readFileSync(path.join(repo, 'file.txt'), 'utf8'), 'edited\n');
+    });
+
+    it('refuses an option-looking name before running git', async function () {
+      const r = await gitBranches.switchBranch(repo, '--orphan');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'invalid-name']);
+    });
+  });
+
+  describe('createBranch', function () {
+    it('creates from the current branch and moves there', async function () {
+      git(repo, 'switch', '-q', 'dev');
+      const head = out(repo, 'rev-parse', 'HEAD');
+      const r = await gitBranches.createBranch(repo, 'task/1');
+      assert.deepStrictEqual([r.ok, r.from, r.to], [true, 'dev', 'task/1']);
+      assert.strictEqual(current(repo), 'task/1');
+      assert.strictEqual(out(repo, 'rev-parse', 'task/1'), head);
+    });
+
+    it('creates without moving when checkout is off', async function () {
+      const r = await gitBranches.createBranch(repo, 'later', { checkout: false });
+      assert.strictEqual(r.ok, true);
+      assert.strictEqual(current(repo), 'main');
+      assert.ok(out(repo, 'branch', '--list', 'later'));
+    });
+
+    it('refuses a name that already exists', async function () {
+      const r = await gitBranches.createBranch(repo, 'dev');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'exists']);
+      assert.strictEqual(current(repo), 'main');
+    });
+
+    it('refuses invalid names', async function () {
+      for (const bad of ['-x', 'a..b', 'a b']) {
+        const r = await gitBranches.createBranch(repo, bad);
+        assert.deepStrictEqual([r.ok, r.reason], [false, 'invalid-name'], bad);
+      }
+    });
+  });
+
+  describe('renameBranch', function () {
+    it('renames the current branch', async function () {
+      const r = await gitBranches.renameBranch(repo, 'trunk');
+      assert.deepStrictEqual([r.ok, r.from, r.to], [true, 'main', 'trunk']);
+      assert.strictEqual(current(repo), 'trunk');
+    });
+
+    it('refuses a name that already exists', async function () {
+      const r = await gitBranches.renameBranch(repo, 'dev');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'exists']);
+      assert.strictEqual(current(repo), 'main');
+    });
+
+    it('refuses on a detached HEAD, which has no branch to rename', async function () {
+      git(repo, 'checkout', '-q', '--detach');
+      const r = await gitBranches.renameBranch(repo, 'x');
+      assert.deepStrictEqual([r.ok, r.reason], [false, 'detached']);
+    });
+  });
+});
+
+describe('server routes: branch operations', function () {
+  this.timeout(30000);
+
+  const { ClaudeCodeWebServer } = require('../src/server');
+  const current = (cwd) => execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  function mockRes() {
+    return {
+      statusCode: 200,
+      body: null,
+      status(code) { this.statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; }
+    };
+  }
+
+  let server;
+  let root;
+
+  beforeEach(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-branchops-'));
+    makeRepo(path.join(root, 'a'));
+    makeRepo(path.join(root, 'b'));
+    git(path.join(root, 'b'), 'branch', 'taken');
+    fs.mkdirSync(path.join(root, 'plain'));
+    server = new ClaudeCodeWebServer({ noAuth: true, folderMode: false });
+    server.baseFolder = root;
+  });
+
+  afterEach(function () {
+    if (server && typeof server.dispose === 'function') server.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('rejects a malformed names list before touching git', async function () {
+    const tooMany = Array.from({ length: gitBranches.MAX_REPOS + 1 }, (_, i) => 'r' + i);
+    for (const names of [undefined, 'a', [], ['../a'], ['a/b'], ['..'], ['a\\b'], [5], tooMany]) {
+      const res = mockRes();
+      await server.branchOp({ body: { path: root, names, branch: 'x' } }, res, 'create');
+      assert.strictEqual(res.statusCode, 400, JSON.stringify(names));
+    }
+  });
+
+  it('rejects an invalid branch name with 400', async function () {
+    const res = mockRes();
+    await server.branchOp({ body: { path: root, names: ['a'], branch: '-x' } }, res, 'create');
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.body.reason, 'invalid-name');
+  });
+
+  it('creates across repos, one refusal never stopping the rest', async function () {
+    const res = mockRes();
+    await server.branchOp({ body: { path: root, names: ['a', 'plain', 'b'], branch: 'taken' } }, res, 'create');
+    const by = Object.fromEntries(res.body.results.map((r) => [r.name, r]));
+    assert.strictEqual(by.a.ok, true);
+    assert.strictEqual(by.plain.reason, 'not-a-repo');
+    assert.strictEqual(by.b.reason, 'exists');
+    assert.strictEqual(current(path.join(root, 'a')), 'taken');
+  });
+
+  it('switches and renames across repos', async function () {
+    let res = mockRes();
+    await server.branchOp({ body: { path: root, names: ['a', 'b'], branch: 'task', checkout: false } }, res, 'create');
+    assert.ok(res.body.results.every((r) => r.ok));
+    assert.notStrictEqual(current(path.join(root, 'a')), 'task');
+
+    res = mockRes();
+    await server.branchOp({ body: { path: root, names: ['a', 'b'], branch: 'task' } }, res, 'switch');
+    assert.ok(res.body.results.every((r) => r.ok));
+    assert.strictEqual(current(path.join(root, 'b')), 'task');
+
+    res = mockRes();
+    await server.branchOp({ body: { path: root, names: ['a', 'b'], branch: 'task-2' } }, res, 'rename');
+    assert.ok(res.body.results.every((r) => r.ok));
+    assert.strictEqual(current(path.join(root, 'a')), 'task-2');
+  });
+
+  it('lists refs per repo without handing back absolute paths', async function () {
+    const res = mockRes();
+    await server.listRepoRefs({ body: { path: root, names: ['b', 'plain'] } }, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.body.repos.b.local.includes('taken'));
+    assert.strictEqual(res.body.repos.plain.error, 'not-a-repo');
+    assert.ok(!JSON.stringify(res.body).includes(path.basename(root)));
+  });
+});
