@@ -179,6 +179,8 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-14 | 已选好目录但当前没有任何会话时按 Start，会自动新建一个以时间命名的会话再启动 Claude | 手工 | `test/session-create-guard.test.js` |
 | START-15 | 会话 id 被占用（卡死的幽灵会话）时终端黄字提示，服务端删掉空转录（在 `~/.claude` 里）并自动重开一次 | 手工 | `test/claude-resume.test.js` |
 | START-16 | 同一会话里 Claude 已在运行时再点 Start，返回「Claude is already running」，不会起第二个进程；没加入会话就启动则提示 No session joined | 手工 | — |
+| START-17 | 闲置休眠：Claude 空闲、没人在看（后台标签不算）、没在等权限确认、没在跑命令，超过 1 小时就由服务端停掉以省内存；同时运行的 Claude 超过 6 个时，先停最久没用、且已安静 2 分钟以上的；正在工作的永不停。被停的任务终端里写一行灰色「[已休眠]…」，不弹 Start 面板、不标错误；切回该任务时打印「正在恢复…」并用默认选项自动 `--resume`。阈值可用环境变量 `CCW_HIBERNATE_IDLE_MIN`（0 关闭）、`CCW_MAX_RUNNING_CLAUDE`（0 不限）调整（用户 2026-11-07 定：1 小时、6 个） | `ws-client:app.js:claude_hibernated` `file:src/hibernation.js` | `test/hibernation.test.js` |
+| START-18 | 页面加载后，在浏览器空闲时逐个把其他**正在运行**的会话在后台连上并回放好（按可见终端的尺寸排版、不上报尺寸、不启动 Claude），第一次点开也是立即显示；分屏模式下不做 | 手工 | — |
 ## Sessions 面板（会话与对话）
 
 | ID | 功能 | 入口 | 守卫 |
@@ -399,6 +401,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`，平台用户的写入各自 Claude 目录的 `themes/`（第一次为这个用户启动 Claude 时写，原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
+| CLA-22 | 共享 Playwright MCP：cc-web 启动时（之后每分钟检查一次）若本机 8931 端口没人监听，就脱离自身起一个 `npx @playwright/mcp --port 8931 --isolated`，所有 Claude 通过用户级 HTTP MCP（`http://localhost:8931/mcp`）共用这一个进程，每个连接各自独立的浏览器上下文；cc-web 重启不影响它，32352/32353 谁先起谁负责；端口可用 `CCW_SHARED_PLAYWRIGHT_PORT` 改（0 关闭）。Claude 一侧的配置（关掉 playwright 插件、加用户级 http 条目）不在 cc-web 代码里（用户 2026-11-07） | `file:src/shared-mcp.js` | `test/shared-mcp.test.js` |
 ## 上下文与用量
 
 | ID | 功能 | 入口 | 守卫 |

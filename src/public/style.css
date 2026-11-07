@@ -4397,6 +4397,14 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     display: block;
 }
 
+/* A background view joining its session (app.warmBackgroundViews): laid out so
+   it measures the real size, but not seen and not clickable. */
+.terminal-view.warming:not(.active) {
+    display: block;
+    visibility: hidden;
+    pointer-events: none;
+}
+
 /* The host now positions its children rather than being the terminal itself. */
 #terminal {
     position: relative;

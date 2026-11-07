@@ -23,6 +23,8 @@ const claudeConfig = require('./utils/claude-config');
 const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
+const hibernation = require('./hibernation');
+const { SharedPlaywright } = require('./shared-mcp');
 const skills = require('./skills');
 const os = require('os');
 
@@ -95,6 +97,10 @@ class ClaudeCodeWebServer {
     this.fileTickets = new Map();
     this.claudeBridge = new ClaudeBridge();
     this.autoSaveInterval = null;
+    // Idle hibernation (src/hibernation.js): settings from the environment,
+    // the sweep timer started with the autosave.
+    this.hibernation = hibernation.configFromEnv();
+    this.hibernateInterval = null;
     this.startTime = Date.now(); // Track server start time
     this.isShuttingDown = false; // Flag to prevent duplicate shutdown
     // Commands dropdown removed
@@ -460,6 +466,12 @@ class ClaudeCodeWebServer {
       this.saveSessionsToDisk();
       this.sweepRevokedAccess();
     }, 30000);
+    // Once a minute: hibernate the Claudes nobody is using. unref, so a test
+    // that constructs a server is never held open by it.
+    this.hibernateInterval = setInterval(() => {
+      this.sweepHibernation().catch((e) => console.warn('[hibernate] sweep failed:', e.message));
+    }, 60000);
+    if (this.hibernateInterval.unref) this.hibernateInterval.unref();
 
     // Also save on process exit. Keep references so dispose() can remove them:
     // otherwise every server instance leaks these listeners, and the beforeExit
@@ -480,6 +492,11 @@ class ClaudeCodeWebServer {
       clearInterval(this.autoSaveInterval);
       this.autoSaveInterval = null;
     }
+    if (this.hibernateInterval) {
+      clearInterval(this.hibernateInterval);
+      this.hibernateInterval = null;
+    }
+    if (this.sharedPlaywright) this.sharedPlaywright.stop();
     if (this._onSigint) process.removeListener('SIGINT', this._onSigint);
     if (this._onSigterm) process.removeListener('SIGTERM', this._onSigterm);
     if (this._onBeforeExit) process.removeListener('beforeExit', this._onBeforeExit);
@@ -1676,8 +1693,14 @@ class ClaudeCodeWebServer {
     // Best-effort: themeForUi falls back to the built-in presets on failure.
     claudeTheme.ensureThemes();
 
+    // The one Playwright MCP every Claude shares (src/shared-mcp.js). Here and
+    // not in the constructor for the same reason as the themes: a test that
+    // builds a server must not start a browser server.
+    this.sharedPlaywright = new SharedPlaywright();
+    this.sharedPlaywright.start();
+
     let server;
-    
+
     if (this.useHttps) {
       if (!this.certFile || !this.keyFile) {
         throw new Error('HTTPS requires both --cert and --key options');
@@ -1838,6 +1861,8 @@ class ClaudeCodeWebServer {
           if (session && session.connections.has(wsId)) {
             // Only send if Claude is running in this session
             if (session.active) {
+              session.lastInputAt = Date.now();
+              session.awaitingPermission = false;
               try {
                 await this.claudeBridge.sendInput(wsInfo.claudeSessionId, data.data);
               } catch (error) {
@@ -2314,6 +2339,7 @@ class ClaudeCodeWebServer {
           const currentSession = this.claudeSessions.get(sessionId);
           if (!currentSession) return;
           
+          currentSession.lastOutputAt = Date.now();
           // Add to buffer
           currentSession.outputBuffer.push(data);
           if (currentSession.outputBuffer.length > currentSession.maxBufferSize) {
@@ -2331,6 +2357,19 @@ class ClaudeCodeWebServer {
           if (currentSession) {
             currentSession.active = false;
             this.recordStartExit(currentSession, code);
+            // Stopped on purpose by hibernateClaude, which has already told
+            // the browsers; an "exited with code 1" would read as a crash.
+            // Its notice goes out HERE, once the process is gone: Claude's own
+            // exit output ("Resume this session with...") arrives after the
+            // kill, and sent earlier the notice landed inside Claude's UI box
+            // while that output marked the tab running again.
+            if (currentSession.hibernating) {
+              currentSession.hibernating = false;
+              const notice = currentSession.hibernationNotice;
+              currentSession.hibernationNotice = null;
+              if (notice) this.broadcastToSession(sessionId, notice);
+              return;
+            }
           }
           this.broadcastToSession(sessionId, {
             type: 'exit',
@@ -2352,6 +2391,15 @@ class ClaudeCodeWebServer {
 
       session.active = true;
       session.lastActivity = new Date();
+      session.startedAt = Date.now();
+      session.hibernating = false;
+      session.hibernationNotice = null;
+      session.awaitingPermission = false;
+      // One more running Claude may push the count over the cap; settle it
+      // soon, not at the next minute's sweep.
+      setTimeout(() => {
+        this.sweepHibernation().catch((e) => console.warn('[hibernate] sweep failed:', e.message));
+      }, 5000).unref?.();
       if (session.ownerId) this.conversationOwners.record(this.resumeIdFor(session), session.ownerId);
       // Remember that Claude has been started under this session id so future
       // starts (incl. after a server restart) resume the conversation instead of
@@ -2431,6 +2479,84 @@ class ClaudeCodeWebServer {
     this.broadcastToSession(claudeSessionId, {
       type: 'claude_stopped'
     });
+  }
+
+  // --- Idle hibernation (src/hibernation.js) --------------------------------
+
+  // A running session as the policy sees it. "Viewed" is a client that is
+  // attached AND on screen: a background view withdraws its size (detach_size),
+  // so a connection with a size is one somebody is looking at.
+  hibernationRecord(session, now = Date.now()) {
+    const viewed = [...session.connections].some((id) => {
+      const info = this.webSocketConnections.get(id);
+      return !!(info && info.cols);
+    });
+    if (viewed) session.lastViewedAt = now;
+    return {
+      id: session.id,
+      viewed,
+      awaiting: !!session.awaitingPermission,
+      lastOutputAt: session.lastOutputAt,
+      lastInputAt: session.lastInputAt,
+      lastViewedAt: session.lastViewedAt,
+      startedAt: session.startedAt,
+    };
+  }
+
+  async sweepHibernation() {
+    if (this._hibernationSweep) return [];
+    this._hibernationSweep = true;
+    const stopped = [];
+    try {
+      const running = [...this.claudeSessions.values()].filter((s) => s.active && !s.hibernating);
+      const now = Date.now();
+      const picks = hibernation.pickHibernations(running.map((s) => this.hibernationRecord(s, now)), now, this.hibernation);
+      if (!picks.length) return stopped;
+
+      const table = await hibernation.readProcessTable();
+      for (const pick of picks) {
+        const session = this.claudeSessions.get(pick.id);
+        if (!session || !session.active || session.hibernating) continue;
+        // The process query took a while: look again before acting, so a click
+        // or a keystroke in the meantime keeps the Claude.
+        const again = hibernation.pickHibernations(
+          running.filter((s) => s.active).map((s) => this.hibernationRecord(s)), Date.now(), this.hibernation);
+        if (!again.some((p) => p.id === pick.id)) continue;
+        const bridged = this.claudeBridge.sessions && this.claudeBridge.sessions.get(session.id);
+        const pid = bridged && bridged.process && bridged.process.pid;
+        if (hibernation.isBusy(table, pid, this.hibernation.startupGraceMs)) continue;
+        await this.hibernateClaude(session, pick);
+        stopped.push(pick);
+      }
+    } finally {
+      this._hibernationSweep = false;
+    }
+    return stopped;
+  }
+
+  async hibernateClaude(session, pick) {
+    const minutes = Math.round((pick.idleMs || 0) / 60000);
+    session.hibernating = true;
+    session.hibernatedAt = Date.now();
+    // Sent by onExit once the process has gone (see there); the timer is the
+    // fallback for an exit that never reports.
+    session.hibernationNotice = {
+      type: 'claude_hibernated',
+      sessionId: session.id,
+      reason: pick.reason,
+      idleMinutes: minutes,
+    };
+    await this.claudeBridge.stopSession(session.id);
+    session.active = false;
+    session.lastActivity = new Date();
+    console.log(`[hibernate] ${session.id} "${session.name}" stopped (${pick.reason}, idle ${minutes} min)`);
+    setTimeout(() => {
+      const notice = session.hibernationNotice;
+      if (!notice) return;
+      session.hibernationNotice = null;
+      session.hibernating = false;
+      this.broadcastToSession(session.id, notice);
+    }, 10000).unref?.();
   }
 
   sendToWebSocket(ws, data) {
@@ -2592,7 +2718,10 @@ class ClaudeCodeWebServer {
     if (event.hook_event_name === 'Notification') {
       message.notification_type = event.notification_type;
       message.message = event.message;
+      // A Claude waiting for a person to answer is never hibernated.
+      if (event.notification_type === 'permission_prompt') session.awaitingPermission = true;
     }
+    if (event.hook_event_name === 'Stop') session.awaitingPermission = false;
     if (event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string') {
       // Every turn ends with one; only the opening is needed (a notification
       // body), so a long answer is not broadcast whole.

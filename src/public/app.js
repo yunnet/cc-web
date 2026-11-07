@@ -127,6 +127,7 @@ class ClaudeCodeWebInterface {
             // the "Start Claude" restart prompt visible when the joined session's
             // Claude process has stopped.
             if (!this.startPromptVisible()) this.hideOverlay();
+            this.warmBackgroundViews();
         } else {
             // No sessions anywhere - show the folder picker to create the first one.
             this.hideOverlay();
@@ -1613,6 +1614,57 @@ class ClaudeCodeWebInterface {
     // switching calls instead of joinSession(): an existing view is simply made
     // visible, with no reset and no replay, so everything it had scrolled back
     // through is still there.
+    // Build and join the other tabs' views in the background, one at a time
+    // while the browser is idle, so the first click on each is a show instead
+    // of a join. Measured on 32352 (2026-11-07): an already-built view switches
+    // in 2ms; a first open fetched a 2.8 MB replay and took ~250ms to show and
+    // ~950ms to settle.
+    //
+    // Only sessions whose Claude is running. A stopped one is started by the
+    // join that a click performs (session_joined, the forActive branch); a view
+    // warmed in advance would skip that join and leave it stopped.
+    //
+    // The view is laid out but invisible while it joins (.warming), so fit()
+    // measures the real container and the replay lands at the width it will be
+    // shown at. It never reports a size: onResize answers for the active view
+    // only, so a warmed view casts no vote on the pty.
+    warmBackgroundViews() {
+        const mgr = this.sessionTabManager;
+        if (!mgr || this._warming) return;
+        if (this.splitContainer && this.splitContainer.enabled) return;
+        const running = (id) => (mgr.activeSessions.get(id) || {}).status === 'active';
+        const queue = mgr.getOrderedTabIds().filter(id => !this.views.has(id) && running(id));
+        if (!queue.length) return;
+        this._warming = true;
+        const idle = window.requestIdleCallback
+            ? (fn) => window.requestIdleCallback(fn, { timeout: 2000 })
+            : (fn) => setTimeout(fn, 200);
+        const next = () => {
+            const id = queue.shift();
+            if (!id) { this._warming = false; return; }
+            if (this.views.has(id) || !mgr.tabs.has(id) || !running(id)) return idle(next);
+            const view = this.buildView(id);
+            view.el.classList.add('warming');
+            try { view.fitAddon.fit(); } catch (_) {}
+            this.views.set(id, view);
+            this.openViewSocket(view).then(() => {
+                view.el.classList.remove('warming');
+                idle(next);
+            });
+        };
+        idle(next);
+    }
+
+    // Start a hibernated task's Claude again — the same defaults a post-restart
+    // click uses (session_joined's not-running branch), so it resumes the
+    // conversation with --resume.
+    resumeHibernated(view) {
+        if (!view || !view.hibernated || view !== this.activeView) return;
+        view.hibernated = false;
+        view.terminal.writeln(`\x1b[33m正在恢复 ${this.getAlias()} 对话…\x1b[0m`);
+        this.startClaudeSession(this.startDefaultsOptions());
+    }
+
     async showSession(sessionId) {
         if (!sessionId) return;
         const previous = this.activeView;
@@ -1650,6 +1702,9 @@ class ClaudeCodeWebInterface {
         const { cols, rows } = this.termDims();
         if (cols && rows) this.sendOn(view, { type: 'resize', cols, rows });
         this.positionModeSwitcher();
+        // A task whose Claude was hibernated while this view sat in the
+        // background: coming back to it is the signal to resume.
+        if (!isNew && view.hibernated) this.resumeHibernated(view);
         // Not unconditionally: for a brand-new view the await above is exactly
         // when session_joined arrives and raises the "Start Claude" prompt, and
         // hiding it here left a blank terminal with no way to start — which
@@ -1840,6 +1895,28 @@ class ClaudeCodeWebInterface {
                 }
                 break;
                 
+            case 'claude_hibernated': {
+                // The server stopped an idle Claude to free memory (hibernation.js).
+                // Say so in that task's own terminal, quietly: no Start prompt,
+                // no error mark. Coming back to the tab resumes it (showSession).
+                const hid = (view && view.sessionId) || message.sessionId;
+                if (view) view.hibernated = true;
+                if (this.sessionTabManager && hid) {
+                    this.sessionTabManager.setTabWorking(hid, false);
+                    this.sessionTabManager.updateTabStatus(hid, 'idle');
+                }
+                this.flushTerminalWrites(view);
+                const why = message.reason === 'cap'
+                    ? `同时运行的 ${this.getAlias()} 超过上限`
+                    : `闲置 ${message.idleMinutes} 分钟`;
+                ((view && view.terminal) || this.terminal).writeln(
+                    `\r\n\x1b[2m[已休眠] ${why}，已停止 ${this.getAlias()} 以节省内存。切回这个任务时自动恢复对话。\x1b[0m`);
+                // Watching it when it happened (the server only picks unseen
+                // ones, but a window can come back in between): resume now.
+                if (forActive && view && document.visibilityState === 'visible') this.resumeHibernated(view);
+                break;
+            }
+
             case 'claude_stopped': {
                 // Stopped mid-answer, the last title may still be ◐: stop the ball.
                 const stoppedId = (view && view.sessionId) || this.currentClaudeSessionId;
@@ -1900,7 +1977,10 @@ class ClaudeCodeWebInterface {
                 // "Claude is not running" (input while stopped): start it with
                 // the defaults instead of raising the Start prompt (2026-10-28;
                 // was TERM-36's auto-prompt).
-                if (message.message.includes('not running')) {
+                // Only for the view on screen: startClaudeSession starts the
+                // ACTIVE session, so a background view's notice (a hibernated
+                // task's terminal answering a query) would start the wrong one.
+                if (forActive && message.message.includes('not running')) {
                     this.startClaudeSession(this.startDefaultsOptions());
                 }
                 break;

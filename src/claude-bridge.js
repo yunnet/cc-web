@@ -767,11 +767,19 @@ class ClaudeBridge {
       }
 
       if (session.active && session.process) {
-        session.process.kill('SIGTERM');
-        
+        // Windows node-pty takes no signal: kill('SIGTERM') THROWS "Signals not
+        // supported on windows", the catch below swallowed it, and the session
+        // was forgotten with its Claude still running — every Stop (and every
+        // hibernation) on Windows left an orphaned claude.exe and its MCP
+        // servers behind (measured 2026-11-07). A plain kill() closes the
+        // pseudo console, which ends the process.
+        const proc = session.process;
+        const kill = (signal) => (process.platform === 'win32' ? proc.kill() : proc.kill(signal));
+        kill('SIGTERM');
+
         session.killTimeout = setTimeout(() => {
           if (session.active && session.process) {
-            session.process.kill('SIGKILL');
+            try { kill('SIGKILL'); } catch (_) { /* already gone */ }
           }
         }, 5000);
       }
