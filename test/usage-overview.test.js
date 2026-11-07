@@ -108,6 +108,32 @@ describe('usage overview', function() {
     assert.strictEqual(later.files.read, 3);
   });
 
+  it('sums each account, and narrows the rest to one when asked', async function() {
+    const owners = { [ids[0]]: 'u-a', [ids[2]]: 'u-b' };
+    const groupOf = (id) => owners[id] || '';
+    const all = await usage.overview(root, { sinceMs: 0, now: NOW, groupOf });
+    const by = Object.fromEntries(all.groups.map((g) => [g.id, g]));
+    assert.deepStrictEqual(Object.keys(by).sort(), ['', 'u-a', 'u-b']);
+    assert.strictEqual(by['u-a'].tokens, 3000);
+    assert.strictEqual(by['u-b'].tokens, 1000, 'the sub-agent counts for its conversation\'s account');
+    assert.strictEqual(by[''].sessions, 1);
+    assert.strictEqual(all.groups[0].id, 'u-a', 'largest first');
+    assert.strictEqual(all.totals.sessions, 3);
+
+    const one = await usage.overview(root, { sinceMs: 0, now: NOW, groupOf, group: 'u-b' });
+    assert.deepStrictEqual(one.sessions.map((s) => s.id), [ids[2]]);
+    assert.strictEqual(one.totals.input, 1000);
+    assert.strictEqual(one.heatmap.reduce((n, d) => n + d.tokens, 0), 1000);
+    assert.strictEqual(one.groups.length, 3, 'the breakdown still shows every account');
+    const none = await usage.overview(root, { sinceMs: 0, now: NOW, groupOf, group: '' });
+    assert.deepStrictEqual(none.sessions.map((s) => s.id), [ids[1]]);
+  });
+
+  it('leaves the breakdown out when nothing groups the conversations', async function() {
+    const o = await run(0);
+    assert.strictEqual(o.groups, undefined);
+  });
+
   describe('route', function() {
     let server;
     beforeEach(function() {
@@ -157,6 +183,30 @@ describe('usage overview view', function() {
     top: { tools: [['Bash', 3]], programs: [['git', 3]], skills: [], commands: [['clear', 1]] }
   };
   const NOW_MS = Date.parse('2026-11-06T12:00:00Z');
+
+  it('lists accounts with their share, the chosen one marked, and names the account on rows', function() {
+    const withAccounts = Object.assign({}, data, {
+      owner: 'all',
+      groups: [
+        { id: 'u-1', name: '<i>alice</i>', me: true, sessions: 2, requests: 4, tokens: 3000, costUsd: 0.012 },
+        { id: '', name: '不在 cc-web 里', me: false, sessions: 1, requests: 1, tokens: 1000, costUsd: 0.004 },
+        { id: 'others', name: '其他账号', me: false, sessions: 1, requests: 1, tokens: 0, costUsd: 0 }
+      ],
+      sessions: data.sessions.map((s) => Object.assign({}, s, { account: 'alice' }))
+    });
+    const html = UsageView.overview(withAccounts, { now: NOW_MS });
+    assert.ok(html.includes('按账号'));
+    assert.ok(html.includes('&lt;i&gt;alice&lt;/i&gt;') && !html.includes('<i>alice'));
+    assert.ok(/usage-owner-btn usage-mode-btn active" data-owner="all"/.test(html));
+    assert.ok(html.includes('data-owner="me"') && html.includes('data-owner="none"'));
+    assert.ok(html.includes('width:75.0%'), 'alice has three quarters of the Token');
+    assert.ok(!/<button[^>]*data-owner="others"/.test(html), '其他账号 is not a filter');
+    assert.ok(html.includes('alice · '), 'rows name their account under 全部');
+    const mine = UsageView.overview(Object.assign({}, withAccounts, { owner: 'me' }), { now: NOW_MS });
+    assert.ok(/usage-acct usage-owner-btn active" data-owner="me"/.test(mine));
+    assert.ok(!mine.includes('alice · '));
+    assert.ok(!UsageView.overview(data, { now: NOW_MS }).includes('按账号'), 'no accounts, no section');
+  });
 
   it('shows the scan in progress, the range, and the cost as an API estimate', function() {
     const html = UsageView.overview(data, { now: NOW_MS });

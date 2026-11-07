@@ -9,6 +9,7 @@ const claudeConfig = require('../src/utils/claude-config');
 const claudeHistory = require('../src/utils/claude-history');
 const claudeTheme = require('../src/utils/claude-theme');
 const skills = require('../src/skills');
+const { ConversationOwners } = require('../src/utils/conversation-owners');
 const { useTempDataDir, signIn } = require('./helpers/auth');
 
 // M3: every platform user runs their own Claude (CLAUDE_CONFIG_DIR under
@@ -379,6 +380,39 @@ describe('Claude directory on the server (shared ~/.claude since 2026-11-06)', f
     } finally {
       fs.rmSync(other, { recursive: true, force: true });
     }
+  });
+
+  it('splits the overview by account: every name for an administrator, mine and 其他 for anyone else', async function () {
+    const root = path.join(home, '.claude', 'projects');
+    const proj = path.join(root, claudeHistory.projectDirName(work));
+    fs.mkdirSync(proj, { recursive: true });
+    const ID_C = '33333333-3333-4333-8333-333333333333';
+    for (const [id, n] of [[ID_A, 10], [ID_B, 20], [ID_C, 40]]) {
+      const rec = { type: 'assistant', cwd: work, sessionId: id, timestamp: new Date().toISOString(),
+        message: { id: `msg-${id}`, model: 'claude-opus-5-5', usage: { input_tokens: n, output_tokens: 0 } } };
+      fs.writeFileSync(path.join(proj, `${id}.jsonl`), `${JSON.stringify(rec)}\n`);
+    }
+    server.conversationOwners.record(ID_A, alice.user.id);
+    server.conversationOwners.record(ID_B, bob.user.id);
+    assert.strictEqual(server.conversationOwners.record(ID_B, alice.user.id), false, 'the first owner keeps it');
+
+    const get = async (who, owner) => (await request('GET', `/api/usage/overview?range=7d&owner=${owner}`, { cookie: who.cookie })).json;
+    const all = await get(alice, 'all');
+    assert.deepStrictEqual(all.groups.map((g) => [g.name, g.tokens, g.me]), [['不在 cc-web 里', 40, false], ['bob', 20, false], ['alice', 10, true]]);
+    assert.strictEqual(all.sessions.find((s) => s.id === ID_B).account, 'bob');
+    assert.deepStrictEqual((await get(alice, bob.user.id)).sessions.map((s) => s.id), [ID_B]);
+    assert.deepStrictEqual((await get(alice, 'none')).sessions.map((s) => s.id), [ID_C]);
+
+    const b = await get(bob, 'all');
+    assert.deepStrictEqual(b.groups.map((g) => [g.name, g.tokens]), [['其他账号', 50], ['bob', 20]]);
+    assert.ok(!JSON.stringify(b).includes('alice'), 'no other account is named to a regular user');
+    assert.deepStrictEqual((await get(bob, 'me')).sessions.map((s) => s.id), [ID_B]);
+    const peek = await get(bob, alice.user.id);
+    assert.strictEqual(peek.owner, 'all', 'a regular user cannot pick another account');
+
+    // The record outlives the server.
+    const again = new ConversationOwners(() => path.join(dir, 'platform', 'conversation-owners.json'));
+    assert.strictEqual(again.get(ID_A), alice.user.id);
   });
 
   it('points the skills panel at ~/.claude for everyone', function () {

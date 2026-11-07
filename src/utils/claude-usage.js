@@ -399,9 +399,15 @@ function dayList(endDay, n) {
   return out;
 }
 
-// include(cwd), when given, keeps only the conversations it accepts: a user
-// limited to some folders reads the shared ~/.claude through it.
-async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, now = Date.now(), chartDays = 7, include = null } = {}) {
+// include(cwd, id), when given, keeps only the conversations it accepts: a
+// user limited to some folders reads the shared ~/.claude through it.
+// groupOf(id) names the account a conversation belongs to ('' for none);
+// `groups` then sums every visible conversation per account in the range,
+// and `group`, when not null, narrows everything else to that one account.
+async function overview(root, {
+  sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, now = Date.now(), chartDays = 7,
+  include = null, groupOf = null, group = null
+} = {}) {
   const files = await listTranscripts(root, sinceMs);
   let scan = scans.get(root);
   if (!scan) {
@@ -426,6 +432,7 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
   const inRange = [];
   const tools = new Map(), programs = new Map(), skills = new Map(), commands = new Map();
   const sessions = [];
+  const groups = new Map();
   let read = 0;
 
   for (const f of files) {
@@ -433,13 +440,15 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
     if (!entry) continue;
     read++;
     const acc = entry.acc;
-    if (include && !include(acc.cwd)) continue;
+    if (include && !include(acc.cwd, f.id)) continue;
+    const g = groupOf ? (groupOf(f.id) || '') : null;
+    const counted = group === null || g === group;
     const subs = f.subagents.map((s) => cache.get(s)).filter(Boolean).map((e) => e.acc);
     const own = [];
     for (const r of acc.requests.concat(...subs.map((s) => s.requests))) {
       const ms = Date.parse(r.t);
       // Requests on the eight-week heatmap, whatever the range.
-      const d = dayOf(r.t, tzOffsetMin);
+      const d = counted ? dayOf(r.t, tzOffsetMin) : null;
       const tokensOf = r.input + r.cacheRead + r.cacheCreate + r.output;
       if (d) {
         const b = dayBucket(d);
@@ -451,8 +460,18 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
       if (Number.isFinite(ms) && ms >= sinceMs) own.push(r);
     }
     if (!own.length) continue;
-    inRange.push(...own);
     const t = totalsOf(own);
+    if (g !== null) {
+      let b = groups.get(g);
+      if (!b) { b = { id: g, sessions: 0, requests: 0, tokens: 0, costUsd: 0, lastAt: null }; groups.set(g, b); }
+      b.sessions++;
+      b.requests += t.requests;
+      b.tokens += t.input + t.cacheRead + t.cacheCreate + t.output;
+      b.costUsd += t.costUsd || 0;
+      if (String(acc.lastAt || '') > String(b.lastAt || '')) b.lastAt = acc.lastAt;
+    }
+    if (!counted) continue;
+    inRange.push(...own);
     const last = acc.requests[acc.requests.length - 1];
     sessions.push({
       id: f.id,
@@ -465,7 +484,8 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
       cacheHitRate: t.cacheHitRate,
       ctx: last ? last.input + last.cacheRead + last.cacheCreate : null,
       lastAt: acc.lastAt,
-      subagents: f.subagents.length
+      subagents: f.subagents.length,
+      ...(g !== null ? { group: g } : {})
     });
     for (const [map, from] of [[tools, acc.tools], [programs, acc.programs], [skills, acc.skills], [commands, acc.commands]]) {
       for (const [k, v] of from) bump(map, k, v);
@@ -484,6 +504,7 @@ async function overview(root, { sinceMs = 0, tzOffsetMin = 0, budgetMs = 3000, n
     heatmap: series(heat),
     sessions: sessions.slice(0, 300),
     sessionsTotal: sessions.length,
+    ...(groupOf ? { groups: [...groups.values()].sort((a, b) => b.tokens - a.tokens) } : {}),
     top: { tools: top(tools), programs: top(programs), skills: top(skills), commands: top(commands) }
   };
 }

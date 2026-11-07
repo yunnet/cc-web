@@ -283,9 +283,43 @@ var UsageView = (function () {
           (s.openSessionId ? '\n已在标签中打开，点击切换过去' : '\n点击在新标签中继续这段对话')) + '>' +
         '<span class="usage-conv-main"><span class="usage-conv-title">' + esc(s.title || '（无标题）') +
         (s.openSessionId ? '<span class="usage-conv-open">已打开</span>' : '') + '</span>' +
-        '<span class="usage-conv-where">' + esc(shortPath(where || '')) + ' · ' + esc(ago(s.lastAt, nowMs)) + '</span></span>' +
+        '<span class="usage-conv-where">' + (s.account && o.owner === 'all' ? esc(s.account) + ' · ' : '') + esc(shortPath(where || '')) + ' · ' + esc(ago(s.lastAt, nowMs)) + '</span></span>' +
         '<span class="usage-conv-num">' + tokens(s.tokens) + '</span><span class="usage-conv-num">' + usd(s.costUsd) + '</span></button>';
     }).join('');
+  }
+
+  // 按账号: what each cc-web account used in the range, one row each with its
+  // share of the Token. A row (or 全部 / 我的) narrows the rest of the page.
+  // groups is absent without accounts (auth off); an administrator gets every
+  // account by name, anyone else theirs and 其他账号.
+  function ownerValue(g) {
+    return g.me ? 'me' : g.id === '' ? 'none' : g.id;
+  }
+
+  function accounts(o) {
+    if (!o.groups) return '';
+    var owner = o.owner || 'all';
+    var total = o.groups.reduce(function (n, g) { return n + g.tokens; }, 0) || 1;
+    var chips = [['all', '全部'], ['me', '我的']].map(function (c) {
+      return '<button type="button" class="usage-owner-btn usage-mode-btn' + (owner === c[0] ? ' active' : '') + '" data-owner="' + c[0] + '">' + c[1] + '</button>';
+    }).join('');
+    var rows = o.groups.map(function (g) {
+      var value = ownerValue(g);
+      var pick = g.id !== 'others';
+      var share = g.tokens / total;
+      var inner = '<span class="usage-acct-name">' + esc(g.name) + (g.me ? '<span class="usage-conv-open">我</span>' : '') + '</span>' +
+        '<span class="usage-acct-bar"><span style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
+        '<span class="usage-conv-num">' + g.sessions + ' 段</span>' +
+        '<span class="usage-conv-num">' + tokens(g.tokens) + '</span><span class="usage-conv-num">' + usd(g.costUsd) + '</span>';
+      var hint = g.name + '\n' + g.sessions + ' 段对话 · ' + g.requests + ' 个请求 · 占 ' + pct(share) +
+        (g.id === '' ? '\n本机命令行、32352 等 cc-web 账号之外开的对话，或记录之前就关掉的标签' : '') +
+        (pick ? '\n点击只看这个账号' : '');
+      return pick
+        ? '<button type="button" class="usage-acct usage-owner-btn' + (owner === value ? ' active' : '') + '" data-owner="' + esc(value) + '"' + tip(hint) + '>' + inner + '</button>'
+        : '<div class="usage-acct"' + tip(hint) + '>' + inner + '</div>';
+    }).join('');
+    return '<div class="usage-section"><div class="usage-section-title">按账号<span class="usage-mode">' + chips + '</span></div>' +
+      '<div class="usage-accts">' + (rows || '<div class="usage-empty">这段时间没有对话</div>') + '</div></div>';
   }
 
   function overview(o, opts) {
@@ -310,12 +344,12 @@ var UsageView = (function () {
       .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 15);
     var lists = list('工具', t.tools) + list('Bash 程序', t.programs) + list('技能与斜杠命令', skills);
     var topsHtml = lists ? '<div class="usage-section"><div class="usage-section-title">这些对话累计</div><div class="usage-tops">' + lists + '</div></div>' : '';
-    return range + overviewKpis(o) + daily + heat + convs + topsHtml;
+    return range + accounts(o) + overviewKpis(o) + daily + heat + convs + topsHtml;
   }
 
   return {
     esc: esc, tokens: tokens, usd: usd, span: span, kpis: kpis, now: now, trendSvg: trendSvg, tops: tops, session: session, shortPath: shortPath,
-    ago: ago, dailySvg: dailySvg, heatmap: heatmap, sortSessions: sortSessions, overview: overview
+    ago: ago, dailySvg: dailySvg, heatmap: heatmap, sortSessions: sortSessions, accounts: accounts, overview: overview
   };
 })();
 
@@ -333,6 +367,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
     this.mode = 'total';
     this.overviewData = null;
     this.range = '7d';
+    this.owner = 'all';       // 按账号: all / me / none / a user id
     this.sort = 'recent';
     this.query = '';
     this.bound = false;
@@ -369,6 +404,14 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
       if (!t) return;
       var range = t.closest('.usage-range-btn');
       if (range) { self.range = range.dataset.range; self.overviewData = null; return self.load(); }
+      var owner = t.closest('.usage-owner-btn');
+      if (owner) {
+        // A second click on the chosen account goes back to 全部.
+        var next = owner.dataset.owner === self.owner && owner.classList.contains('usage-acct') ? 'all' : owner.dataset.owner;
+        if (next === self.owner) return;
+        self.owner = next;
+        return self.load();
+      }
       var sort = t.closest('.usage-sort-btn');
       if (sort) { self.sort = sort.dataset.sort; return self.render({ keepScroll: true }); }
       var mode = t.closest('.usage-mode-btn');
@@ -430,11 +473,12 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
     this.error = null;
     if (this.view === 'overview') {
       var range = this.range;
+      var owner = this.owner;
       this.loading = true;
       this.render();
-      return getJson('/api/usage/overview?range=' + range + '&tz=' + new Date().getTimezoneOffset())
+      return getJson('/api/usage/overview?range=' + range + '&owner=' + encodeURIComponent(owner) + '&tz=' + new Date().getTimezoneOffset())
         .then(function (data) {
-          if (self.range !== range) return;
+          if (self.range !== range || self.owner !== owner) return;
           self.overviewData = data;
           // The first scan of a big Claude directory answers early with what
           // it has read; ask again until it is done.

@@ -11,6 +11,7 @@ const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const SpaceStore = require('./utils/space-store');
 const UserStore = require('./utils/user-store');
+const { ConversationOwners } = require('./utils/conversation-owners');
 const { registerAccountRoutes, registerAdminRoutes } = require('./account-routes');
 const AuthManager = require('./utils/auth');
 const { safeEqual } = require('./utils/password');
@@ -73,6 +74,8 @@ class ClaudeCodeWebServer {
     // Platform users and their login sessions (<dataDir>/platform). Resolved
     // through dataDirFile on every access, like everything else in the data dir.
     this.userStore = new UserStore(() => this.dataDirFile('platform'));
+    // Which account each Claude conversation belongs to (the 总览's 按账号).
+    this.conversationOwners = new ConversationOwners(() => path.join(this.dataDirFile('platform'), 'conversation-owners.json'));
     // Rate limiting for the login and first-admin routes (GAP-01: this class
     // existed but nothing called it).
     this.loginLimiter = new AuthManager();
@@ -1131,10 +1134,43 @@ class ClaudeCodeWebServer {
         const now = Date.now();
         const sinceMs = range === 'all' ? 0 : now - (range === '7d' ? 7 : 30) * 86400000;
         const limited = this.browseRoots(req.user) !== null;
+        // 按账号: owner is all / me / none (no cc-web account) / a user id. An
+        // administrator sees every account by name; anyone else sees their own
+        // and one 「其他」 for the rest, and can pick only all or me.
+        const ownerParam = ClaudeCodeWebServer.singleQueryValue(req.query.owner);
+        let owner = ownerParam.ok && ownerParam.value ? ownerParam.value : 'all';
+        const admin = !!(req.user && req.user.role === 'admin');
+        if (!admin && owner !== 'me') owner = 'all';
+        const byAccount = !!actor;
+        const ownerOfConversation = (id) => {
+          const recorded = this.conversationOwners.get(id);
+          if (recorded) return recorded;
+          const holder = this.sessionHoldingConversation(id);
+          const s = holder && this.claudeSessions.get(holder);
+          return (s && s.ownerId) || '';
+        };
+        const groupOf = !byAccount ? null : admin ? ownerOfConversation
+          : (id) => (ownerOfConversation(id) === actor ? actor : 'others');
+        const group = !byAccount || owner === 'all' ? null
+          : owner === 'me' ? actor : owner === 'none' ? '' : owner;
         const result = await claudeUsage.overview(this.projectsDirFor(actor), {
           sinceMs, tzOffsetMin: tz, now, chartDays: range === '7d' ? 7 : 30,
-          include: limited ? (cwd) => !!cwd && this.validatePath(cwd, req.user).valid : null
+          include: limited ? (cwd) => !!cwd && this.validatePath(cwd, req.user).valid : null,
+          groupOf, group
         });
+        if (result.groups) {
+          for (const g of result.groups) {
+            const u = g.id && g.id !== 'others' ? this.userStore.getUser(g.id) : null;
+            g.me = g.id === actor;
+            g.name = u ? u.username : g.id === 'others' ? '其他账号' : g.id ? '已删除的账号' : '不在 cc-web 里';
+          }
+          const names = new Map(result.groups.map((g) => [g.id, g.name]));
+          for (const s of result.sessions) {
+            if (s.group !== undefined) s.account = names.get(s.group) || '';
+            delete s.group;
+          }
+        }
+        result.owner = byAccount ? owner : 'all';
         // A conversation a tab of this user already holds opens by switching.
         for (const s of result.sessions) {
           const holder = this.sessionHoldingConversation(s.id);
@@ -2307,6 +2343,7 @@ class ClaudeCodeWebServer {
 
       session.active = true;
       session.lastActivity = new Date();
+      if (session.ownerId) this.conversationOwners.record(this.resumeIdFor(session), session.ownerId);
       // Remember that Claude has been started under this session id so future
       // starts (incl. after a server restart) resume the conversation instead of
       // starting fresh. Persist it so the flag survives a restart.
@@ -2588,6 +2625,7 @@ class ClaudeCodeWebServer {
     if (!real || !claudeHistory.UUID.test(String(real))) return false;
     if (session.claudeConversationId === real) return false;
     session.claudeConversationId = real;
+    if (session.ownerId) this.conversationOwners.record(real, session.ownerId);
     return true;
   }
 
