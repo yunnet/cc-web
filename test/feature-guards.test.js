@@ -331,3 +331,80 @@ describe('SPACE-05 one header toggle opens and closes the sidebar', function () 
     assert.ok(/setAttribute\('aria-expanded'/.test(js));
   });
 });
+
+describe('SPACE-19 tasks not open on this device stay visible in their space', function () {
+  const js = read('spaces.js');
+  const css = read('style.css');
+
+  it('every server session without a tab here is drawn as a dim row', function () {
+    const body = lift(js, 'renderRemote', { method: true });
+    assert.ok(/this\.serverSessions\.values\(\)/.test(body));
+    assert.ok(/tabs\.tabs\.has\(s\.id\)\)\s*continue/.test(body), 'open tabs are skipped');
+    assert.ok(/buildRemoteRow/.test(body));
+  });
+
+  it('a dim row opens through the same path as the Sessions panel', function () {
+    // An async method — lift() matches plain ones only.
+    assert.ok(/async openRemote\(s\) \{[\s\S]{0,200}attachSessionTab\(s\.id/.test(js));
+  });
+
+  it('a closed (deleted) tab does not come back as a dim row', function () {
+    assert.ok(/this\.serverSessions\.delete\(sessionId\)/.test(lift(js, 'forgetSession', { method: true })));
+  });
+
+  it('the list is re-read when the page returns and every minute', function () {
+    assert.ok(/visibilitychange[\s\S]{0,120}syncServerSessions/.test(js));
+    assert.ok(/setInterval\([\s\S]{0,80}syncServerSessions[\s\S]{0,40}60000/.test(js));
+  });
+
+  it('a space holding only such tasks does not say （空）, and folding hides them', function () {
+    assert.ok(/\.space-group\.has-remote \.space-tasks:empty\s*\{\s*display:\s*none/.test(css));
+    assert.ok(/\.space-group\.collapsed \.space-remote\s*\{\s*display:\s*none/.test(css));
+  });
+});
+
+describe('START-05 / GAP-15 the restore dialog', function () {
+  const src = lift(read('app.js'), 'showSessionReconcileModal', { method: true });
+
+  it('ticks sessions made on another device by default (user 2026-11-07)', function () {
+    assert.ok(/persistedIds\.has\(sv\.id\)\s*\|\|\s*extraIds\.has\(sv\.id\)\)\s*\?\s*'checked'/.test(src));
+  });
+
+  it('closes with ×, Esc and the backdrop, marking nothing ignored', function () {
+    assert.ok(/rc-close/.test(src) && /'Escape'/.test(src) && /e\.target === modal/.test(src));
+    const dismiss = /const dismiss = async \(\) => \{([\s\S]*?)\n        \};/.exec(src);
+    assert.ok(dismiss, 'dismiss is gone');
+    assert.ok(/stm\.saveTabState\(\)/.test(dismiss[1]), 'saves without an ignored list');
+    assert.ok(!/ignoredIds/.test(dismiss[1]));
+  });
+});
+
+describe('MOB-25 the phone header fits and names the task', function () {
+  const css = read('style.css');
+  const html = read('index.html');
+  const phone = (() => {
+    const at = css.lastIndexOf('@media (max-width: 480px) {\n    .app-header {');
+    assert.ok(at >= 0, 'the phone header block is gone');
+    return css.slice(at, at + blockAt(css, at).length + 40);
+  })();
+
+  it('files, branches and account leave the header, but not the branch panel', function () {
+    assert.ok(/#explorerBtn,\s*#branchBtn,\s*#accountHeaderBtn\s*\{\s*display:\s*none/.test(phone));
+    assert.ok(!/#branchWrapper[^{]*\{\s*display:\s*none/.test(phone), 'the wrapper holds the panel');
+  });
+
+  it('…and are in the ⚙ menu, shown only on a phone', function () {
+    for (const id of ['accountBtnMenu', 'explorerBtnMenu', 'branchBtnMenu']) {
+      assert.ok(new RegExp(`id="${id}" class="mobile-menu-btn menu-narrow-only"`).test(html), id);
+    }
+    assert.ok(/^\.menu-narrow-only \{ display: none; \}/m.test(css));
+    assert.ok(/\.menu-narrow-only:not\(\[hidden\]\)\s*\{\s*display:\s*block/.test(phone),
+      ':not([hidden]) — the account entry must stay hidden while nobody is signed in');
+  });
+
+  it('the breadcrumb shows the task name and is not squeezed to nothing', function () {
+    assert.ok(/\.app-logo \{ display: none; \}/.test(phone));
+    assert.ok(/\.header-new-task span \{ display: none; \}/.test(phone));
+    assert.ok(/\.header-breadcrumb \.crumb-task \{\s*grid-row: 1/.test(phone));
+  });
+});

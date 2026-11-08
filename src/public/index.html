@@ -281,6 +281,12 @@
                 <button class="close-menu-btn" id="closeMenuBtn">&times;</button>
             </div>
             <div class="mobile-menu-content">
+                <!-- On a phone (≤480px) these three leave the header for here,
+                     so the header has room for the task name; each one just
+                     presses its header button. Hidden at wider widths. -->
+                <button id="accountBtnMenu" class="mobile-menu-btn menu-narrow-only" hidden>账号</button>
+                <button id="explorerBtnMenu" class="mobile-menu-btn menu-narrow-only">文件</button>
+                <button id="branchBtnMenu" class="mobile-menu-btn menu-narrow-only">分支</button>
                 <button id="sessionsBtnMobile" class="mobile-menu-btn">Sessions</button>
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
                 <button id="reconnectBtnMobile" class="mobile-menu-btn" disabled>Reconnect</button>

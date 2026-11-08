@@ -1365,6 +1365,20 @@ class ClaudeCodeWebInterface {
             });
         }
 
+        // Phone header (≤480px): 账号 / 文件 / 分支 live in this menu and press
+        // the hidden header buttons (user 2026-11-07: 「同意」). Deferred one
+        // tick: the branch panel closes on any click outside it, and this very
+        // click is still on its way up to the document.
+        [['accountBtnMenu', 'accountHeaderBtn'], ['explorerBtnMenu', 'explorerBtn'], ['branchBtnMenu', 'branchBtn']]
+            .forEach(([menuId, headerId]) => {
+                const item = document.getElementById(menuId);
+                if (!item) return;
+                item.addEventListener('click', () => {
+                    this.closeMobileMenu();
+                    setTimeout(() => document.getElementById(headerId)?.click(), 0);
+                });
+            });
+
         const skillsBtnMobile = document.getElementById('skillsBtnMobile');
         if (skillsBtnMobile) {
             skillsBtnMobile.addEventListener('click', () => {
@@ -2136,6 +2150,15 @@ class ClaudeCodeWebInterface {
         const hamburgerBtn = document.getElementById('hamburgerBtn');
         if (mobileMenu) mobileMenu.classList.toggle('active');
         if (hamburgerBtn) hamburgerBtn.classList.toggle('active');
+        // The menu's 账号 follows the header's account button: shown only when
+        // someone is signed in, and named like it.
+        const account = document.getElementById('accountHeaderBtn');
+        const accountItem = document.getElementById('accountBtnMenu');
+        if (account && accountItem) {
+            accountItem.hidden = account.hidden;
+            const name = account.querySelector('.header-account-name')?.textContent.trim();
+            accountItem.textContent = name ? `账号（${name}）` : '账号';
+        }
     }
 
     closeMobileMenu() {
@@ -3375,65 +3398,93 @@ class ClaudeCodeWebInterface {
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         const { server = [], persisted = { ids: [], activeId: null }, dead = [], extra = [] } = reconcile || {};
         const persistedIds = new Set(persisted.ids);
+        // Sessions new to this device (made on another one) are ticked too
+        // (user 2026-11-07, 「同意」): left unticked they became ignored and
+        // their spaces looked empty on the phone.
+        const extraIds = new Set(extra);
         document.querySelectorAll('.session-reconcile-modal').forEach((m) => m.remove());
         const modal = document.createElement('div');
         modal.className = 'session-modal active session-reconcile-modal';
         const rows = server.map((sv) => {
-            const checked = persistedIds.has(sv.id) ? 'checked' : '';
+            const checked = (persistedIds.has(sv.id) || extraIds.has(sv.id)) ? 'checked' : '';
             const isActive = sv.id === persisted.activeId;
-            const folder = sv.workingDir ? sv.workingDir.split('/').filter(Boolean).pop() : '';
-            const statusText = sv.active ? this.getAlias() + ' running' : 'idle';
+            const folder = sv.workingDir ? sv.workingDir.split(/[\\/]/).filter(Boolean).pop() : '';
+            const statusText = sv.active ? this.getAlias() + ' 运行中' : '空闲';
+            const isNew = extraIds.has(sv.id) ? '<span class="rc-new">其他设备新建</span>' : '';
             return `
             <div class="session-item reconcile-row" data-id="${esc(sv.id)}">
-              <input type="checkbox" class="rc-open" ${checked}>
+              <input type="checkbox" class="rc-open" ${checked} aria-label="打开">
               <div class="session-details">
-                <div class="session-name">${esc(sv.name)}</div>
+                <div class="session-name">${esc(sv.name)}${isNew}</div>
                 <div class="session-meta"><span class="dot ${sv.active ? 'dot-on' : 'dot-idle'}"></span> ${esc(statusText)}${folder ? ' · ' + esc(folder) : ''}</div>
               </div>
-              <label class="rc-current" title="Make this the active session"><input type="radio" name="rc-active" value="${esc(sv.id)}" ${isActive ? 'checked' : ''}> Active</label>
-              <button class="btn-icon rc-del" title="Delete session">
+              <label class="rc-current" title="设为当前任务"><input type="radio" name="rc-active" value="${esc(sv.id)}" ${isActive ? 'checked' : ''}> 当前</label>
+              <button class="btn-icon rc-del" title="删除任务">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>`;
         }).join('');
         const notes = [];
-        const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-        if (dead.length) notes.push(`${plural(dead.length, 'tab points', 'tabs point')} at a session that no longer exists; it will be dropped.`);
-        if (extra.length) notes.push(`${plural(extra.length, 'session is', 'sessions are')} new to this browser — tick the ones to open.`);
+        if (dead.length) notes.push(`本设备有 ${dead.length} 个标签对应的任务已不存在，会被移除。`);
+        if (extra.length) notes.push(`有 ${extra.length} 个任务是在其他设备上新建的，默认一起打开；不想在本设备打开的可以取消勾选，它们仍会以淡色显示在所属空间下。`);
         modal.innerHTML = `
           <div class="modal-content">
-            <div class="modal-header"><h2>Restore sessions</h2></div>
-            <p class="rc-note">Your tabs don't match the sessions on the server. Choose which to open:</p>
+            <div class="modal-header"><h2>恢复任务</h2><button class="close-btn rc-close" type="button" aria-label="关闭">&times;</button></div>
+            <p class="rc-note">本设备的标签和服务器上的任务不一致，请选择要打开的任务：</p>
             ${notes.map((n) => `<p class="rc-note">${esc(n)}</p>`).join('')}
-            <div class="session-list">${rows || '<div class="no-sessions">No sessions</div>'}</div>
+            <div class="session-list">${rows || '<div class="no-sessions">没有任务</div>'}</div>
             <div class="modal-actions">
-              <button class="btn btn-secondary" id="rcNew">+ New session</button>
-              <button class="btn btn-primary" id="rcConfirm">Open</button>
+              <button class="btn btn-secondary" id="rcNew">+ 新建任务</button>
+              <button class="btn btn-primary" id="rcConfirm">打开</button>
             </div>
           </div>`;
         document.body.appendChild(modal);
+
+        const byId = new Map(server.map((s) => [s.id, s]));
+        const stm = this.sessionTabManager;
+        const openTabs = async (ids, activeId) => {
+            ids.forEach((id) => { const sv = byId.get(id); if (sv) stm.addTab(sv.id, sv.name, sv.active ? 'active' : 'idle', sv.workingDir, false); });
+        };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); dismiss(); } };
+        const teardown = () => { document.removeEventListener('keydown', onKey, true); modal.remove(); };
+
+        // Closed without choosing (GAP-15): reopen what this device already
+        // had and decide nothing else — no session is marked ignored, and the
+        // new ones wait as dim rows in their spaces.
+        const dismiss = async () => {
+            teardown();
+            const keep = persisted.ids.filter((id) => byId.has(id));
+            await openTabs(keep);
+            stm.saveTabState();
+            const activeId = keep.includes(persisted.activeId) ? persisted.activeId : (keep[0] || null);
+            this.hideOverlay();
+            if (activeId) await stm.switchToTab(activeId);
+            else if (stm.sidebar && stm.sidebar.isNarrow()) stm.sidebar.toggleDrawer();
+        };
+        document.addEventListener('keydown', onKey, true);
+        modal.querySelector('.rc-close').addEventListener('click', dismiss);
+        modal.addEventListener('click', (e) => { if (e.target === modal) dismiss(); });
 
         modal.querySelectorAll('.rc-del').forEach((btn) => btn.addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
             const row = btn.closest('.reconcile-row');
             const id = row && row.dataset.id;
-            if (id && confirm('Delete this session? This cannot be undone.')) { this.deleteSession(id, { skipConfirm: true }); row.remove(); }
+            if (id && confirm('删除这个任务？此操作不能撤销。')) { this.deleteSession(id, { skipConfirm: true }); row.remove(); }
         }));
-        modal.querySelector('#rcNew').addEventListener('click', () => { modal.remove(); this.openNewTabDialog(); });
+        modal.querySelector('#rcNew').addEventListener('click', () => { teardown(); this.openNewTabDialog(); });
         modal.querySelector('#rcConfirm').addEventListener('click', async () => {
             const rowsEls = [...modal.querySelectorAll('.reconcile-row')];
             const chosen = rowsEls.filter((r) => r.querySelector('.rc-open').checked).map((r) => r.dataset.id);
             const activeRadio = modal.querySelector('input[name="rc-active"]:checked');
             let activeId = activeRadio ? activeRadio.value : (chosen[0] || null);
             if (activeId && !chosen.includes(activeId)) activeId = chosen[0] || null;
-            modal.remove();
-            const stm = this.sessionTabManager;
-            const byId = new Map(server.map((s) => [s.id, s]));
+            teardown();
             // Keep the persisted order for surviving ids, then append newly-chosen ones.
             const ordered = [...persisted.ids.filter((id) => chosen.includes(id)), ...chosen.filter((id) => !persisted.ids.includes(id))];
-            ordered.forEach((id) => { const sv = byId.get(id); if (sv) stm.addTab(sv.id, sv.name, sv.active ? 'active' : 'idle', sv.workingDir, false); });
+            await openTabs(ordered);
             // Sessions still on the server but left unchecked = seen-but-not-opened;
             // remember them so a later refresh doesn't re-prompt for the same ones.
+            // They are not hidden: the sidebar lists them as dim rows.
             const chosenSet = new Set(chosen);
             // rowsEls was captured before modal.remove(); deleted rows are already
             // gone from it. Remaining-but-unchecked rows = seen-but-not-opened.

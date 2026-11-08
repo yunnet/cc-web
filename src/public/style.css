@@ -614,6 +614,73 @@ body.sidebar-hidden .sidebar-rail {
     opacity: .6;
 }
 
+/* Not empty: its tasks are just not open on this device (dim rows below). */
+.space-group.has-remote .space-tasks:empty { display: none; }
+
+/* Tasks the server has for this user with no tab on this device — made on
+   another device, or left unticked in Restore sessions. Dim, never hidden:
+   one tap opens them. */
+.space-remote {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 0 4px 14px;
+}
+
+.space-group.collapsed .space-remote { display: none; }
+
+.remote-task {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    opacity: .7;
+}
+
+.remote-task:hover,
+.remote-task:focus-visible {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    opacity: 1;
+}
+
+.remote-dot {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border: 1px dashed currentColor;
+    border-radius: 50%;
+}
+
+.remote-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.remote-hint {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    opacity: .8;
+}
+
+.search-hit-remote { color: var(--text-secondary); }
+
+@media (max-width: 768px) {
+    .remote-task { min-height: 44px; }
+}
+
 /* Fresh install: guide instead of a lone empty 未分组. */
 .sidebar-empty {
     flex: 1;
@@ -1483,6 +1550,15 @@ body.sidebar-hidden .sidebar-rail {
 .rc-current { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
 .rc-del { flex-shrink: 0; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; border-radius: 4px; }
 .rc-del:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.session-reconcile-modal .modal-header { display: flex; align-items: center; justify-content: space-between; }
+.rc-new { margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--bg-tertiary); color: var(--accent); font-size: 10.5px; font-weight: 400; }
+/* Phones: whole-row-height touch targets for the tick, 当前 and delete. */
+@media (max-width: 768px) {
+    .reconcile-row { min-height: 52px; }
+    .reconcile-row .rc-open { width: 22px; height: 22px; }
+    .rc-current { min-height: 44px; }
+    .rc-del, .session-reconcile-modal .rc-close { min-width: 44px; min-height: 44px; }
+}
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px 0; }
 
 .session-modal .modal-content {
@@ -5485,4 +5561,81 @@ button.usage-acct:hover { background: var(--bg-tertiary); }
 .usage-acct-bar > span { display: block; height: 100%; background: var(--accent); }
 @media (max-width: 480px) {
     .usage-acct .usage-conv-num:nth-of-type(3) { display: none; }
+}
+
+/* ---- Phone header (fix plan 2026-11-07, part B) -------------------------
+   Measured before: at 360px the account button sat at 378–422 (off screen)
+   and the gear was clipped; at 390 the breadcrumb was 0px wide, so a phone
+   never showed which task it was on. ≤480px now: [≡] task/space [＋][💬][⚙];
+   logo, files, branches and account move into the ⚙ menu (user 2026-11-07:
+   「同意」). Everything above 480px is unchanged except the directory crumb,
+   which never fitted under 769px anyway. Breakpoints only, no device sniffing
+   (MOB-17): a narrowed desktop window gets the same layout. */
+
+.menu-narrow-only { display: none; }
+
+@media (max-width: 768px) {
+    .crumb-dir { display: none; }
+}
+
+@media (max-width: 480px) {
+    .app-header {
+        height: 48px;
+        min-height: 48px;
+        gap: 0;
+        padding: 0 max(4px, env(safe-area-inset-right)) 0 max(4px, env(safe-area-inset-left));
+    }
+
+    .app-logo { display: none; }
+
+    #sidebarToggleBtn { width: 44px; height: 44px; }
+
+    /* Task name on top, its space underneath; a tap opens the task list. */
+    .header-breadcrumb {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 1px;
+        margin: 0 4px;
+        cursor: pointer;
+    }
+    .header-breadcrumb .crumb-task {
+        grid-row: 1;
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .header-breadcrumb .crumb-space {
+        grid-row: 2;
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .header-breadcrumb .crumb-sep,
+    .header-breadcrumb .crumb-dot { display: none; }
+
+    .header-actions { gap: 0; }
+
+    .header-new-task {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        justify-content: center;
+        border: none;
+        border-radius: 8px;
+    }
+    .header-new-task span { display: none; }
+    .header-new-task svg { width: 20px; height: 20px; }
+
+    /* In the ⚙ menu instead. #branchBtn alone, not its wrapper: the branch
+       panel lives in the wrapper and must still open. */
+    #explorerBtn,
+    #branchBtn,
+    #accountHeaderBtn { display: none; }
+
+    .hamburger-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+
+    .menu-narrow-only:not([hidden]) { display: block; }
 }

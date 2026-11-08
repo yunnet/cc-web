@@ -115,6 +115,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SPACE-16 | **排序模式**（借鉴 DSH）：侧栏头切换按钮「手动（默认，现有拖拽序）/ 最近更新（各组按最后活动严格倒序、只读）」；最近模式下拖拽不重排（dragover 直接忽略）；置顶恒排最前；按钮显示当前模式（最近=强调色）、选择按设备记忆 | `control:sidebarSortBtn` | — |
 | SPACE-17 | **折叠为 56px 图标轨道**（借鉴 DSH）：侧栏收起时不再整条消失——每空间一枚圆形字徽（名字首字），当前任务所在空间填充强调色，含运行中/待批准/未读 ✓ 任务的空间带状态点（待批准琥珀优先）；点徽标=展开侧栏+展开该空间+滚动定位；底部「＋」=展开并打开新建空间；宽度 0.2s 过渡（reduced-motion 关） | `control:railAddBtn` `file:src/public/spaces.js` | — |
 | SPACE-18 | **安静滚动条**（借鉴 DSH）：侧栏任务树与搜索结果的滚动条拇指默认透明（4px 轨道恒定预留，行永不位移）；指针进入列内拇指现形，离开后残留 2 秒 | `file:src/public/spaces.js` | — |
+| SPACE-19 | **本机未打开的任务以淡色行显示在所属空间下**（用户 2026-11-07：手机上「有两个空间丢失会话」——任务是在 PC 上建的，手机恢复时没勾选，空间看起来是空的）：服务器上属于本用户、但本设备没有标签的任务，按 lastActivity 新→旧列在空间的任务之后，虚线圆点 + 名字 + 「未在本设备打开」；点一下即作为任务打开（与 Sessions 面板同一路径，并从本机忽略名单移除）；空间只有这类任务时不显示（空）；折叠空间时一起收起；搜索也能找到（标「未在本设备打开」）；删除空间对话框里的任务数按服务器上的全部任务计；页面回到前台和每 60 秒重新拉取任务列表，其他设备新建/删除的任务无需刷新即出现/消失；手机上行高 44px；没有「在本设备隐藏」操作（用户 2026-11-07：「不要」） | `file:src/public/spaces.js` | `test/feature-guards.test.js` |
 ## 通知与提醒
 
 | ID | 功能 | 入口 | 守卫 |
@@ -167,7 +168,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-02 | Start 面板：模型、权限模式、思考强度三个下拉（选 Default 时用 Claude 自己的默认值），「Start Claude」和「Dangerous Claude」两个按钮，按钮文字随别名变化 | `control:claudeModelSelect` `control:claudePermissionSelect` `control:claudeEffortSelect` `control:startBtn` `control:dangerousSkipBtn` `ws-server:start_claude` `ws-client:app.js:claude_started` | `test/start-options.test.js` |
 | START-03 | 当前会话没有可用的工程目录时，按 Start 改为打开新建对话框，并带上已选选项和拒绝原因 | 手工 | `test/new-tab-dialog.test.js` |
 | START-04 | 本地标签与服务器会话一致时原样恢复；首次使用时采用服务器上自己的全部会话；服务器上没有会话时直接打开新建对话框；拉取列表失败时不清空本地标签并给出提示 | `route:GET /api/sessions/list` | — |
-| START-05 | 本地标签与服务器不一致时弹出「Restore sessions」对话框：每行可勾选打开、选为当前、删除（先确认）；没勾的记为已忽略，以后不再为它弹窗；「+ New session」打开新建对话框 | `js-control:app.js:Make this the active session` `js-control:app.js:Delete session` | — |
+| START-05 | 本地标签与服务器不一致时弹出「恢复任务」对话框（原「Restore sessions」，2026-11-07 改中文）：每行可勾选打开、选为当前、删除（先确认）；本机原有的和**其他设备新建的**任务都默认勾选（用户 2026-11-07 同意：手机上新任务默认不勾，确认后整个空间看起来是空的），后者带「其他设备新建」标记；没勾的记为已忽略，以后不再为它弹窗，但仍以淡色行显示在所属空间下（SPACE-19）；×、Esc、点背景可关闭——关闭只恢复本机原有标签，不把任何任务记为忽略；「+ 新建任务」打开新建对话框；手机上勾选框、当前、删除、× 的触控区放大 | `js-control:app.js:设为当前任务` `js-control:app.js:删除任务` | `test/feature-guards.test.js` |
 | START-06 | 新会话或 Claude 未运行的会话加入时**不再弹 Start 面板**，终端打印黄色提示后直接按默认启动选项自动启动（平台用户第一次启动也不会停在 Claude 的主题选择和「是否使用这个 API key」上，见 CLA-19）（用户 2026-10-28：「这个弹窗能不能去掉，都使用默认值。在session管理中，给个地方设置默认值」）；默认值即「上次启动的选择」，可在设置面板编辑（SET-17）；正在看着的会话中 Claude 停止仍弹面板（见 TERM-28） | 手工 | `test/start-prompt-overlay.test.js` |
 | START-07 | 会话在自己的别的窗口或设备上被删除时，自动关掉本地对应的标签并提示 | `ws-client:app.js:session_deleted` | — |
 | START-08 | 离开会话时终端清空、状态点变红；没有任何标签时显示 Start 面板 | `ws-client:app.js:session_left` `ws-server:leave_session` | — |
@@ -194,7 +195,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |
 | SES-08 | 菜单里的 Sessions 弹窗显示同一份列表，两个同时打开时一起刷新；底部 New Session 打开新建对话框；手机上打开时锁住页面滚动 | `control:sessionsBtnMobile` `control:closeMobileSessionsModal` | — |
 | SES-09 | 历史对话标题的优先级：手动命名 > Claude 自动标题（取最后一条）> summary > 第一条真实用户输入，超过 80 字截断 | `file:src/utils/claude-history.js` | `test/claude-history.test.js` |
-| SES-10 | 每个会话行右侧除垃圾桶外还有「→」按钮（切过去或开成标签），当前标签那一行不显示它 | `js-control:app.js:Make this the active session` | — |
+| SES-10 | 每个会话行右侧除垃圾桶外还有「→」按钮（切过去或开成标签），当前标签那一行不显示它（按钮在 conversations.js，标题是运行时拼的；此前误挂在恢复对话框「Make this the active session」上，2026-11-07 改挂文件） | `file:src/public/conversations.js` | — |
 | SES-11 | 会话没名字时显示「Session <id 前 8 位>」，对话没标题时显示「Conversation <id 前 8 位>」 | 手工 | — |
 | SES-12 | 删除会话后底部弹出「Session deleted」并自动刷新列表；面板还没确定目录时头部显示 current folder | 手工 | — |
 | SES-13 | 面板里只有列表滚动、弹窗本身不滚（避免嵌套滚动），列表随窗口高度伸缩且至少留 120px | 手工 | — |
@@ -363,7 +364,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | MOB-09 | 应用高度跟随可见视口；弹出软键盘时终端不改行数，外框变成停在底部的小窗口，输入框和状态行留在键盘上方；旋转屏幕按真实尺寸变化重新适配 | `file:src/public/viewport-mode.js` | `test/keyboard-viewport.test.js` |
 | MOB-10 | 终端比屏幕宽时自动减少列数；强制等于屏宽，不横向滚动 | 手工 | — |
 | MOB-11 | 窄屏（≤768px）侧边栏收为左滑抽屉：头部按钮开合、遮罩点击关闭、切到某任务后自动收起；任务列表整列滚动，不再截成两格 + 溢出下拉（2026-10-26 布局改造，用户原话「左边是空间+任务，右边是session+console」） | `control:sidebarToggleBtn` | — |
-| MOB-12 | 齿轮按钮在手机上放在最左边，桌面放在右侧 | 手工 | — |
+| MOB-12 | 齿轮按钮在页头右侧（手机和桌面相同；原描述「手机上放在最左边」与实现不符，2026-11-07 按实测更正） | 手工 | — |
 | MOB-13 | 手机上各弹窗改为顶部对齐、可滚动的全宽卡片，标题栏和底部按钮固定，按钮至少 44px；新建标签对话框全屏 | 手工 | — |
 | MOB-14 | 窄屏上文件浏览器占满屏幕；超小屏（≤480px）隐藏文件大小给文件名让位 | 手工 | — |
 | MOB-15 | 整页禁用下拉刷新、横向滚动和浏览器缩放手势（双指捏合、双击放大都不生效）；iOS 加到主屏时全屏显示、状态栏半透明；终端里的数字不会被识别成电话号码；齿轮和弹窗关闭按钮点按时没有灰色高亮（其余元素见 GAP-30） | 手工 | — |
@@ -372,10 +373,11 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | MOB-18 | 整页禁用浏览器手势：终端上双指捏合不缩放、双击不放大，只允许平移 | 手工 | — |
 | MOB-19 | ESC 和 → 按下时也有缩放反馈动画（不只是 MODE 有） | 手工 | `test/mobile-keys.test.js` |
 | MOB-20 | 手机上滑动合成的滚轮事件带着手指实际坐标，全屏界面才知道该滚哪一块；拿不到坐标时退到终端正中 | 手工 | — |
-| MOB-21 | ≤480px 时 Start 面板的两个按钮改为竖排占满整行；齿轮缩到 40px；弹窗最高 85vh；文件行隐藏大小列 | 手工 | — |
+| MOB-21 | ≤480px 时 Start 面板的两个按钮改为竖排占满整行；齿轮为 44px 触控区（原 40px，2026-11-07 随 MOB-25 统一）；弹窗最高 85vh；文件行隐藏大小列 | 手工 | — |
 | MOB-22 | 手机弹窗里的长列表使用 iOS 惯性滚动；目录列表限 40vh、会话列表限 50vh、每行至少 44px 高 | 手工 | — |
 | MOB-23 | 窄屏上文件浏览器的输入框会让位收缩，保证上一级/主页/创建/取消按钮不被挤出屏幕 | 手工 | — |
 | MOB-24 | 侧滑菜单 0.3 秒从左滑出并带右侧投影；手机上打开新建标签对话框时锁住页面滚动 | 手工 | — |
+| MOB-25 | **手机页头（≤480px）**：一行 `[≡] 任务名/空间名 [＋][💬][⚙]`——隐藏 logo；面包屑两行（上：当前任务名加粗，下：空间名），点它开合任务抽屉；「＋任务」只留图标；所有按钮 44px 触控区；页头固定 48px 高，左右留出刘海屏安全区。文件、分支、账号三个按钮移进 ⚙ 菜单最上方（「账号（用户名）」只在登录时出现），点菜单项等于点原按钮（用户 2026-11-07 同意：「1,同意」——计划第 E 节第 1 项「手机上把 文件 / 分支 / 账号 收进 ⚙ 菜单」）。≤768px 不再显示面包屑里的目录。实测改前：360px 宽账号按钮在屏外、齿轮被截，390px 面包屑宽 0 | `control:accountBtnMenu` `control:explorerBtnMenu` `control:branchBtnMenu` | `test/feature-guards.test.js` |
 ## Claude 集成
 
 | ID | 功能 | 入口 | 守卫 |
@@ -454,7 +456,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| ACC-01 | 页头最右边显示当前用户（人像图标 + 用户名，手机上只留图标、44px 触控区），点它弹出「账号」窗口（标题带用户名，下面写角色）；管理员的菜单里有「用户管理」；用令牌访问或关闭认证时都不显示（用户 2026-11-06：「个人账号，不应该放在setting弹窗，应该在Header的右上角」） | `control:accountHeaderBtn` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
+| ACC-01 | 页头最右边显示当前用户（人像图标 + 用户名，481–768px 只留图标、44px 触控区；≤480px 移进 ⚙ 菜单的「账号（用户名）」，见 MOB-25），点它弹出「账号」窗口（标题带用户名，下面写角色）；管理员的菜单里有「用户管理」；用令牌访问或关闭认证时都不显示（用户 2026-11-06：「个人账号，不应该放在setting弹窗，应该在Header的右上角」） | `control:accountHeaderBtn` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
 | ACC-02 | 用户管理（管理员）：列出所有用户（角色、停用、待改密码、可浏览目录、登录设备数、运行中会话数、最近使用）；新建用户时选角色，服务端生成一次性临时密码，只在这一次显示、可复制；设为管理员 / 普通用户、停用 / 启用、重置密码（新临时密码）、删除都带确认；非管理员调 `/api/admin/*` 一律 403 | `control:closeUsersBtn` `control:usersTabUsers` `control:usersNewName` `control:usersNewRole` `control:usersCreateBtn` `key:account.js:Escape` `route:GET /api/admin/users` `route:POST /api/admin/users` `route:PATCH /api/admin/users/:id` `route:POST /api/admin/users/:id/reset-password` `route:DELETE /api/admin/users/:id` `file:src/account-routes.js` | `test/account-admin.test.js` |
 | ACC-03 | 首次登录强制改密码：管理员新建或重置出来的临时密码登录后，弹出不能关闭的「请先修改密码」框（当前密码 + 新密码两次，可选退出登录）；改好之前服务端拒绝其他所有请求和 WebSocket | `route:POST /api/auth/password` | `test/account-admin.test.js` |
 | ACC-04 | 停用、删除、重置密码立即生效：吊销对方全部登录、断开对方的 WebSocket、停止对方正在运行的 Claude（会话本身保留）；删除账号只删账号，数据目录 `<uid>/` 留在磁盘上；不能停用、删除、降级、重置自己，也不能让系统里没有可用的管理员 | `route:DELETE /api/admin/users/:id` | `test/account-admin.test.js` |
@@ -497,7 +499,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GAP-12 | 后台会话的 Claude 被停止时，黄色的「Claude stopped」写进你正在看的那个终端，并强行弹出 Start 面板 | `ws-client:app.js:claude_stopped` | — |
 | GAP-13 | 计划弹窗的 Accept/Reject 把回车或 Esc 发给**当前可见**会话：计划来自后台标签或分屏窗格时，按键会打进错误的会话 | 手工 | — |
 | GAP-14 | 计划弹窗只能用 × 关闭，按 Esc 或点背景都没反应 | `control:closePlanBtn` | — |
-| GAP-15 | 「Restore sessions」对话框没有任何关闭方式（没有 ×、点背景和 Esc 都不关），只能点 Open 或「+ New session」 | 手工 | — |
+| GAP-15 | **已修复（2026-11-07）**：原来「Restore sessions」对话框没有任何关闭方式（没有 ×、点背景和 Esc 都不关），只能点 Open 或「+ New session」；现在三种方式都能关，关闭不改变任何任务的打开/忽略状态（见 START-05） | 手工 | `test/feature-guards.test.js` |
 | GAP-16 | 重命名标签或关闭标签时，发给服务器的请求失败没有任何提示：界面已经改了，刷新后又变回去 | 手工 | — |
 | GAP-17 | （已随 2026-10-26 侧边栏布局消亡）原缺陷：收进「⋮」溢出菜单的标签只剩名字和 ×，看不到状态圆点、未读、✓ 答完和「待批准」徽章。溢出菜单被空间侧边栏取代（MOB-11），任务行整列显示全部 marks，缺陷不复存在 | `手工` | — |
 | GAP-18 | 标签的 × 和分支行的拉取按钮都是悬停才显形，触屏没有悬停：手机上标签还能从溢出菜单关掉，拉取按钮则完全点不到 | 手工 | — |

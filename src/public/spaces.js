@@ -22,6 +22,12 @@ class SpacesSidebar {
         // rows, create responses and PATCH moves — one index every call site
         // shares, so addTab callers never have to know about spaces.
         this.sessionSpaces = new Map();
+        // Every session the server lists for this user, tab or not (id → the
+        // /api/sessions/list row). The ones with no tab on this device are
+        // drawn as dim rows in their space, so a task made on another device
+        // never looks lost (user 2026-11-07: a phone's 「Restore sessions」
+        // hid six tasks and their spaces looked empty).
+        this.serverSessions = new Map();
         this.collapsed = this.loadCollapsed();
         // Pinned tasks lead their group in EITHER sort mode (DSH). Per-device
         // view memory, like the collapsed list — grouping itself stays
@@ -43,6 +49,7 @@ class SpacesSidebar {
     refresh() {
         this.orderAllGroups();
         this.applyWatermarks();
+        this.renderRemote();
         this.updateUngroupedVisibility();
         this.applyEmptyState();
         this.renderSearchResults();
@@ -195,9 +202,91 @@ class SpacesSidebar {
         if (sessionsRes && sessionsRes.ok) {
             const data = await sessionsRes.json();
             this.sessionSpaces.clear();
-            (data.sessions || []).forEach(s => this.sessionSpaces.set(s.id, s.spaceId || null));
+            this.setServerSessions(data.sessions || []);
         }
         this.render();
+    }
+
+    setServerSessions(list) {
+        this.serverSessions = new Map(list.map(s => [s.id, s]));
+        list.forEach(s => this.sessionSpaces.set(s.id, s.spaceId || null));
+    }
+
+    // Re-read the session list only — not the spaces, whose heads render()
+    // rebuilds and would cut a rename in progress. Runs when the page comes
+    // back to the front and once a minute, which is how a task created or
+    // deleted on another device shows up here: session_created goes only to
+    // the socket that made it.
+    async syncServerSessions() {
+        const res = await this.app.authFetch('/api/sessions/list').catch(() => null);
+        if (!res || !res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (!data || !Array.isArray(data.sessions)) return;
+        this.setServerSessions(data.sessions);
+        if (data.sessions.some(s => s.spaceId && !this.spaceById(s.spaceId))) {
+            await this.reloadSpaces();   // a space made elsewhere; renders too
+        } else {
+            this.refresh();
+        }
+    }
+
+    // The dim rows: sessions on the server with no tab on this device, under
+    // their own space, newest first. Rebuilt whole on every refresh — they
+    // are few and carry no state of their own.
+    renderRemote() {
+        const tree = this.tree();
+        const tabs = this.app.sessionTabManager;
+        if (!tree) return;
+        const bySpace = new Map();
+        for (const s of this.serverSessions.values()) {
+            if (tabs && tabs.tabs.has(s.id)) continue;
+            const key = (s.spaceId && this.spaceById(s.spaceId)) ? s.spaceId : '';
+            if (!bySpace.has(key)) bySpace.set(key, []);
+            bySpace.get(key).push(s);
+        }
+        if (bySpace.has('')) this.getTaskContainer(null);   // make sure 未分组 exists
+        for (const group of tree.querySelectorAll('.space-group')) {
+            const list = (bySpace.get(group.dataset.space || '') || [])
+                .sort((a, b) => String(b.lastActivity || '').localeCompare(String(a.lastActivity || '')));
+            let box = group.querySelector('.space-remote');
+            group.classList.toggle('has-remote', list.length > 0);
+            if (!list.length) { box?.remove(); continue; }
+            if (!box) {
+                box = document.createElement('div');
+                box.className = 'space-remote';
+                group.appendChild(box);
+            }
+            // refresh() runs on every tab status change; leave the rows (and
+            // a finger already on one) alone unless they actually changed.
+            const sig = list.map(s => `${s.id}\u0000${s.name || ''}`).join('\u0001');
+            if (box.dataset.sig === sig) continue;
+            box.dataset.sig = sig;
+            box.innerHTML = '';
+            for (const s of list) box.appendChild(this.buildRemoteRow(s));
+        }
+    }
+
+    buildRemoteRow(s) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'remote-task';
+        row.dataset.sessionId = s.id;
+        row.title = `${s.name || 'Session'}\n未在本设备打开，点击打开`;
+        row.innerHTML = `
+            <span class="remote-dot" aria-hidden="true"></span>
+            <span class="remote-name">${escapeHtml(s.name || 'Session')}</span>
+            <span class="remote-hint">未在本设备打开</span>
+        `;
+        row.addEventListener('click', () => this.openRemote(s));
+        return row;
+    }
+
+    // Same path as the Sessions panel's "open it as a tab": addTab drops the
+    // id from this device's ignored list, so it stays open after a reload.
+    async openRemote(s) {
+        if (this.app.attachSessionTab) {
+            await this.app.attachSessionTab(s.id, s.name, s.workingDir, s.spaceId || null);
+        }
     }
 
     async reloadSpaces() {
@@ -239,6 +328,9 @@ class SpacesSidebar {
     // 未分组 visibility may change with it.
     forgetSession(sessionId) {
         this.sessionSpaces.delete(sessionId);
+        // A closed tab is a deleted session; without this it would come back
+        // as a dim row until the next sync.
+        this.serverSessions.delete(sessionId);
         this.updateUngroupedVisibility();
         this.updateBreadcrumb();
     }
@@ -266,6 +358,18 @@ class SpacesSidebar {
         this.updateToggleState();
         // Crossing 768px swaps which state the button reports (fold vs drawer).
         window.addEventListener('resize', () => this.updateToggleState());
+
+        // Phones: the header's task name is the way into the task list.
+        document.getElementById('headerBreadcrumb')?.addEventListener('click', () => {
+            if (this.isNarrow()) this.toggleDrawer();
+        });
+
+        // Tasks made or deleted on another device: re-read the list when this
+        // page comes back to the front (a phone unlocked) and once a minute.
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) this.syncServerSessions();
+        });
+        setInterval(() => { if (!document.hidden) this.syncServerSessions(); }, 60000);
 
         document.getElementById('sidebarBackdrop')?.addEventListener('click', () => this.closeDrawer());
         document.getElementById('newSpaceBtn')?.addEventListener('click', () => this.openNewSpaceDialog());
@@ -497,6 +601,24 @@ class SpacesSidebar {
                 box.appendChild(row);
             }
         }
+        // Tasks with no tab on this device are found too, marked as such.
+        for (const s of this.serverSessions.values()) {
+            if (tabs && tabs.tabs.has(s.id)) continue;
+            const space = (s.spaceId && this.spaceById(s.spaceId)) || null;
+            const spaceName = space ? space.name : '未分组';
+            const name = s.name || 'Session';
+            if (!name.toLowerCase().includes(q) && !spaceName.toLowerCase().includes(q)) continue;
+            count++;
+            const row = document.createElement('div');
+            row.className = 'search-hit search-hit-remote';
+            row.innerHTML = `
+                <span class="remote-dot" aria-hidden="true"></span>
+                <span class="search-hit-name">${escapeHtml(name)}</span>
+                <span class="search-hit-space">${escapeHtml(spaceName)} · 未在本设备打开</span>
+            `;
+            row.addEventListener('click', () => { this.clearSearch(); this.openRemote(s); });
+            box.appendChild(row);
+        }
         if (count === 0) {
             box.innerHTML = '<div class="nsb-empty">没有匹配的任务</div>';
         }
@@ -569,7 +691,8 @@ class SpacesSidebar {
         const empty = document.getElementById('sidebarEmpty');
         if (!tree || !empty) return;
         const tabs = this.app.sessionTabManager;
-        const nothing = this.spaces.length === 0 && (!tabs || tabs.tabs.size === 0);
+        const nothing = this.spaces.length === 0 && (!tabs || tabs.tabs.size === 0)
+            && this.serverSessions.size === 0;
         empty.hidden = !nothing;
         tree.classList.toggle('tree-empty', nothing);
     }
@@ -967,11 +1090,14 @@ class SpacesSidebar {
         if (this.app.showToast) this.app.showToast(`空间已删除，${count} 个任务转入未分组`);
     }
 
+    // Every task of the space on the server, not just the ones open here —
+    // the delete dialog promises all of them are kept.
     countTasks(spaceId) {
+        const ids = new Set(this.serverSessions.keys());
         const tabs = this.app.sessionTabManager;
-        if (!tabs) return 0;
+        if (tabs) for (const id of tabs.tabs.keys()) ids.add(id);
         let n = 0;
-        for (const sessionId of tabs.tabs.keys()) {
+        for (const sessionId of ids) {
             if (this.sessionSpace(sessionId) === spaceId) n++;
         }
         return n;
@@ -982,7 +1108,7 @@ class SpacesSidebar {
         if (!tree) return;
         const ungrouped = tree.querySelector('.space-group[data-space=""]');
         if (!ungrouped) return;
-        const has = ungrouped.querySelector('.session-tab') !== null;
+        const has = ungrouped.querySelector('.session-tab, .remote-task') !== null;
         const spacesExist = this.spaces.length > 0;
         // Hidden when empty AND real spaces exist; when there are no spaces at
         // all the sidebar would otherwise be blank, so show it (tasks + the
