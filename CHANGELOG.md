@@ -109,6 +109,17 @@
   applies from the next start.
 
 ### Changed
+- **Right-side drawers.** Everything the header's right-hand buttons open —
+  New tab, Sessions, Account, Branches, and from the gear menu Skills / Usage
+  / Settings / Users — now slides in from the right edge at full height, like
+  the file explorer already did: one shared `drawer` shell, a scrim, Esc /
+  × / outside click to close, the body scrolls under a fixed title and
+  footer; full width on a phone. Branches gained a title row with ×. Yes/no
+  confirms stay centred and the split-layout menu stays a dropdown
+  (user 2026-11-09).
+- **Active task outline.** The selected task in the sidebar wears a 1px
+  accent outline all the way round, the same as a header button's hover,
+  instead of the 2px left edge.
 - **The browser UI is in English.** Every label, button, dialog, tooltip,
   toast and error the page shows — spaces sidebar, new tab dialog, menu,
   account and users, usage, skills, branches, login — moved from Chinese to

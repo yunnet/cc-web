@@ -137,6 +137,11 @@
                         </svg>
                     </button>
                     <div class="branch-panel" id="branchPanel">
+                        <!-- Drawer title row, the same as every other right-side drawer. -->
+                        <div class="modal-header branch-drawer-head">
+                            <h2>Branches</h2>
+                            <button class="modal-close" id="branchCloseBtn" type="button" aria-label="Close branches">&times;</button>
+                        </div>
                         <div class="branch-head">
                             <input type="checkbox" class="branch-check" id="branchSelectAll" title="Select all" aria-label="Select all">
                             <span class="branch-dir" id="branchDir"></span>
@@ -387,7 +392,7 @@
             </div>
         </div>
 
-        <div class="settings-modal" id="settingsModal">
+        <div class="settings-modal drawer drawer-mid" id="settingsModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 id="settingsTitle">Settings</h2>
@@ -537,7 +542,7 @@
         <!-- Toolbar history button (#historyBtn): every Claude conversation
              recorded for the active session's folder. Clicking one opens it in a
              new tab, resumed. -->
-        <div class="session-modal" id="conversationsModal">
+        <div class="session-modal drawer" id="conversationsModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>Sessions</h2>
@@ -563,7 +568,7 @@
              installed — that is the unit `claude plugin` knows — and each row
              names the skills it brings. See src/public/skills.js. -->
         <!-- Your account (account.js): password, signed-in devices, sign out. -->
-        <div class="session-modal account-modal" id="accountModal">
+        <div class="session-modal account-modal drawer" id="accountModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 id="accountTitle">Account</h2>
@@ -592,7 +597,7 @@
         </div>
 
         <!-- User management (account.js), administrators only. -->
-        <div class="session-modal users-modal" id="usersModal">
+        <div class="session-modal users-modal drawer drawer-wide" id="usersModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>Users</h2>
@@ -635,7 +640,7 @@
             </div>
         </div>
 
-        <div class="session-modal" id="usageModal">
+        <div class="session-modal drawer" id="usageModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 id="usageTitle">Context and usage</h2>
@@ -655,7 +660,7 @@
             </div>
         </div>
 
-        <div class="session-modal" id="skillsModal">
+        <div class="session-modal drawer drawer-mid" id="skillsModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>Skills</h2>
@@ -780,7 +785,7 @@
             </div>
         </div>
 
-        <div class="session-modal new-tab-modal" id="newTabModal">
+        <div class="session-modal new-tab-modal drawer drawer-mid" id="newTabModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>New tab</h2>
@@ -963,7 +968,7 @@
     </div>
 
     <!-- Mobile Sessions Modal -->
-    <div class="session-modal" id="mobileSessionsModal">
+    <div class="session-modal drawer" id="mobileSessionsModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Sessions</h2>

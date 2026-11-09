@@ -155,6 +155,6 @@ describe('the panel markup', function () {
   });
 
   it('reuses the session-modal shell, so it stacks like the Sessions panel', function () {
-    assert.ok(/<div class="session-modal" id="skillsModal">/.test(HTML));
+    assert.ok(/<div class="session-modal[^"]*" id="skillsModal">/.test(HTML));
   });
 });

@@ -79,6 +79,8 @@
       if (!btn) return;
       btn.addEventListener('click', (e) => { e.stopPropagation(); this.toggle(); });
       this.el('branchRefreshBtn').addEventListener('click', () => this.load());
+      const closeBtn = this.el('branchCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', () => this.hide());
       this.el('branchStatusBtn').addEventListener('click', () => this.load(true));
       // Clicking anywhere else, or Escape, dismisses it — a glance panel should
       // never need a deliberate close.

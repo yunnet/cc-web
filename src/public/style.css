@@ -1034,10 +1034,12 @@ body.sidebar-hidden .sidebar-rail {
 
 /* The scoped borderless rule above (later in the file, same specificity)
    would flatten the active step too — restate it, scoped, and it wins. In the
-   sidebar the accent edge sits on the left, where the eye scans the list. */
+   sidebar the active task wears the header buttons' hover outline — a 1px
+   accent hairline all the way round (user 2026-11-09, trying it in place of
+   the 2px left edge). Inset, so the row keeps its size. */
 .spaces-sidebar .session-tab.active {
     background-color: var(--bg-tertiary);
-    box-shadow: inset 2px 0 0 var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .tab-settings {
@@ -5507,4 +5509,127 @@ button.usage-acct { cursor: pointer; }
     color: var(--error);
     border-color: var(--error);
     outline-color: var(--error);
+}
+
+/* ---------------------------------------------------------------------------
+   Right-side drawers (user 2026-11-09: 「把右上角弹窗都改为抽屉弹窗，要统一UI」).
+   Everything the header's right-hand buttons open — New tab, Sessions,
+   Account, and from the gear menu Skills / Usage / Settings / Users — slides
+   in from the right edge, full height, like the file explorer
+   (#fileExplorerModal) and the gear menu already did. The branch panel turns
+   into the same drawer below. Yes/no confirms stay centred: they interrupt
+   on purpose. The split-layout menu stays a small dropdown (user's choice).
+   Markup: add `drawer` to a .session-modal / .settings-modal root; optional
+   width steps `drawer-mid` (600) and `drawer-wide` (640), default 480.
+   --------------------------------------------------------------------------- */
+:is(.session-modal, .settings-modal).drawer {
+    justify-content: flex-end;
+    align-items: stretch;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+:is(.session-modal, .settings-modal).drawer > .modal-content {
+    width: 480px;
+    max-width: 100vw;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: -12px 0 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: drawer-in 0.22s ease;
+}
+
+:is(.session-modal, .settings-modal).drawer.drawer-mid > .modal-content { width: 600px; }
+:is(.session-modal, .settings-modal).drawer.drawer-wide > .modal-content { width: 640px; }
+/* Usage carries charts and a heat map; it keeps more room than the others. */
+#usageModal.drawer > .modal-content { width: min(760px, 100vw); }
+
+/* Header and footer stay put; the body is what scrolls. */
+:is(.session-modal, .settings-modal).drawer > .modal-content > :is(.modal-header, .modal-footer) {
+    flex-shrink: 0;
+}
+:is(.session-modal, .settings-modal).drawer > .modal-content > .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+@keyframes drawer-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* Branches: the dropdown becomes the same drawer. It stays inside its header
+   wrapper (git-branches.js closes it on an outside click), so it is pinned to
+   the viewport with position: fixed and draws its own scrim with a spread
+   shadow instead of a wrapper element. */
+.branch-panel.active {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 480px;
+    max-width: 100vw;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5), -12px 0 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    animation: drawer-in 0.22s ease;
+}
+.branch-panel.active .branch-list {
+    flex: 1 1 auto;
+    max-height: none;
+}
+
+@media (max-width: 480px) {
+    .branch-panel.active { right: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :is(.session-modal, .settings-modal).drawer > .modal-content,
+    .branch-panel.active { animation: none; }
+}
+
+/* The branch drawer lives inside the header, whose stacking context (z 20)
+   sat under the floating ESC keys (z 1000) and the terminal, so its scrim
+   dimmed nothing. Lift the header while the drawer is open. */
+.app-header:has(.branch-panel.active) {
+    z-index: 2100;
+}
+.branch-drawer-head { display: none; }
+.branch-panel.active .branch-drawer-head {
+    display: flex;
+    flex-shrink: 0;
+}
+
+/* In a full-height drawer the lists inherit caps written for centred cards
+   (.conv-list 240px, the users list 56vh): they scrolled inside a box and left
+   the drawer's lower half empty. Let them run; the drawer body scrolls. */
+:is(.session-modal, .settings-modal).drawer .conv-list:not(#skillsInstalledList),
+:is(.session-modal, .settings-modal).drawer .users-list {
+    max-height: none;
+}
+
+/* The drawer's × gets the header icons' 32px ring, not the full 44px box. */
+:is(.close-btn, .modal-close):not(.active, :disabled):hover {
+    outline-offset: -6px;
+}
+
+/* Settings' shell was z 1000, level with the floating ESC keys, which then
+   sat on top of the drawer. Every drawer covers them. */
+.settings-modal.drawer {
+    z-index: 2000;
+}
+
+/* On a phone the modal shell gets 10px padding (the centred-card gutter);
+   a drawer runs edge to edge instead. */
+:is(.session-modal, .settings-modal).drawer {
+    padding: 0;
 }
