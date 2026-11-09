@@ -298,6 +298,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-15 | 拖动字号、滚动动画滑块时旁边数字实时变化，但要按「Save Settings」才真正生效 | `control:fontSize` `control:smoothScroll` | — |
 | SET-16 | 菜单底部的版本行可以选中复制，悬停提示解释「build id 相同 = 两个实例代码相同」 | 手工 | — |
 | SET-17 | 设置面板「任务默认启动选项」：模型/权限/强度三个下拉，读写与「上次启动的选择」同一份记录（localStorage `cc-web-last-start-options`）；点未运行任务自动启动（START-06）与新建对话框预填（NEW-04）都用它；跳过权限不出现在默认里 | `control:settingsDefaultModel` `control:settingsDefaultPermission` `control:settingsDefaultEffort` | — |
+| SET-18 | 页头齿轮左边的主题按钮：一键切换 Dark/Light（深色显示月亮，浅色显示太阳），和设置里的 Theme 是同一个设置——写入全局默认和当前会话，设置弹窗的下拉同步，不刷新页面 | `control:themeToggleBtn` | — |
 ## 技能管理
 
 > 技能有三种来源，只有插件有目录、安装器和开关，所以**安装的单位是插件**，面板把每个插件带的技能名列出来。
@@ -456,7 +457,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 
 | ID | 功能 | 入口 | 守卫 |
 |---|---|---|---|
-| ACC-01 | 页头最右边显示当前用户（人像图标 + 用户名，481–768px 只留图标、44px 触控区；≤480px 移进 ⚙ 菜单的「账号（用户名）」，见 MOB-25），点它弹出「账号」窗口（标题带用户名，下面写角色）；管理员的菜单里有「用户管理」；用令牌访问或关闭认证时都不显示（用户 2026-11-06：「个人账号，不应该放在setting弹窗，应该在Header的右上角」） | `control:accountHeaderBtn` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
+| ACC-01 | 页头最右边显示当前用户（只有人像图标，44px 触控区、24px 图标，和旁边图标一样大；用户名在悬停提示里——用户 2026-11-09：「把用户图标+admin中的admin去掉。只要用户图标，注意图标大小要一致」；≤480px 移进 ⚙ 菜单的「账号（用户名）」，见 MOB-25），点它弹出「账号」窗口（标题带用户名，下面写角色）；管理员的菜单里有「用户管理」；用令牌访问或关闭认证时都不显示（用户 2026-11-06：「个人账号，不应该放在setting弹窗，应该在Header的右上角」） | `control:accountHeaderBtn` `control:usersBtnMobile` `file:src/public/account.js` | 手工 |
 | ACC-02 | 用户管理（管理员）：列出所有用户（角色、停用、待改密码、可浏览目录、登录设备数、运行中会话数、最近使用）；新建用户时选角色，服务端生成一次性临时密码，只在这一次显示、可复制；设为管理员 / 普通用户、停用 / 启用、重置密码（新临时密码）、删除都带确认；非管理员调 `/api/admin/*` 一律 403 | `control:closeUsersBtn` `control:usersTabUsers` `control:usersNewName` `control:usersNewRole` `control:usersCreateBtn` `key:account.js:Escape` `route:GET /api/admin/users` `route:POST /api/admin/users` `route:PATCH /api/admin/users/:id` `route:POST /api/admin/users/:id/reset-password` `route:DELETE /api/admin/users/:id` `file:src/account-routes.js` | `test/account-admin.test.js` |
 | ACC-03 | 首次登录强制改密码：管理员新建或重置出来的临时密码登录后，弹出不能关闭的「请先修改密码」框（当前密码 + 新密码两次，可选退出登录）；改好之前服务端拒绝其他所有请求和 WebSocket | `route:POST /api/auth/password` | `test/account-admin.test.js` |
 | ACC-04 | 停用、删除、重置密码立即生效：吊销对方全部登录、断开对方的 WebSocket、停止对方正在运行的 Claude（会话本身保留）；删除账号只删账号，数据目录 `<uid>/` 留在磁盘上；不能停用、删除、降级、重置自己，也不能让系统里没有可用的管理员 | `route:DELETE /api/admin/users/:id` | `test/account-admin.test.js` |

@@ -207,7 +207,7 @@ class AuthManager {
         const screens = {
             login: {
                 heading: 'Sign in',
-                intro: 'Sign in with your Claude Code Web account.',
+                intro: 'Sign in with your Claude Code Web account',
                 fields: field('auth-username', 'Username', 'text', 'Username', 'username')
                     + field('auth-password', 'Password', 'password', 'Password', 'current-password'),
                 button: 'Sign in',

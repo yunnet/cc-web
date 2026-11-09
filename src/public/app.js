@@ -1326,6 +1326,10 @@ class ClaudeCodeWebInterface {
         const historyBtn = document.getElementById('historyBtn');
         if (historyBtn) historyBtn.addEventListener('click', () => window.conversationList && window.conversationList.open());
 
+        // Header theme toggle: Dark ↔ Light, the same setting as Settings → Theme.
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        if (themeToggleBtn) themeToggleBtn.addEventListener('click', () => this.toggleTheme());
+
         const layoutBtn = document.getElementById('layoutBtn');
         if (layoutBtn) layoutBtn.addEventListener('click', () => {
             if (this.splitContainer) this.splitContainer.openLayoutMenu(layoutBtn);
@@ -2849,6 +2853,14 @@ class ClaudeCodeWebInterface {
         } else {
             document.documentElement.removeAttribute('data-theme');
         }
+        const toggle = document.getElementById('themeToggleBtn');
+        if (toggle) {
+            const label = theme === 'light' ? '切换到深色主题' : '切换到浅色主题';
+            toggle.title = label;
+            toggle.setAttribute('aria-label', label);
+        }
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#161b22');
         if (typeof applyTerminalPalette === 'function') {
             // Sets the palette AND the minimum-contrast correction the palette
             // depends on; assigning options.theme alone would leave light mode's
@@ -2858,6 +2870,28 @@ class ClaudeCodeWebInterface {
                 this.splitContainer.splits.forEach((sp) => applyTerminalPalette(sp && sp.terminal));
             }
         }
+    }
+
+    // Header theme toggle (#themeToggleBtn). Writes the theme exactly where
+    // Settings → Save does — the global default (new sessions inherit it) and
+    // the active session's own entry — and leaves font size and scroll as they
+    // are. A Claude already running keeps its theme until it restarts, as with
+    // a theme changed in Settings.
+    toggleTheme() {
+        const theme = this.currentUiTheme() === 'light' ? 'dark' : 'light';
+        try {
+            const global = JSON.parse(localStorage.getItem('cc-web-settings') || '{}');
+            localStorage.setItem('cc-web-settings', JSON.stringify({ ...global, theme }));
+            const sid = this.currentClaudeSessionId;
+            if (sid) {
+                const map = JSON.parse(localStorage.getItem('cc-web-session-settings') || '{}');
+                map[sid] = { ...this.loadSettings(sid), theme };
+                localStorage.setItem('cc-web-session-settings', JSON.stringify(map));
+            }
+        } catch (_) { /* no storage: still switch for this page */ }
+        this.applyTheme(theme);
+        const themeSelect = document.getElementById('themeSelect');
+        if (themeSelect) themeSelect.value = theme;
     }
 
     // Apply a session's stored visual settings when it becomes the active tab.

@@ -128,9 +128,6 @@ body {
     flex-shrink: 0;
 }
 
-#sidebarToggleBtn:hover {
-    color: var(--accent);
-}
 
 .header-new-task {
     display: flex;
@@ -147,10 +144,6 @@ body {
     flex-shrink: 0;
 }
 
-.header-new-task:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-}
 
 /* Breadcrumb: 空间 · 任务 · 目录. One line, everything truncates except the
    space name. The dot mirrors the active task's own status dot. */
@@ -197,11 +190,12 @@ body {
     background-color: var(--border);
 }
 
+/* Only a running session moves; every other state is a still dot. */
 .crumb-dot.active { background-color: var(--success); animation: pulse 2s infinite; }
-.crumb-dot.idle { background-color: #3b82f6; animation: idle-gentle-pulse 3s infinite; }
+.crumb-dot.idle { background-color: var(--accent); }
 .crumb-dot.error, .crumb-dot.disconnected { background-color: var(--error); }
-.crumb-dot.unread { background-color: #3b82f6; animation: unread-pulse 1.5s infinite; }
-.crumb-dot[data-awaiting] { background-color: #f59e0b; animation: idle-gentle-pulse 2s infinite; }
+.crumb-dot.unread { background-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--accent); }
+.crumb-dot[data-awaiting] { background-color: var(--warning); }
 .crumb-dot[data-done] { background-color: var(--success); }
 
 /* direction:rtl = middle truncation for paths: the head folds away and the
@@ -326,7 +320,7 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 .rail-dot.awaiting {
-    background: #f59e0b;
+    background: var(--warning);
 }
 
 .rail-add {
@@ -344,8 +338,6 @@ body.sidebar-hidden .sidebar-rail {
 .sidebar-title {
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: .08em;
-    text-transform: uppercase;
     color: var(--text-secondary);
 }
 
@@ -467,8 +459,6 @@ body.sidebar-hidden .sidebar-rail {
     padding: 0;
 }
 
-.space-add-task:hover { color: var(--accent); background-color: var(--bg-primary); }
-.space-delete:hover { color: var(--error); background-color: var(--bg-primary); }
 
 .space-tasks {
     display: flex;
@@ -507,7 +497,6 @@ body.sidebar-hidden .sidebar-rail {
 
 .sidebar-icon-btn:hover {
     opacity: 1;
-    color: var(--accent);
 }
 
 /* The sort toggle reads as engaged in 最近 mode (the non-default one). */
@@ -743,7 +732,6 @@ body.sidebar-hidden .sidebar-rail {
 
 .tab-pin:hover {
     opacity: 1 !important;
-    background-color: var(--border);
 }
 
 .tab-time {
@@ -813,10 +801,6 @@ body.sidebar-hidden .sidebar-rail {
     font-size: 12px;
 }
 
-.sidebar-new-space:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-}
 
 .sidebar-backdrop { display: none; }
 
@@ -885,28 +869,24 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 .session-tab.active {
-    /* Fill the whole active tab with the accent colour so it's unmistakable
-       among many tabs; white text keeps it readable on the accent fill. */
-    background-color: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-    font-weight: 600;
+    /* One surface step up plus a 2px accent edge: unmistakable among many
+       tabs without outshining the terminal (unslop pass, 2026-11-09 — it
+       used to be a solid accent fill with white text). */
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    box-shadow: inset 0 -2px 0 var(--accent);
     z-index: 2;
 }
 
 .session-tab.active .tab-name {
-    color: #fff;
-    font-weight: 600;
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
-/* Keep the close button (and its hover) readable on the accent fill. */
 .session-tab.active .tab-close {
-    color: #fff;
+    color: var(--text-secondary);
 }
 
-.session-tab.active .tab-close:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-}
 
 .session-tab.dragging {
     opacity: 0.5;
@@ -932,7 +912,6 @@ body.sidebar-hidden .sidebar-rail {
 .tab-ctx svg { display: block; }
 .tab-ctx .ctx-track { fill: none; stroke: var(--border); stroke-width: 2.5; }
 .tab-ctx .ctx-fill { fill: none; stroke: var(--success); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray 0.4s ease; }
-.session-tab.active .tab-ctx .ctx-track { stroke: rgba(255, 255, 255, 0.4); }
 .tab-ctx[data-ctx="warn"] .ctx-fill { stroke: var(--warning); }
 .tab-ctx[data-ctx="full"] .ctx-fill { stroke: var(--error); }
 
@@ -947,7 +926,7 @@ body.sidebar-hidden .sidebar-rail {
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
-    transition: all 0.3s ease;
+    transition: background-color 0.2s ease;
     position: relative;
 }
 
@@ -956,8 +935,7 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 .tab-status.idle {
-    background-color: #3b82f6;  /* Blue to indicate Claude likely finished */
-    animation: idle-gentle-pulse 3s infinite;
+    background-color: var(--accent);  /* Claude likely finished; still, only running moves */
 }
 
 .tab-status.disconnected {
@@ -973,46 +951,25 @@ body.sidebar-hidden .sidebar-rail {
     animation: pulse 2s infinite;
 }
 
+/* Running: the one status that moves, an opacity breath. (There used to be
+   two @keyframes pulse; the later opacity one won, so that is what stays.) */
 @keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-    }
-    70% {
-        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
-@keyframes idle-gentle-pulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-    50% {
-        opacity: 0.8;
-        transform: scale(1.1);
-    }
-}
-
-/* Unread indicator - changes status dot to blue */
+/* Unread: a still accent dot with a ring, so it reads apart from idle. */
 .tab-status.unread {
-    background-color: #3b82f6 !important;
-    animation: unread-pulse 1.5s infinite;
+    background-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--accent);
 }
 
-@keyframes unread-pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
+@media (prefers-reduced-motion: reduce) {
+    .tab-status.pulse, .crumb-dot.active, .plan-status-indicator { animation: none; }
 }
 
 .session-tab.has-unread .tab-name {
-    color: #3b82f6;
+    color: var(--accent);
     font-weight: 600;
 }
 
@@ -1042,7 +999,6 @@ body.sidebar-hidden .sidebar-rail {
 
 .tab-close:hover {
     opacity: 1;
-    background-color: var(--border);
 }
 
 .tab-name-input {
@@ -1061,13 +1017,13 @@ body.sidebar-hidden .sidebar-rail {
 /* Task rows: plain text at rest — no grey box until the pointer arrives
    (user ask, 2026-10-29), and no border in ANY state (follow-up ask: hover
    shows fill only). No border anywhere means no geometry reserved for one —
-   every state is the same height. The active task keeps the accent fill. */
+   every state is the same height. The active task gets a surface step and an accent edge. */
 .spaces-sidebar .session-tab {
     border-radius: 6px;
     min-width: 0;
     max-width: none;
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 8px;
     background: transparent;
     border: none;
 }
@@ -1077,9 +1033,11 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 /* The scoped borderless rule above (later in the file, same specificity)
-   would flatten the active fill too — restate it, scoped, and it wins. */
+   would flatten the active step too — restate it, scoped, and it wins. In the
+   sidebar the accent edge sits on the left, where the eye scans the list. */
 .spaces-sidebar .session-tab.active {
-    background-color: var(--accent);
+    background-color: var(--bg-tertiary);
+    box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .tab-settings {
@@ -1097,10 +1055,8 @@ body.sidebar-hidden .sidebar-rail {
     flex-shrink: 0;
 }
 
-/* Tab-bar icons: no box on hover — the icon itself takes the active tab's
-   accent colour, so "this is what you'd click" reads in the same colour as
-   "this is where you are". No fade, like every other hover here. The settings
-   gear (.hamburger-btn) follows the same rule. */
+/* Tab-bar icons: hover is the shared button hover at the end of this file
+   (accent ink + an accent hairline drawn inside the button). */
 .tab-settings:hover {
     color: var(--accent);
 }
@@ -1510,10 +1466,6 @@ body.sidebar-hidden .sidebar-rail {
     cursor: pointer;
 }
 
-.new-space-recent-chip:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-}
 
 .new-space-error {
     color: var(--error);
@@ -1582,16 +1534,12 @@ body.sidebar-hidden .sidebar-rail {
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
-    transition: all 0.2s;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
 }
 
-.btn-icon:hover {
-    color: var(--text-primary);
-    background-color: var(--bg-tertiary);
-}
 
 .btn {
     padding: 6px 12px;
@@ -1603,13 +1551,9 @@ body.sidebar-hidden .sidebar-rail {
     font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, var(--font-mono);
     font-size: 12px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.btn:hover:not(:disabled) {
-    background-color: var(--bg-secondary);
-    border-color: var(--border-hover);
-}
 
 .btn:disabled {
     opacity: 0.5;
@@ -1655,13 +1599,12 @@ body.sidebar-hidden .sidebar-rail {
     border: 2px solid #660000;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 .btn-danger-skip:hover {
     background-color: #a00000;
     border-color: #800000;
-    box-shadow: 0 0 10px rgba(139, 0, 0, 0.5);
 }
 
 .btn-danger-skip svg {
@@ -1775,13 +1718,11 @@ body.sidebar-hidden .sidebar-rail {
     justify-content: center;
     cursor: pointer;
     opacity: 0.6;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 .split-close:hover {
     opacity: 1;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
 }
 
 /* Drop zone for drag-to-split */
@@ -2012,10 +1953,6 @@ body.sidebar-hidden .sidebar-rail {
     -webkit-tap-highlight-color: transparent;
 }
 
-.close-btn:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
-}
 
 .modal-body {
     padding: 20px;
@@ -2077,8 +2014,6 @@ body.sidebar-hidden .sidebar-rail {
 .plan-dir-tag {
     flex-shrink: 0;
     font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--text-secondary);
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -2241,13 +2176,8 @@ body.sidebar-hidden .sidebar-rail {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background-color: #10b981;
+    background-color: var(--success);
     animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
 }
 
 .plan-status-text {
@@ -2445,16 +2375,11 @@ body.sidebar-hidden .sidebar-rail {
     border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
     min-width: 36px;
     height: 36px;
 }
 
-.btn-icon:hover {
-    background-color: var(--accent);
-    color: white;
-    border-color: var(--accent);
-}
 
 .btn-icon:disabled {
     opacity: 0.5;
@@ -2794,7 +2719,6 @@ body.sidebar-hidden .sidebar-rail {
     flex-shrink: 0;
 }
 
-.hamburger-btn:hover,
 .hamburger-btn.active {
     color: var(--accent);
 }
@@ -2880,15 +2804,10 @@ body.sidebar-hidden .sidebar-rail {
     font-family: var(--font-mono);
     font-size: 14px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
     text-align: left;
 }
 
-.mobile-menu-btn:hover:not(:disabled) {
-    background-color: var(--accent);
-    color: white;
-    border-color: var(--accent);
-}
 
 .mobile-menu-btn:disabled {
     opacity: 0.5;
@@ -2901,10 +2820,6 @@ body.sidebar-hidden .sidebar-rail {
     border-color: var(--error);
 }
 
-.mobile-menu-btn.btn-danger:hover:not(:disabled) {
-    background-color: #d73a49;
-    border-color: #d73a49;
-}
 
 .desktop-only {
     display: block;
@@ -3219,162 +3134,72 @@ pre, code {
     .mode-switcher .right-btn { display: none; }
 }
 
-.mode-switcher-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
-    background-color: var(--success);
-    color: var(--fab-ink);
-    border: 2px solid var(--success);
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-    transition: all 0.3s ease;
-    width: 56px;
-    height: 56px;
-    flex-direction: column;
-    gap: 1px;
-}
-
-/* Both buttons send a keystroke, so both wear a word the way a key cap does.
-   One treatment for the pair; the ring colour is what tells them apart. */
-.fab-key {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    line-height: 1;
-    color: inherit;
-}
-
-.mode-switcher-btn:hover {
-    filter: brightness(1.08);
-    border-color: var(--success);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-}
-
-.mode-switcher-btn:active {
-    transform: translateY(0);
-}
-
-.mode-switcher-btn.switching {
-    animation: modeSwitchPulse 0.3s ease;
-}
-
-@keyframes modeSwitchPulse {
-    0% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(0.95);
-        background-color: var(--success);
-    }
-    100% {
-        transform: scale(1);
-    }
-}
-
-
-/* Escape Button Styles */
-.escape-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
-    background-color: var(--error);
-    color: var(--fab-ink);
-    border: 2px solid var(--error);
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    transition: all 0.3s ease;
-    width: 56px;
-    height: 56px;
-}
-
-.escape-btn:hover {
-    filter: brightness(1.08);
-    border-color: var(--error);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(255, 68, 68, 0.2);
-}
-
-.escape-btn:active {
-    transform: translateY(0);
-}
-
-.escape-btn.pressed {
-    animation: escapeBtnPress 0.2s ease;
-}
-
-@keyframes escapeBtnPress {
-    0% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(0.9);
-        background-color: var(--error);
-    }
-    100% {
-        transform: scale(1);
-    }
-}
-
-/* Third key in the stack: the Right arrow key. Same 56px cap and
-   shadow as ESC and MODE — they are all keystroke buttons, and the ring colour
-   is what tells them apart. Blue here, so it reads as neither "stop" (red ESC)
-   nor "state change" (green MODE).
-
-   This one is drawn, not worded, and that is not a break with the pair above it:
-   the objection to icons was that Esc and mode-cycling have no honest glyph. The
-   Right arrow key does — U+2192 is what its key cap shows, the same as the words
-   are. (It replaced a line-break key, U+21B5, at the user's request: their
-   phone keyboard's own arrow key is broken.) */
+/* The three floating buttons send keystrokes, so they are drawn as key caps:
+   a neutral raised surface, a hairline, a 2px lower lip. Colour is reserved
+   for meaning — a thin ring tells them apart (green MODE, blue →) and ESC
+   turns red only under the pointer, so nothing on screen reads as an alarm
+   at rest (unslop pass, 2026-11-09). */
+.mode-switcher-btn,
+.escape-btn,
 .right-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 6px;
-    background-color: var(--accent);
-    color: var(--fab-ink);
-    border: 2px solid var(--accent);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    transition: all 0.3s ease;
+    box-shadow: inset 0 -2px 0 var(--border), 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
     width: 56px;
     height: 56px;
 }
 
-.right-btn:hover {
-    filter: brightness(1.08);
+.mode-switcher-btn {
+    border-color: var(--success);
+    flex-direction: column;
+    gap: 1px;
+}
+
+.right-btn {
     border-color: var(--accent);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(88, 166, 255, 0.2);
 }
 
-.right-btn:active {
-    transform: translateY(0);
+/* Both buttons send a keystroke, so both wear a word the way a key cap does. */
+.fab-key {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: inherit;
 }
 
+
+.escape-btn:hover {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+/* Press: a small scale down, the same for all three. `.pressed` and
+   `.switching` are still set from JS for the tap feedback on touch, where
+   :active is too brief to see. */
+.mode-switcher-btn:active,
+.escape-btn:active,
+.right-btn:active,
+.mode-switcher-btn.switching,
+.escape-btn.pressed,
 .right-btn.pressed {
-    animation: rightBtnPress 0.2s ease;
+    transform: scale(0.96);
 }
 
-@keyframes rightBtnPress {
-    0% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(0.9);
-        background-color: var(--accent);
-    }
-    100% {
-        transform: scale(1);
-    }
-}
+/* The Right arrow key is drawn, not worded: the objection to icons was that
+   Esc and mode-cycling have no honest glyph. The Right arrow key does — U+2192
+   is what its key cap shows, the same as the words are. (It replaced a
+   line-break key, U+21B5, at the user's request: their phone keyboard's own
+   arrow key is broken.) */
 
 /* A single glyph at the word size looks like a typo next to ESC and MODE, which
    fill their caps with four characters. Size it to occupy the cap the way they
@@ -3427,6 +3252,20 @@ pre, code {
     width: 24px;
     height: 24px;
 }
+
+/* Theme toggle: same 44px target and 24px glyph as its neighbours. Shows the
+   theme in use: moon on Dark, sun on Light. */
+#themeToggleBtn {
+    width: 44px;
+    height: 44px;
+}
+#themeToggleBtn svg {
+    width: 24px;
+    height: 24px;
+}
+#themeToggleBtn .theme-icon-sun { display: none; }
+[data-theme="light"] #themeToggleBtn .theme-icon-sun { display: block; }
+[data-theme="light"] #themeToggleBtn .theme-icon-moon { display: none; }
 
 /* Shown on every width, like the file explorer. "Did every repo move to the
    task branch?" is a question you ask more often away from the desk, not less.
@@ -3620,10 +3459,6 @@ pre, code {
     cursor: pointer;
 }
 
-.branch-status-btn:hover:not(:disabled) {
-    color: var(--text-primary);
-    border-color: var(--accent);
-}
 
 .branch-status-btn:disabled {
     opacity: 0.6;
@@ -3867,7 +3702,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     cursor: pointer;
 }
 
-.branch-op-btn:hover:not(:disabled),
 .branch-op-btn.active {
     color: var(--text-primary);
     border-color: var(--accent);
@@ -4080,7 +3914,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     transition: background-color 0.08s ease, color 0.08s ease;
 }
 
-.session-mode-btn:hover { color: var(--text-primary); }
 
 .session-mode-btn.active {
     background-color: var(--accent);
@@ -4170,8 +4003,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 .conv-group {
     margin: 10px 2px 6px;
     font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     color: var(--text-secondary);
 }
 
@@ -4555,7 +4386,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     text-overflow: ellipsis;
     cursor: pointer;
 }
-.new-tab-modal .nt-chip:hover { color: var(--text-primary); border-color: var(--accent); }
 .new-tab-modal .nt-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .new-tab-modal .nt-row { flex-direction: row; flex-wrap: wrap; gap: 12px; }
@@ -4689,7 +4519,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     box-shadow: none;
     opacity: 1;
     overflow: hidden;
-    /* The dot's own `transition: all .3s` would morph the dot into the ball
+    /* The dot's own transition would morph the dot into the ball
        over a third of a second — size, border and fill all mid-way. */
     transition: none;
     /* The outline stays still; the two layers inside do the turning. */
@@ -4701,7 +4531,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 .session-tab.active[data-working] .tab-status {
-    --ball-hollow: color-mix(in srgb, currentColor 30%, var(--accent));
+    --ball-hollow: color-mix(in srgb, currentColor 30%, var(--bg-tertiary));
 }
 
 /* A turn takes 1.6s: 1s read as too fast (the user's call, 2026-09-23).
@@ -4783,14 +4613,10 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     align-items: center;
     justify-content: center;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1;
 }
 
-/* On the accent-filled active tab (the page was hidden) green would not read. */
-.session-tab.active[data-done] .tab-status {
-    color: inherit;
-}
 
 @keyframes tab-done-flash {
     50% { opacity: 0.15; }
@@ -4879,10 +4705,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     display: none;
 }
 
-.scroll-bottom-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
 
 /* Bigger touch target on a phone, clear of the home indicator. */
 @media (max-width: 1024px) and (hover: none) and (pointer: coarse), (max-width: 768px) {
@@ -5077,32 +4899,31 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 
 /* Header, far right: who is signed in. Icon + name; the name goes on phones,
    the icon stays a full touch target. */
+/* Icon only (user 2026-11-09: 「把 admin 去掉，只要用户图标，图标大小要一致」):
+   a 44px target with a 24px glyph like the folder, branch and gear beside it.
+   The username moved to the tooltip and the aria-label (account.js). */
 .header-account {
     display: flex;
     align-items: center;
-    gap: 6px;
-    max-width: 160px;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
     background-color: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 12px;
     flex-shrink: 0;
 }
 
 .header-account[hidden] { display: none; }
 
-.header-account:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-}
 
-.header-account svg { flex-shrink: 0; }
+.header-account svg { flex-shrink: 0; width: 24px; height: 24px; }
 
 .header-account-name {
+    display: none;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -5554,7 +5375,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 .usage-acct:last-child { border-bottom: 0; }
 button.usage-acct { cursor: pointer; }
-button.usage-acct:hover { background: var(--bg-tertiary); }
 .usage-acct.active { background: var(--bg-tertiary); box-shadow: inset 3px 0 0 var(--accent); }
 .usage-acct-name { flex: 0 1 140px; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-acct-bar { flex: 1 1 auto; min-width: 40px; height: 6px; border-radius: 3px; background: var(--bg-tertiary); overflow: hidden; }
@@ -5638,4 +5458,53 @@ button.usage-acct:hover { background: var(--bg-tertiary); }
     .hamburger-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 
     .menu-narrow-only:not([hidden]) { display: block; }
+}
+
+/* ---------------------------------------------------------------------------
+   One hover for every button (user 2026-11-09: 「把所有按钮都用这个效果」).
+   Taken from the header's「+ 任务」and account buttons: the ink and a 1px
+   hairline turn accent, the fill stays. Bordered buttons recolour their own
+   border; borderless icon buttons draw the same hairline inside themselves
+   with an inset outline, so nothing shifts and the ring never touches the
+   header edge.
+   Not here, on purpose: filled buttons (.btn-primary / .btn-danger /
+   .btn-success / .btn-danger-skip, an .active segmented button) keep their own
+   hover — accent ink on a filled background would vanish — and the swept rows
+   (tabs, folder rows, conversation rows) are not buttons.
+   Destructive ones (.space-delete, a danger menu item, ESC) use --error.
+   --------------------------------------------------------------------------- */
+:is(.header-new-task, .new-space-recent-chip, .btn, .btn-icon,
+    .branch-status-btn, .branch-op-btn, .nt-chip, .scroll-bottom-btn,
+    .sidebar-new-space, .mobile-menu-btn, .mode-switcher-btn, .right-btn, .split-close):not(.btn-primary, .btn-danger, .btn-success, .active, :disabled):hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+:is(.header-icon-btn, .tab-settings, .hamburger-btn, .header-account, .sidebar-icon-btn, .space-action,
+    .close-btn, .modal-close, .session-mode-btn, .usage-acct, .tab-pin, .tab-close):not(.active, :disabled):hover {
+    color: var(--accent);
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+}
+
+/* The 44px header icons: pull the ring in to a 32px circle. */
+:is(.tab-settings, .hamburger-btn, .header-account):not(.active, :disabled):hover {
+    border-radius: 50%;
+    outline-offset: -6px;
+}
+
+.header-icon-btn:not(.active, :disabled):hover {
+    border-radius: 50%;
+    outline-offset: -2px;
+}
+
+/* Square icon buttons ring as a circle (user 2026-11-09: 方形框改为圆形). */
+:is(.sidebar-icon-btn, .space-action, .close-btn, .modal-close, .tab-pin, .tab-close):not(.active, :disabled):hover {
+    border-radius: 50%;
+}
+
+:is(.space-delete, .mobile-menu-btn.btn-danger):not(:disabled):hover {
+    color: var(--error);
+    border-color: var(--error);
+    outline-color: var(--error);
 }

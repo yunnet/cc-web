@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- **Theme toggle in the header.** A moon (Dark) / sun (Light) button left of
+  the gear switches the theme in one click — the same setting as Settings →
+  Theme, written to the global default and the active session, the Settings
+  select kept in step (user 2026-11-09).
 - **Spaces: working-directory groups above the session tabs.** The window is
   now a header (menu · breadcrumb 空间·任务·目录 · the same toolbar buttons)
   above a left sidebar of spaces with their tasks, and the untouched terminal
@@ -105,6 +109,17 @@
   applies from the next start.
 
 ### Changed
+- **UI polish pass (unslop, 2026-11-09).** The active task is a surface step
+  with a 2px accent edge instead of a solid accent fill; ESC / MODE / → are
+  neutral key caps (ESC turns red only on hover); only a running session's
+  status dot moves — idle, unread and awaiting are still dots on palette
+  colours; `transition: all` and uppercase tracked labels are gone; the
+  sidebar rows are 32px. The logo is unchanged by request.
+- **One hover for every button.** Taken from the header's +任务: the ink and a
+  1px hairline turn accent, the fill stays; borderless icon buttons draw it as
+  an inset ring (a circle on square icons). Filled buttons keep their own.
+- **Account button is icon-only.** The username moved to the tooltip; every
+  header icon is now a 44px target with a 24px glyph.
 - **The top tab bar became the spaces sidebar.** Every tab behaviour moved
   with it — status dots and the ✓ / 待批准 / spinning-ball marks, double-click
   rename, drag-to-reorder (vertical, within a space), the context menu

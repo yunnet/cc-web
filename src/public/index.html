@@ -189,6 +189,19 @@
                     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
                 </svg>
                 </button>
+                <!-- Theme toggle (2026-11-09): the same Dark/Light as Settings → Theme, one
+                     click away, like translate.google.com's header. The icon shows the
+                     theme in use — moon for Dark, sun for Light — swapped in CSS off
+                     html[data-theme], so it is right from first paint. -->
+                <button class="tab-settings" id="themeToggleBtn" title="切换到浅色主题" aria-label="切换到浅色主题">
+                    <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                    <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4"/>
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+                    </svg>
+                </button>
                 <!-- Menu button (right side since 2026-11-06) — opens the slide-in menu with Sessions / Close
                      Session / Reconnect / Clear / Settings. -->
                 <button class="hamburger-btn" id="hamburgerBtn" title="Settings" aria-label="Open settings menu">

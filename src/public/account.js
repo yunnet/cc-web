@@ -418,6 +418,7 @@
     if (headerBtn) {
       $('accountHeaderName').textContent = me.username;
       headerBtn.setAttribute('aria-label', `账号：${me.username}`);
+      headerBtn.title = `账号：${me.username}`;
       headerBtn.hidden = false;
     }
     if ($('usersBtnMobile')) $('usersBtnMobile').hidden = me.role !== 'admin';

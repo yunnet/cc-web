@@ -1,7 +1,7 @@
 // v2: the spaces-sidebar layout (2026-10-27). A new name is what makes
 // activate() drop the v1 cache wholesale — with the name unchanged, clients
 // kept serving the old cached app.js/index.html for a reload or two.
-const CACHE_NAME = 'claude-code-web-v2';
+const CACHE_NAME = 'claude-code-web-v3';
 const urlsToCache = [
   '/',
   '/index.html',
