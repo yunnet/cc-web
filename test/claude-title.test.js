@@ -288,9 +288,10 @@ describe('tab awaiting approval', function () {
   });
 
   it('hears the request from the main view and from a split pane', function () {
-    // Both hand every hook_event to the tab manager, which routes it.
-    assert.ok(/sessionTabManager\.hookEvent\(message\.sessionId, message\)/.test(read('app.js')), 'main view');
-    assert.ok(/sessionTabManager\.hookEvent\(this\.sessionId, msg\)/.test(read('splits.js')), 'split pane');
+    // Both go through app.handleHookEvent, which hands it to the tab manager
+    // (a pane only when its session has no connected view of its own).
+    assert.ok(/sessionTabManager\.hookEvent\(sessionId, message\)/.test(read('app.js')), 'main view');
+    assert.ok(/app\.handleHookEvent\(msg, this\.sessionId\)/.test(read('splits.js')), 'split pane');
     const { m, has, notes } = setup();
     m.hookEvent('b', { event: 'Notification', notification_type: 'idle_prompt', message: 'x' });
     assert.strictEqual(has('b', 'awaiting'), false, 'idle_prompt is not a request');
@@ -300,10 +301,13 @@ describe('tab awaiting approval', function () {
   });
 
   it('keeps the plan modal on hook_event in the main view (UI-04)', function () {
+    // The case hands off to handleHookEvent, shared with split panes.
     const src = read('app.js');
     const at = src.indexOf("case 'hook_event':");
-    const body = src.slice(at, src.indexOf('break;', at));
-    assert.ok(/tool_name === 'ExitPlanMode'[\s\S]*?this\.showPlanModal\(\{ content: message\.tool_input\.plan \}\)/.test(body),
+    assert.ok(/this\.handleHookEvent\(message/.test(src.slice(at, src.indexOf('break;', at))));
+    const h = src.indexOf('    handleHookEvent(');
+    const body = src.slice(h, src.indexOf('\n    }\n', h));
+    assert.ok(/tool_name === 'ExitPlanMode'[\s\S]*?this\.showPlanModal\(\{ content: message\.tool_input\.plan[ ,]/.test(body),
       'ExitPlanMode must still open the plan modal');
   });
 

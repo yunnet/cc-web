@@ -84,7 +84,7 @@ describe('new tab dialog', function () {
       // after, the join finds nothing and raises the Start prompt instead — the
       // third dialog this whole change exists to remove.
       const src = fn();
-      const arm = src.indexOf('this.pendingStart = { options }');
+      const arm = src.indexOf('this.pendingStart = { options');
       const attach = src.indexOf('await this.attachSessionTab');
       assert.ok(arm > -1 && attach > -1, 'pendingStart or attachSessionTab is gone');
       assert.ok(arm < attach, 'pendingStart must be set before attachSessionTab');

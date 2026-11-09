@@ -265,6 +265,23 @@ describe('TERM-33 back to the newest screen', function () {
     assert.strictEqual(obj.currentTerminal(), pane);
   });
 
+  it('leaves split panes to their own buttons: the page button hides while split', function () {
+    // Measured 2026-11-09: one page-wide button answered for the focused pane
+    // only, so an unfocused pane scrolled up showed nothing, and a shown one
+    // sat in the right pane's corner while acting on the left.
+    const pane = term(10, 90);
+    const jumps = [];
+    const split = { enabled: true, splits: [{ isActive: true, terminal: pane, updateJump() { jumps.push(1); } }] };
+    const { obj, btn } = app({ activeView: { terminal: term(90, 90) }, splitContainer: split });
+    btn.attrs = {};                         // shown from before the split
+    obj.updateScrollBottom(pane);
+    assert.strictEqual(btn.hasAttribute('hidden'), true, 'not for a pane');
+    btn.attrs = {};
+    obj.refreshScrollBottom();
+    assert.strictEqual(btn.hasAttribute('hidden'), true);
+    assert.strictEqual(jumps.length, 1, 'each pane is asked about its own');
+  });
+
   it('scrolls to the bottom and hands the keyboard back', function () {
     const t = term(50, 200);
     const { obj, btn } = app({ activeView: { terminal: t }, splitContainer: null });
@@ -296,7 +313,9 @@ describe('TERM-33 back to the newest screen', function () {
     assert.ok(/getElementById\('scrollBottomBtn'\)[\s\S]{0,120}addEventListener\('click', \(\) => this\.scrollToLatest\(\)\)/.test(a), 'the click');
     assert.ok(/this\.refreshScrollBottom\(\);/.test(a) && /adoptView\(view\)[\s\S]{0,120}refreshScrollBottom/.test(a), 'refreshed on tab switch');
     const s = read('splits.js');
-    assert.ok(/this\.terminal\.onScroll\(\(\) => this\.app\.updateScrollBottom\(this\.terminal\)\)/.test(s), 'split pane, on scroll');
+    // A pane answers for itself with its own button (Split.updateJump).
+    assert.ok(/this\.terminal\.onScroll\(\(\) => this\.updateJump\(\)\)/.test(s), 'split pane, on scroll');
+    assert.ok(/this\.terminal\.onRender\(\(\) => this\.updateJump\(\)\)/.test(s), 'split pane, on new output');
     assert.ok(/focusSplit[\s\S]{0,600}refreshScrollBottom/.test(s), 'refreshed when a pane takes focus');
     const css = fs.readFileSync(path.join(PUB, 'style.css'), 'utf8');
     assert.ok(/\.scroll-bottom-btn \{[\s\S]*?position: fixed;[\s\S]*?right: 84px;[\s\S]*?bottom: 24px;/.test(css), 'bottom-right, left of the floating key column');

@@ -292,6 +292,8 @@ class ClaudeCodeWebInterface {
         const gap = parseFloat(cs.rowGap) || parseFloat(cs.gap) || 10;
         const belowTerminal = Math.max(0, window.innerHeight - rect.bottom);
         sw.style.bottom = Math.round(belowTerminal + rowsToClear * rowH + gap) + 'px';
+        // The stack follows the input box; a split pane's jump button avoids it.
+        this.reclearPaneJumps();
     }
 
     // Where the buttons are allowed to sit. Measured, not assumed: the tab bar
@@ -342,6 +344,7 @@ class ClaudeCodeWebInterface {
         // One side is always `auto`; leaving both set would pin the width.
         if (this._fabPos.side === 'left') { sw.style.left = '20px'; sw.style.right = 'auto'; }
         else { sw.style.right = '20px'; sw.style.left = 'auto'; }
+        this.reclearPaneJumps();
     }
 
     // Drag the pair as a unit. Pointer Events cover touch and mouse with one
@@ -421,10 +424,9 @@ class ClaudeCodeWebInterface {
     // application cursor keys (DECCKM), ESC [ C otherwise — a program in the
     // other mode would not read it as an arrow.
     sendRightArrow() {
-        const appKeys = !!(this.terminal && this.terminal.modes && this.terminal.modes.applicationCursorKeysMode);
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.send({ type: 'input', data: appKeys ? '\x1bOC' : '\x1b[C' });
-        }
+        const term = this.currentTerminal();
+        const appKeys = !!(term && term.modes && term.modes.applicationCursorKeysMode);
+        this.sendInput(appKeys ? '\x1bOC' : '\x1b[C');
 
         const btn = document.getElementById('rightBtn');
         if (btn) {
@@ -436,15 +438,14 @@ class ClaudeCodeWebInterface {
     }
 
     sendEscape() {
-        // Send ESC key to terminal
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            // Send ESC key (ASCII 27 or \x1b)
-            this.send({ type: 'input', data: '\x1b' });
-        }
+        // Send ESC (ASCII 27) to the terminal on screen - the focused pane
+        // when split.
+        this.sendInput('\x1b');
         // A click moves focus to the button, so the next keystroke would go
         // nowhere. Hand it back to the terminal on a desktop; not on a phone,
         // where focusing the terminal raises the soft keyboard.
-        if (!this.isMobile && this.terminal) this.terminal.focus();
+        const term = this.currentTerminal();
+        if (!this.isMobile && term) term.focus();
         
         // Add visual feedback
         const btn = document.getElementById('escapeBtn');
@@ -465,10 +466,8 @@ class ClaudeCodeWebInterface {
         const btn = document.getElementById('modeSwitcherBtn');
 
         // Send Shift+Tab to terminal to trigger the actual mode switch in Claude Code
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            // Send Shift+Tab key combination (ESC[Z is the terminal sequence for Shift+Tab)
-            this.send({ type: 'input', data: '\x1b[Z' });
-        }
+        // Shift+Tab (ESC[Z) - to the focused pane when split.
+        this.sendInput('\x1b[Z');
         
         // Add visual feedback
         if (btn) {
@@ -518,6 +517,60 @@ class ClaudeCodeWebInterface {
         this.terminal = view.terminal;
         this.fitAddon = view.fitAddon;
         this.socket = view.socket;
+    }
+
+    // Entering a split (splits.js createSplit). The view on screen becomes an
+    // ordinary background view: it keeps its socket and keeps filling, so
+    // closing the split shows it again with its scrollback (switchToTab ->
+    // showSession); it withdraws its size vote so the pane's size wins; and it
+    // stops being "active", so its stop / exit / join no longer take over a
+    // screen it is not on. The idle view stands in until the split closes.
+    // This replaced leaveSession(), whose session_left nulled
+    // currentClaudeSessionId and cleared the terminal, and whose counterpart on
+    // close, joinSession(), re-joined on whatever socket was current - which put
+    // tab A's terminal on session B when B's pane had focus.
+    parkActiveView() {
+        const view = this.activeView;
+        if (!view || view === this.idleView) return;
+        this.sendOn(view, { type: 'detach_size' });
+        view.el.classList.remove('active');
+        this.adoptView(this.idleView);
+    }
+
+    // Where a keystroke the page sends on its own (toolbar Esc / Shift+Tab / ->,
+    // an uploaded image's path, the plan dialog's answer) goes. For a given
+    // session: the split pane showing it, else its view. With none: the focused
+    // pane while split, else the view on screen. These used this.socket, which
+    // during a split belongs to no session - so they did nothing.
+    inputSocket(sessionId = null) {
+        const split = this.splitContainer;
+        const panes = (split && split.enabled) ? split.splits : [];
+        if (sessionId) {
+            const pane = panes.find(s => s.sessionId === sessionId && s.socket);
+            if (pane) return pane.socket;
+            const view = this.views.get(sessionId);
+            if (view) return view.socket;
+            // No view of its own (the legacy no-tabs path): the socket on
+            // screen, but only when that is the same session.
+            return (!panes.length && sessionId === this.currentClaudeSessionId) ? this.socket : null;
+        }
+        if (panes.length) {
+            const pane = panes[split.activeSplitIndex];
+            return pane ? pane.socket : null;
+        }
+        return this.socket;
+    }
+
+    // false when there was nowhere to send it — callers say so.
+    sendInput(data, sessionId = null) {
+        return this.sendOnSocket(this.inputSocket(sessionId), { type: 'input', data });
+    }
+
+    // The one place a message goes out on a given socket.
+    sendOnSocket(sock, data) {
+        if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+        sock.send(JSON.stringify(data));
+        return true;
     }
 
     // Tear down a closed tab's view: its socket, its xterm, its element. A view
@@ -849,7 +902,15 @@ class ClaudeCodeWebInterface {
     // so it only touches the DOM when the answer changes.
     updateScrollBottom(term) {
         const btn = document.getElementById('scrollBottomBtn');
-        if (!btn || term !== this.currentTerminal()) return;
+        if (!btn) return;
+        // Split: every pane has its own button (splits.js updateJump); the
+        // page-wide one stays out of it.
+        const split = this.splitContainer;
+        if (split && split.enabled) {
+            if (!btn.hasAttribute('hidden')) btn.toggleAttribute('hidden', true);
+            return;
+        }
+        if (term !== this.currentTerminal()) return;
         const buf = term.buffer && term.buffer.active;
         const away = !!buf && buf.baseY - buf.viewportY > 0;
         const shown = !btn.hasAttribute('hidden');
@@ -870,11 +931,55 @@ class ClaudeCodeWebInterface {
         btn.style.bottom = up ? `${Math.round(window.innerHeight - box.top + 12)}px` : '';
     }
 
+    // A split pane's jump button (splits.js) sits in its pane's bottom-right
+    // corner. The PWA install button and the floating ESC/MODE/-> stack are
+    // fixed to the page and can land on it - the right or bottom pane always
+    // shares the page's corner, and the stack can be dragged anywhere. Lift
+    // the button above whichever it meets, never out of its pane (which clips).
+    keepPaneJumpClear(btn, pane) {
+        btn.style.bottom = '';
+        if (!pane || btn.hasAttribute('hidden')) return;
+        const p = pane.getBoundingClientRect();
+        const b = btn.getBoundingClientRect();
+        if (!b.width || !p.height) return;
+        let bottom = p.bottom - b.bottom;           // the CSS offset, in px
+        const base = bottom;
+        for (const id of ['installBtn', 'modeSwitcher']) {
+            const el = document.getElementById(id);
+            const o = el && el.getBoundingClientRect();
+            if (!o || !o.width || !o.height) continue;
+            const boxBottom = p.bottom - bottom;
+            const boxTop = boxBottom - b.height;
+            if (o.left < b.right && o.right > b.left && o.top < boxBottom && o.bottom > boxTop) {
+                bottom = p.bottom - o.top + 8;
+            }
+        }
+        if (bottom === base) return;
+        bottom = Math.min(bottom, p.height - b.height - 8);
+        btn.style.bottom = `${Math.round(bottom)}px`;
+    }
+
+    // Something that a pane's jump button avoids moved or resized (the stack
+    // was dragged, the install button came or went, a pane changed size).
+    reclearPaneJumps() {
+        const split = this.splitContainer;
+        if (!split || !split.enabled) return;
+        split.splits.forEach((s) => {
+            if (s.jumpBtn && !s.jumpBtn.hasAttribute('hidden')) this.keepPaneJumpClear(s.jumpBtn, s.container);
+        });
+    }
+
     // The terminal on screen changed (tab switch, split focus, split closed):
     // ask the new one where it is.
     refreshScrollBottom() {
-        const term = this.currentTerminal();
         const btn = document.getElementById('scrollBottomBtn');
+        const split = this.splitContainer;
+        if (split && split.enabled) {
+            if (btn) btn.toggleAttribute('hidden', true);
+            split.splits.forEach(s => { if (s.updateJump) s.updateJump(); });
+            return;
+        }
+        const term = this.currentTerminal();
         if (!term) { if (btn) btn.toggleAttribute('hidden', true); return; }
         this.updateScrollBottom(term);
     }
@@ -956,7 +1061,20 @@ class ClaudeCodeWebInterface {
         const termEl = document.getElementById('terminal');
         const containerEl = document.getElementById('terminalContainer');
         if (!termEl) return;
+        this.wireImageInput(termEl, containerEl);
+    }
 
+    // Paste / drop images on a terminal host. sessionOf(target) names the
+    // session the event landed in (a split pane); without it, the current one.
+    // Shared by the main terminal and the split container, which had none - a
+    // pasted screenshot in a pane went nowhere.
+    wireImageInput(termEl, containerEl, sessionOf = null) {
+        // sessionOf: undefined = not in a pane (use the current session),
+        // null = an empty pane (no session to take it).
+        const sidFor = (e) => {
+            const sid = sessionOf ? sessionOf(e.target) : undefined;
+            return sid === undefined ? this.currentClaudeSessionId : sid;
+        };
         termEl.addEventListener('paste', (e) => {
             const items = e.clipboardData && e.clipboardData.items;
             if (!items) return;
@@ -969,7 +1087,8 @@ class ClaudeCodeWebInterface {
             }
             if (images.length === 0) return; // plain text paste — leave to xterm
             e.preventDefault();
-            images.forEach((f) => this.uploadAndInsertImage(f));
+            const sid = sidFor(e);
+            images.forEach((f) => this.uploadAndInsertImage(f, sid));
         });
 
         if (containerEl) {
@@ -986,21 +1105,24 @@ class ClaudeCodeWebInterface {
                 const images = files ? Array.from(files).filter((f) => f.type.startsWith('image/')) : [];
                 if (images.length === 0) return; // not an image drop — let other handlers run
                 e.preventDefault();
-                images.forEach((f) => this.uploadAndInsertImage(f));
+                const sid = sidFor(e);
+                images.forEach((f) => this.uploadAndInsertImage(f, sid));
             });
         }
     }
 
     // Upload one image file to the server and, on success, inject its saved
     // path into the terminal input so Claude Code picks it up as an image.
-    async uploadAndInsertImage(file) {
-        if (!this.currentClaudeSessionId) {
+    // The session is fixed when the image arrives, not after the upload: focus
+    // can move to the other pane while it is in flight.
+    async uploadAndInsertImage(file, sessionId = this.currentClaudeSessionId) {
+        if (!sessionId) {
             this.showToast('Start Claude before pasting an image', true);
             return;
         }
         try {
             const res = await this.authFetch(
-                `/api/upload-image?sessionId=${encodeURIComponent(this.currentClaudeSessionId)}`,
+                `/api/upload-image?sessionId=${encodeURIComponent(sessionId)}`,
                 { method: 'POST', body: file, headers: { 'Content-Type': file.type } }
             );
             const data = await res.json().catch(() => ({}));
@@ -1010,8 +1132,8 @@ class ClaudeCodeWebInterface {
             }
             // Inject the absolute path (+trailing space) as if typed. No newline:
             // the user adds their prompt and sends it themselves.
-            this.send({ type: 'input', data: data.path + ' ' });
-            this.showToast('Image inserted');
+            if (this.sendInput(data.path + ' ', sessionId)) this.showToast('Image inserted');
+            else this.showToast('Image uploaded, but its task is not connected', true);
         } catch (err) {
             this.showToast('Image upload failed', true);
         }
@@ -1624,8 +1746,7 @@ class ClaudeCodeWebInterface {
     // terminal's session, which is not always the one on screen (a split pane,
     // or a keystroke that lands mid-switch).
     sendOn(view, data) {
-        const sock = view && view.socket;
-        if (sock && sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify(data));
+        return this.sendOnSocket(view && view.socket, data);
     }
 
     // Show a session's terminal, creating it the first time. This is what tab
@@ -1679,6 +1800,10 @@ class ClaudeCodeWebInterface {
     resumeHibernated(view) {
         if (!view || !view.hibernated || view !== this.activeView) return;
         view.hibernated = false;
+        // Resumed elsewhere meanwhile (a split pane, another window): starting
+        // again would only earn "already running".
+        const known = this.sessionTabManager && this.sessionTabManager.activeSessions.get(view.sessionId);
+        if (known && known.status === 'active') return;
         view.terminal.writeln(`\x1b[33mResuming ${this.getAlias()} conversation…\x1b[0m`);
         this.startClaudeSession(this.startDefaultsOptions());
     }
@@ -1709,10 +1834,18 @@ class ClaudeCodeWebInterface {
         this.currentClaudeSessionId = sessionId;
         this.refreshScrollBottom();
 
-        if (isNew) {
+        // A view's socket does not reconnect by itself; one that died while the
+        // view sat in the background (a server restart, a dropped network,
+        // typically during a split) would be shown dead. Join again - this
+        // replays, which beats a terminal that ignores you.
+        const dead = !isNew && (!view.socket || view.socket.readyState > WebSocket.OPEN);
+        if (isNew || dead) {
             // First time on this tab: connect its own socket and join. This is the
             // only path that replays the server buffer.
             await this.openViewSocket(view);
+            // Something else took the screen meanwhile (another tab, a split):
+            // this view must not cast a size vote it is no longer entitled to.
+            if (this.activeView !== view) return;
         }
 
         this.fitTerminal();
@@ -1798,10 +1931,9 @@ class ClaudeCodeWebInterface {
                     if (message.liveUsage) this.sessionTabManager.setTabUsage(message.sessionId, message.liveUsage);
                 }
                 
-                // Notify split container of session change
-                if (this.splitContainer) {
-                    this.splitContainer.onTabSwitch(message.sessionId);
-                }
+                // No splitContainer.onTabSwitch here: every tab switch already goes
+                // through switchToTab, and from a background view's join this put
+                // that session into the focused pane.
                 
                 // Resolve pending join promise if it exists
                 if (this.pendingJoinResolve && this.pendingJoinSessionId === message.sessionId) {
@@ -1901,17 +2033,22 @@ class ClaudeCodeWebInterface {
                 }
                 break;
                 
-            case 'claude_started':
-                this.hideOverlay();
+            case 'claude_started': {
+                // Every client of the session hears this, background views and
+                // split panes included: mark the session that started, and only
+                // clear the overlay when it is the session on screen.
+                if (view) view.hibernated = false;
+                if (forActive) this.hideOverlay();
                 // Don't auto-focus to avoid focus tracking sequences
                 // User can click to focus when ready
                 this.loadSessions(); // Refresh session list
 
-                // Update tab status to active
-                if (this.sessionTabManager && this.currentClaudeSessionId) {
-                    this.sessionTabManager.updateTabStatus(this.currentClaudeSessionId, 'active');
+                const startedId = (view && view.sessionId) || this.currentClaudeSessionId;
+                if (this.sessionTabManager && startedId) {
+                    this.sessionTabManager.updateTabStatus(startedId, 'active');
                 }
                 break;
+            }
                 
             case 'claude_hibernated': {
                 // The server stopped an idle Claude to free memory (hibernation.js).
@@ -1939,10 +2076,11 @@ class ClaudeCodeWebInterface {
                 // Stopped mid-answer, the last title may still be ◐: stop the ball.
                 const stoppedId = (view && view.sessionId) || this.currentClaudeSessionId;
                 if (this.sessionTabManager && stoppedId) this.sessionTabManager.setTabWorking(stoppedId, false);
-                this.flushTerminalWrites();
-                this.terminal.writeln(`\r\n\x1b[33m${this.getAlias()} stopped\x1b[0m`);
-                // Show start prompt to allow restarting Claude in this session
-                this.showOverlay('startPrompt');
+                this.flushTerminalWrites(view);
+                ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} stopped\x1b[0m`);
+                // Start prompt to restart it - only for the session on screen,
+                // like exit: a background tab stopping must not interrupt you.
+                if (forActive) this.showOverlay('startPrompt');
                 this.loadSessions(); // Refresh session list
                 break;
             }
@@ -2024,22 +2162,7 @@ class ClaudeCodeWebInterface {
                 break;
 
             case 'hook_event':
-                // Structured Claude Code hook event relayed by the server. The
-                // ExitPlanMode PreToolUse event carries the full plan text —
-                // this replaces the old terminal-scraping plan detector.
-                if (message.tool_name === 'ExitPlanMode' &&
-                    message.tool_input && message.tool_input.plan) {
-                    this.showPlanModal({ content: message.tool_input.plan });
-                }
-                // ccweb-companion mod: a Bash call waiting for the web dialog's
-                // answer. The mod's request is held server-side until a button.
-                if (message.event === 'ccweb_permission_request') {
-                    this.showPermissionRequestCard(message);
-                }
-                if (this.sessionTabManager) this.sessionTabManager.hookEvent(message.sessionId, message);
-                // A finished turn is when a new question lands in the
-                // transcript — re-match that session's rail right away.
-                if (message.event === 'Stop') this.refreshTurnRails(message.sessionId, true);
+                this.handleHookEvent(message, view && view.sessionId);
                 break;
 
             default:
@@ -2866,6 +2989,9 @@ class ClaudeCodeWebInterface {
             // depends on; assigning options.theme alone would leave light mode's
             // message band unreadable.
             applyTerminalPalette(this.terminal);
+            // Background views too: the theme is app-wide, and a view parked
+            // behind a split (or any other tab) kept the old palette.
+            if (this.views) this.views.forEach(v => { if (v.terminal !== this.terminal) applyTerminalPalette(v.terminal); });
             if (this.splitContainer && this.splitContainer.splits) {
                 this.splitContainer.splits.forEach((sp) => applyTerminalPalette(sp && sp.terminal));
             }
@@ -2900,10 +3026,14 @@ class ClaudeCodeWebInterface {
     }
 
     startHeartbeat() {
+        // Every socket the page holds, not just the one on screen: background
+        // views and split panes sit idle too, and an idle socket is what a
+        // proxy times out. (During a split this.socket belongs to no view.)
         setInterval(() => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                this.send({ type: 'ping' });
-            }
+            const socks = new Set([this.socket]);
+            if (this.views) this.views.forEach(v => socks.add(v.socket));
+            if (this.splitContainer) this.splitContainer.splits.forEach(s => socks.add(s.socket));
+            socks.forEach((sock) => this.sendOnSocket(sock, { type: 'ping' }));
         }, 30000);
     }
 
@@ -3776,7 +3906,7 @@ class ClaudeCodeWebInterface {
             // Start as soon as the new tab joins: session_joined takes this
             // instead of raising the Start prompt. Set before the tab exists —
             // the join lands while attachSessionTab is still awaiting.
-            this.pendingStart = { options };
+            this.pendingStart = { options, sessionId: created.sessionId };
             this.hideNewTabDialog({ cancelled: false });
             await this.attachSessionTab(created.sessionId, name, workingDir, created.session ? created.session.spaceId : undefined);
         } finally {
@@ -3875,11 +4005,35 @@ class ClaudeCodeWebInterface {
         if (closeBtn) closeBtn.addEventListener('click', () => this.hidePlanModal());
     }
     
+    // A structured Claude Code hook event relayed by the server — from a view,
+    // or from a split pane whose session has no connected view (splits.js).
+    handleHookEvent(message, fallbackSessionId = null) {
+        const sessionId = message.sessionId || fallbackSessionId;
+        // The ExitPlanMode PreToolUse event carries the full plan text —
+        // this replaces the old terminal-scraping plan detector.
+        if (message.tool_name === 'ExitPlanMode' &&
+            message.tool_input && message.tool_input.plan) {
+            this.showPlanModal({ content: message.tool_input.plan, sessionId });
+        }
+        // ccweb-companion mod: a Bash call waiting for the web dialog's
+        // answer. The mod's request is held server-side until a button.
+        if (message.event === 'ccweb_permission_request') {
+            this.showPermissionRequestCard(message);
+        }
+        if (this.sessionTabManager) this.sessionTabManager.hookEvent(sessionId, message);
+        // A finished turn is when a new question lands in the
+        // transcript — re-match that session's rail right away.
+        if (message.event === 'Stop') this.refreshTurnRails(sessionId, true);
+    }
+
     showPlanModal(plan) {
         const modal = document.getElementById('planModal');
         const content = document.getElementById('planContent');
 
         content.innerHTML = this.renderPlanMarkdown(plan.content || '');
+        // The answer goes to the session that asked, which is not always the
+        // one on screen (a background tab, the other split pane).
+        this._planSessionId = plan.sessionId || null;
         modal.classList.add('active');
 
         // Play a subtle notification sound (optional)
@@ -3969,13 +4123,12 @@ class ClaudeCodeWebInterface {
         // Current Claude presents plan approval as a menu (❯1. Yes … / 2 / 3),
         // not a y/n prompt. Enter selects the highlighted default ("Yes"), which
         // approves the plan. (The old 'y\n' only worked by accident via the \n.)
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'input',
-                data: '\r' // Enter → approve (select default menu item)
-            }));
+        // Enter → approve (select default menu item)
+        if (!this.sendInput('\r', this._planSessionId)) {
+            this.showToast('That task is not connected; answer in its terminal', true);
+            return;
         }
-        
+
         this.hidePlanModal();
 
         // Show confirmation
@@ -3987,13 +4140,12 @@ class ClaudeCodeWebInterface {
         // and returns to plan mode (verified against Claude 2.1.218) without
         // approving. (The old 'n\n' actually approved: 'n' isn't a menu key and
         // the trailing newline selected the default "Yes".)
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'input',
-                data: '\x1b' // Escape → cancel approval, stay in plan mode
-            }));
+        // Escape → cancel approval, stay in plan mode
+        if (!this.sendInput('\x1b', this._planSessionId)) {
+            this.showToast('That task is not connected; answer in its terminal', true);
+            return;
         }
-        
+
         this.hidePlanModal();
 
         // Show confirmation

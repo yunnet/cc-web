@@ -173,7 +173,9 @@ class Split {
         this.fitAddon = null;
         this.webLinksAddon = null;
         this.socket = null;
-        
+        // The server hibernated this pane's Claude; focusing the pane resumes it.
+        this.hibernated = false;
+
         this.createTerminal();
     }
 
@@ -231,11 +233,22 @@ class Split {
             console.warn('Unicode11 addon unavailable (split):', e);
         }
 
-        // Same jump-to-latest button as the main terminal, for this pane.
-        if (this.app) {
-            this.terminal.onScroll(() => this.app.updateScrollBottom(this.terminal));
-            this.terminal.onRender(() => this.app.updateScrollBottom(this.terminal));
-        }
+        // This pane's own jump-to-latest button (TERM-33), in the pane's own
+        // corner. There used to be one page-wide button that answered for the
+        // focused pane only: scrolling the other pane up (a wheel does not move
+        // focus) showed nothing, and when it did show it sat in the right
+        // pane's corner while acting on the left one.
+        this.jumpBtn = document.createElement('button');
+        this.jumpBtn.type = 'button';
+        this.jumpBtn.className = 'scroll-bottom-btn pane-jump-btn';
+        this.jumpBtn.title = 'Jump to latest';
+        this.jumpBtn.setAttribute('aria-label', 'Jump to latest');
+        this.jumpBtn.hidden = true;
+        this.jumpBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="4" x2="12" y2="17"></line><polyline points="6 11 12 17 18 11"></polyline></svg>';
+        this.jumpBtn.addEventListener('click', () => this.scrollToLatest());
+        this.container.appendChild(this.jumpBtn);
+        this.terminal.onScroll(() => this.updateJump());
+        this.terminal.onRender(() => this.updateJump());
 
         this.terminal.open(terminalDiv);
 
@@ -307,8 +320,13 @@ class Split {
 
         // Setup terminal input handler
         this.terminal.onData((data) => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                this.socket.send(JSON.stringify({ type: 'input', data }));
+            // Drop xterm's focus reports (ESC[I / ESC[O), as the main view does:
+            // a killed Claude can leave focus tracking on, and every click on
+            // the other pane would otherwise reach the server as input — which,
+            // to a stopped session, means "start it" (see 'info').
+            const filtered = data.replace(/\x1b\[\[?[IO]/g, '');
+            if (filtered && this.socket && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({ type: 'input', data: filtered }));
             }
         });
         
@@ -340,7 +358,8 @@ class Split {
         }
         
         this.sessionId = sessionId;
-        
+        this.hibernated = false;
+
         // Connect to new session
         if (sessionId) {
             await this.connect(sessionId);
@@ -401,12 +420,82 @@ class Split {
                     const joined = msg.outputBuffer.join('');
                     this.terminal.write(joined);
                 }
+                // Not running: the same rule as the main view (2026-10-28) -
+                // start it, with the options the new task dialog chose for
+                // this very session, else the remembered defaults. A pane used
+                // to sit on a stopped session with no way to start it, which is
+                // what a task created while split looked like.
+                // A session that already has a view in this page was stopped
+                // where you could see it (or hibernated): its own state rules —
+                // splitting must not restart a Claude you just stopped. A
+                // hibernated one resumes when this pane is focused.
+                if (!msg.active) {
+                    const app = this.app;
+                    const pending = app && app.pendingStart;
+                    const view = app && app.views && app.views.get(this.sessionId);
+                    if (pending && pending.sessionId === this.sessionId) {
+                        app.pendingStart = null;
+                        this.startClaude(pending.options);
+                    } else if (view) {
+                        this.hibernated = !!view.hibernated;
+                    } else {
+                        this.terminal.write(`\r\n\x1b[33m${this.alias()} is not running, starting with default options…\x1b[0m\r\n`);
+                        this.startClaude(this.defaultStartOptions());
+                    }
+                }
                 break;
-                
+
             case 'claude_started':
-                console.log(`[Split ${this.index}] Claude started`);
+                this.hibernated = false;
+                if (this.sessionId && this.app && this.app.sessionTabManager) {
+                    this.app.sessionTabManager.updateTabStatus(this.sessionId, 'active');
+                }
                 break;
-                
+
+            case 'claude_stopped':
+                if (this.sessionId && this.app && this.app.sessionTabManager) {
+                    this.app.sessionTabManager.setTabWorking(this.sessionId, false);
+                }
+                this.terminal.write(`\r\n\x1b[33m${this.alias()} stopped\x1b[0m\r\n`);
+                break;
+
+            case 'claude_hibernated': {
+                // Same notice as the main view. Focusing the pane resumes it.
+                this.hibernated = true;
+                const stm = this.app && this.app.sessionTabManager;
+                if (stm && this.sessionId) {
+                    stm.setTabWorking(this.sessionId, false);
+                    stm.updateTabStatus(this.sessionId, 'idle');
+                }
+                const why = msg.reason === 'cap'
+                    ? `too many ${this.alias()} instances running at once`
+                    : `idle for ${msg.idleMinutes} min`;
+                this.terminal.write(`\r\n\x1b[2m[Hibernated] ${why}, so ${this.alias()} was stopped to save memory. The conversation resumes when you focus this pane.\x1b[0m\r\n`);
+                if (this.isActive && document.visibilityState === 'visible') this.resumeIfHibernated();
+                break;
+            }
+
+            case 'info':
+                // "Claude is not running" after a keystroke: start it, as the
+                // main view does for the view on screen — here, the focused
+                // pane. A hibernated pane is resumed by focusing it instead.
+                if (msg.message && msg.message.includes('not running') && this.isActive && !this.hibernated) {
+                    this.startClaude(this.defaultStartOptions());
+                }
+                break;
+
+            case 'session_deleted': {
+                // Deleted in another window. If this pane is the only place the
+                // page shows it, nothing else will close its tab.
+                const id = msg.sessionId || this.sessionId;
+                const stm = this.app && this.app.sessionTabManager;
+                if (id && stm && stm.tabs.has(id)) {
+                    stm.closeSession(id, { skipServerRequest: true });
+                    if (this.app.showToast) this.app.showToast('This session was deleted in another window; its tab was closed', true, 5000);
+                }
+                break;
+            }
+
             case 'exit':
                 this.terminal.write('\r\n[Process exited]\r\n');
                 if (this.sessionId && this.app && this.app.sessionTabManager) {
@@ -414,10 +503,19 @@ class Split {
                 }
                 break;
                 
-            case 'hook_event':
-                // A session shown only in a pane has no main view to hear this.
-                if (this.app && this.app.sessionTabManager) this.app.sessionTabManager.hookEvent(this.sessionId, msg);
+            case 'hook_event': {
+                // The same handler as the main view (app.handleHookEvent). When
+                // the session also has a connected view (a tab opened before the
+                // split), that view handles it — twice doubled the notifications
+                // and the plan dialog. A view whose socket died hears nothing,
+                // so then the pane does.
+                const app = this.app;
+                if (!app || typeof app.handleHookEvent !== 'function') break;
+                const view = app.views && app.views.get(this.sessionId);
+                if (view && view.socket && view.socket.readyState === WebSocket.OPEN) break;
+                app.handleHookEvent(msg, this.sessionId);
                 break;
+            }
 
             case 'error':
                 this.terminal.write(`\r\n\x1b[31mError: ${msg.message}\x1b[0m\r\n`);
@@ -434,6 +532,58 @@ class Split {
             }
             this.socket = null;
         }
+    }
+
+    alias() {
+        return (this.app && this.app.getAlias) ? this.app.getAlias() : 'Claude';
+    }
+
+    // Show this pane's jump button while it is scrolled up, hide it at the
+    // bottom. Runs on every render, so it touches the DOM only when the answer
+    // changes; placing it clear of the floating buttons happens only then.
+    updateJump() {
+        const btn = this.jumpBtn;
+        if (!btn || !this.terminal) return;
+        const buf = this.terminal.buffer && this.terminal.buffer.active;
+        const away = !!buf && buf.baseY - buf.viewportY > 0;
+        if (away === !btn.hasAttribute('hidden')) return;
+        btn.toggleAttribute('hidden', !away);
+        if (away && this.app && typeof this.app.keepPaneJumpClear === 'function') {
+            this.app.keepPaneJumpClear(btn, this.container);
+        }
+    }
+
+    // Back to this pane's newest screen, and give it the keyboard. The click
+    // also reaches the pane, which focuses it.
+    scrollToLatest() {
+        try { this.terminal.scrollToBottom(); } catch (_) { /* disposed */ }
+        try { this.terminal.focus(); } catch (_) {}
+        this.updateJump();
+    }
+
+    defaultStartOptions() {
+        return (this.app && this.app.startDefaultsOptions) ? this.app.startDefaultsOptions() : {};
+    }
+
+    // Start Claude on this pane's own socket, at this pane's size. The server
+    // ignores a second start while one is in flight (server.startClaude).
+    startClaude(options) {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+        const uiTheme = (this.app && this.app.currentUiTheme) ? this.app.currentUiTheme() : undefined;
+        this.socket.send(JSON.stringify({
+            type: 'start_claude', options: options || {}, uiTheme,
+            cols: this.terminal.cols, rows: this.terminal.rows
+        }));
+    }
+
+    resumeIfHibernated() {
+        if (!this.hibernated) return;
+        this.hibernated = false;
+        const stm = this.app && this.app.sessionTabManager;
+        const known = stm && stm.activeSessions.get(this.sessionId);
+        if (known && known.status === 'active') return; // resumed elsewhere
+        this.terminal.write(`\x1b[33mResuming ${this.alias()} conversation…\x1b[0m\r\n`);
+        this.startClaude(this.defaultStartOptions());
     }
 
     fit() {
@@ -472,10 +622,12 @@ class Split {
     clear() {
         this.disconnect();
         this.sessionId = null;
+        this.hibernated = false;
         this.isActive = false;
         if (this.terminal) {
             this.terminal.clear();
         }
+        this.updateJump();
         this.updateActiveState();
     }
 
@@ -584,6 +736,17 @@ class SplitContainer {
 
         main.appendChild(this.splitContainerEl);
 
+        // Paste / drop an image into a pane: uploaded for that pane's session.
+        if (this.app && typeof this.app.wireImageInput === 'function') {
+            // undefined: not in a pane (current session); null: an empty pane,
+            // which has no session to take it — not the other pane's.
+            this.app.wireImageInput(this.splitContainerEl, this.splitContainerEl, (target) => {
+                const el = target && target.closest ? target.closest('.split-pane') : null;
+                const pane = el && this.splits.find(s => s.container === el);
+                return pane ? (pane.sessionId || null) : undefined;
+            });
+        }
+
         // Apply the initial grid layout (columns vs rows) for the current orientation
         this.applyLayout();
 
@@ -660,6 +823,9 @@ class SplitContainer {
         const run = () => {
             this._refitPending = false;
             this.splits.forEach(s => s.syncSize());
+            // Sizes changed (window, divider, orientation, swap): the panes'
+            // jump buttons may now sit under the floating buttons.
+            if (this.app && typeof this.app.reclearPaneJumps === 'function') this.app.reclearPaneJumps();
         };
         if (typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(() => requestAnimationFrame(run));
@@ -763,7 +929,10 @@ class SplitContainer {
         if (orientation === 'horizontal' || orientation === 'vertical') {
             this.orientation = orientation;
         }
-        
+        // The page-wide jump button belongs to the single view: hide it now
+        // (focusSplit, which also refreshes it, can return early).
+        if (this.app && typeof this.app.refreshScrollBottom === 'function') this.app.refreshScrollBottom();
+
         // Hide single terminal container
         const terminalContainer = document.getElementById('terminalContainer');
         if (terminalContainer) {
@@ -779,11 +948,14 @@ class SplitContainer {
 
         // Set sessions - left gets current session, right gets the dragged session
         const currentSessionId = this.app.currentClaudeSessionId;
-        // F1: detach the main terminal from its session first, so the current
-        // session isn't double-attached (main socket + left pane) — two clients
-        // of different sizes would otherwise fight over the PTY resize.
-        if (typeof this.app.leaveSession === 'function') {
-            this.app.leaveSession();
+        // The main view steps back to an ordinary background view: it withdraws
+        // its size vote (so it cannot pin the pty to its size while the pane
+        // shows the session) but stays joined, keeping its scrollback for when
+        // the split closes. It used to leaveSession(), which cleared that
+        // terminal and, through session_left, nulled currentClaudeSessionId
+        // just after the split had set it.
+        if (typeof this.app.parkActiveView === 'function') {
+            this.app.parkActiveView();
         }
         await this.splits[0].setSession(currentSessionId);
         await this.splits[1].setSession(sessionId);
@@ -799,8 +971,12 @@ class SplitContainer {
             this.syncPaneOrderToTabs(stm.getOrderedTabIds());
         }
 
-        // Focus right split (newly created)
-        this.focusSplit(1);
+        // Focus right split (newly created) - the left one when the right is empty.
+        this.focusSplit(sessionId ? 1 : 0);
+        // focusSplit returns early when that pane already had focus, so say
+        // which session is current here rather than rely on it.
+        const focused = this.splits[this.activeSplitIndex];
+        this.app.currentClaudeSessionId = (focused && focused.sessionId) || currentSessionId;
 
         // Save state
         this.saveState();
@@ -810,18 +986,20 @@ class SplitContainer {
 
     // NOTE: closeSplit hands the screen back to the main terminal, so the jump
     // button has to ask it where it is (see the end of this method).
-    closeSplit() {
+    // target: the session to show afterwards (default: the focused pane's).
+    // rejoin:false leaves the choice to the caller (a tab close that switches
+    // on its own).
+    closeSplit({ target = null, rejoin = true } = {}) {
         if (!this.enabled) return;
 
         this.enabled = false;
 
-        // Capture which session the main terminal should rejoin BEFORE we clear
-        // the panes' sessionIds. currentClaudeSessionId can be null here (entering
-        // split leaveSession's the main socket, whose async ack nulls it), so fall
-        // back to the focused pane's session — that is what the user was looking at.
+        // Capture which session to show BEFORE we clear the panes' sessionIds:
+        // the focused pane's, which is what the user was looking at.
         const activePane = this.splits[this.activeSplitIndex];
-        const rejoinId = this.app.currentClaudeSessionId
+        const rejoinId = target
             || (activePane && activePane.sessionId)
+            || this.app.currentClaudeSessionId
             || (this.splits[0] && this.splits[0].sessionId)
             || null;
 
@@ -840,27 +1018,29 @@ class SplitContainer {
         // Clear splits but don't destroy terminals (we'll reuse them)
         this.splits.forEach((split, i) => {
             split.sessionId = null;
+            split.hibernated = false;
             split.isActive = (i === 0);
             split.updateActiveState();
             if (split.terminal) {
                 split.terminal.clear();
             }
+            if (split.updateJump) split.updateJump();
         });
-        
+
         this.activeSplitIndex = 0;
 
-        // Reconnect main terminal to the captured session. The main socket
-        // stayed open (we only leaveSession'd on enter), so rejoin it rather
-        // than opening a new socket.
-        if (rejoinId) {
-            this.app.currentClaudeSessionId = rejoinId;
-            setTimeout(() => {
-                if (typeof this.app.joinSession === 'function') {
-                    this.app.joinSession(rejoinId);
-                } else {
-                    this.app.connect();
-                }
-            }, 100);
+        // Show that session's own view, the way a tab switch does: a view that
+        // already exists (the one parked on entering) comes back with its
+        // scrollback and re-asserts its size; one that does not is built and
+        // joined. This used to joinSession() on whatever socket was current,
+        // which, with the other pane focused, put tab A's terminal on session B.
+        if (rejoin && rejoinId) {
+            const stm = this.app.sessionTabManager;
+            if (stm && stm.tabs.has(rejoinId)) {
+                stm.switchToTab(rejoinId);
+            } else if (typeof this.app.showSession === 'function') {
+                this.app.showSession(rejoinId);
+            }
         }
 
         // Save state
@@ -906,6 +1086,7 @@ class SplitContainer {
         if (split.terminal) {
             split.terminal.focus();
         }
+        split.resumeIfHibernated();
 
         // Update app's current session to match this split
         if (split.sessionId && this.app) {
@@ -943,6 +1124,7 @@ class SplitContainer {
                 this.focusSplit(existing);
             } else if (this.app) {
                 this.app.currentClaudeSessionId = sessionId;
+                this.splits[existing].resumeIfHibernated();
             }
             return;
         }
@@ -955,6 +1137,19 @@ class SplitContainer {
             this.scheduleRefit();
             this.saveState();
         }
+    }
+
+    // A tab was closed (here, or deleted in another window). If a pane shows
+    // it, fold the split away onto the other pane's session; that switch sets
+    // activeTabId before its first await, so the closing tab manager does not
+    // also switch to a fallback of its own. With no other session, leave the
+    // switch to the tab manager.
+    onSessionClosed(sessionId) {
+        if (!this.enabled || !sessionId) return;
+        const pane = this.splits.find(s => s.sessionId === sessionId);
+        if (!pane) return;
+        const other = this.splits.find(s => s !== pane && s.sessionId);
+        this.closeSplit(other ? { target: other.sessionId } : { rejoin: false });
     }
 
     setupKeyboardShortcuts() {

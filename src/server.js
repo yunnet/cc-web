@@ -2279,8 +2279,22 @@ class ClaudeCodeWebServer {
     // Capture the session ID to avoid closure issues
     const sessionId = wsInfo.claudeSessionId;
 
+    // A start already in flight for this session. session.active is only set
+    // after several awaits below, so two views asking at nearly the same moment
+    // (a split pane and the tab it came from) both got past the check above and
+    // the loser came back as an error overlay. The first start broadcasts
+    // claude_started to every client of the session, the second asker included.
+    if (session._starting) {
+      // Answered with the first start's outcome: claude_started reaches every
+      // client of the session; a failure is sent to each one that asked.
+      session._startWaiters.add(wsInfo.ws);
+      return;
+    }
+
     if (this.startCircuitOpen(session)) return void this.refuseStart(wsInfo);
     session._startAt = Date.now();
+    session._starting = true;
+    session._startWaiters = new Set([wsInfo.ws]);
 
     // Per-session secret for the hook relay endpoint. Generated once and reused
     // across resumes so the injected hook command stays valid for the session.
@@ -2417,10 +2431,11 @@ class ClaudeCodeWebServer {
       if (this.dev) {
         console.error(`Error starting Claude in session ${wsInfo.claudeSessionId}:`, error);
       }
-      this.sendToWebSocket(wsInfo.ws, {
-        type: 'error',
-        message: `Failed to start Claude Code: ${error.message}`
-      });
+      const failure = { type: 'error', message: `Failed to start Claude Code: ${error.message}` };
+      for (const ws of session._startWaiters || [wsInfo.ws]) this.sendToWebSocket(ws, failure);
+    } finally {
+      session._starting = false;
+      session._startWaiters = null;
     }
   }
 

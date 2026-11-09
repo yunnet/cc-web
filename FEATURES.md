@@ -30,7 +30,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-12 | 输出里的 http(s) 网址可以点击，点了在新标签页打开 | 手工 | — |
 | TERM-13 | 输出里 `.claude/plans/*.md` 形式的计划文件路径可以点击，在新浏览器标签打开（URL 以 .md 结尾，方便 Markdown 插件渲染）；中文、emoji、路径前面紧贴文字时，下划线也对得准；按该终端所属的会话解析 | `wire:app.js:registerPlanLinks` `wire:splits.js:registerPlanLinks` `xterm:splits.js:registerLinkProvider` | `test/feature-guards.test.js` |
 | TERM-14 | 每个终端在本地保留 5 万行滚动历史 | 手工 | — |
-| TERM-33 | 终端向上翻看历史时，右下角出现一个圆形按钮，点一下回到最新一屏并把键盘焦点还给终端；回到底部后按钮自动消失。主终端和分屏窗格都有，按钮作用于当前在看的那个终端；手机上按钮更大并让开右边的悬浮按钮 | `control:scrollBottomBtn` | `test/feature-guards.test.js` |
+| TERM-33 | 终端向上翻看历史时，右下角出现一个圆形按钮，点一下回到最新一屏并把键盘焦点还给终端；回到底部后按钮自动消失。单屏时在页面右下角；分屏时每个窗格右下角各有一个，只看自己翻没翻上去（不管聚焦在哪个窗格），点哪个回哪个，并让开安装按钮和右侧悬浮按钮；手机上按钮更大并让开右边的悬浮按钮 | `control:scrollBottomBtn` `js-control:splits.js:Jump to latest` | `test/feature-guards.test.js` `test/split-views.test.js` |
 | TERM-32 | Claude 输出的超链接（OSC 8）可以点击：网址在新标签页打开，计划文件按计划链接打开，其他本机文件用文件浏览器预览；`javascript:`、`data:`、外部主机的 `file:` 等一律不响应；不弹 xterm 的「危险链接」确认框。Markdown 链接只显示链接文字、不再显示「(url)」（用户 2026-09-22 同意：「链接也同意」） | `env:FORCE_HYPERLINK` `xterm:app.js:linkHandler` `xterm:splits.js:linkHandler` `file:src/public/terminal-links.js` | `test/terminal-links.test.js` `test/claude-bridge.test.js` |
 | TERM-15 | 桌面鼠标滚轮平滑滚动；按住 Shift 滚轮时 5 倍速 | `setting:smoothScrollDuration` | — |
 | TERM-16 | 光标像原生终端一样闪烁；字体为本地托管的 JetBrains Mono，默认字号桌面 14、手机 12 | `setting:fontSize` | — |
@@ -271,12 +271,14 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SPLIT-10 | 分屏窗格进程退出时显示「[Process exited]」，出错显示红字 | `ws-client:splits.js:output` `ws-client:splits.js:session_joined` `ws-client:splits.js:claude_started` `ws-client:splits.js:error` | — |
 | SPLIT-11 | 从布局菜单或快捷键开分屏时，第二个窗格自动装入标签栏里的另一个标签；只有一个标签时右窗格是空白 | 手工 | — |
 | SPLIT-12 | 已经分屏时再选另一个方向只改变排列，不断开连接、不重新回放 | 手工 | — |
-| SPLIT-13 | 关闭分屏后主终端回到你当时聚焦的那个窗格的会话，并清空两个窗格；下次分屏靠服务器回放重新填满 | 手工 | — |
-| SPLIT-14 | 进入分屏前主终端先离开会话，避免同一会话被两个客户端占住而把 PTY 尺寸压小 | 手工 | `test/pty-size-negotiation.test.js` |
+| SPLIT-13 | 关闭分屏后回到你当时聚焦的那个窗格的会话（和点标签一样切过去：标签高亮、侧边栏同步），并清空两个窗格；那个会话原来的终端直接显示、不重新回放，滚动历史还在；下次分屏靠服务器回放重新填满窗格 | 手工 | `test/split-views.test.js` |
+| SPLIT-14 | 进入分屏时主终端撤回自己的尺寸（不再离开会话），避免同一会话被两个客户端占住而把 PTY 尺寸压小；它转为后台继续接收输出，当前会话不会被清空 | 手工 | `test/pty-size-negotiation.test.js` `test/split-views.test.js` |
 | SPLIT-15 | 交换窗格位置后，× 关闭按钮跟着那个窗格走，不固定在右窗格 | 手工 | — |
 | SPLIT-16 | 拖标签分屏：只有离右边或下边 120px 以内才出现放置提示；两边都近时优先上下分屏；拖当前已显示的标签则不分屏；窗口窄于 700px 时连提示都不出 | 手工 | — |
 | SPLIT-17 | 分隔条悬停变亮；拖动过程中整页指针变成调整箭头 | 手工 | — |
 | SPLIT-18 | 分屏窗格用 Canvas 渲染（不走 WebGL 那一档），Canvas 不可用时退到 DOM | 手工 | `test/renderer-mode.test.js` |
+| SPLIT-19 | 分屏时工具栏的 ESC、模式切换（Shift+Tab）、→ 键、计划弹窗的批准/拒绝，以及粘贴或拖入图片，都作用于对应的窗格会话（工具栏按键给聚焦窗格，图片给放进去的那个窗格，计划弹窗给提出计划的会话） | 手工 | `test/split-views.test.js` |
+| SPLIT-20 | 窗格里的会话没在运行时自动按默认选项启动（分屏时新建的任务按新建对话框选的选项启动）；Claude 停止时显示「stopped」；被休眠时显示说明，聚焦该窗格即恢复；在别的窗口被删除时关掉它的标签；窗格里的会话被关闭时分屏收起到另一个窗格 | `ws-client:splits.js:claude_stopped` `ws-client:splits.js:claude_hibernated` `ws-client:splits.js:info` `ws-client:splits.js:session_deleted` | `test/split-views.test.js` |
 ## 设置与菜单
 
 | ID | 功能 | 入口 | 守卫 |

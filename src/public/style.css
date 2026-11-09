@@ -4707,6 +4707,18 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     display: none;
 }
 
+/* Split: each pane carries its own button (splits.js), in its own corner.
+   Only placement is overridden, so the phone size below and [hidden] still
+   apply. A pane is not a stacking context, so not 900 (that would sit over
+   drawers and menus): just above xterm and the pane's close button (10).
+   app.js keepPaneJumpClear lifts it over the install button / key stack. */
+.split-pane > .scroll-bottom-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 20;
+}
+
 
 /* Bigger touch target on a phone, clear of the home indicator. */
 @media (max-width: 1024px) and (hover: none) and (pointer: coarse), (max-width: 768px) {

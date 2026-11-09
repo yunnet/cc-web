@@ -809,8 +809,8 @@ class SessionTabManager {
         }
 
         // In split mode the tab targets the active pane (VS Code-style). Do NOT
-        // join the main terminal: it is hidden (collapsed to ~10x5) and joining it
-        // would resize the shared PTY to that tiny size, blanking the panes.
+        // show a main view: the main terminal area is hidden, and a view shown
+        // there would report its size and fight the panes over the shared PTY.
         const app = this.claudeInterface;
         if (app && app.splitContainer && app.splitContainer.enabled) {
             await app.splitContainer.onTabSwitch(sessionId);
@@ -877,6 +877,10 @@ class SessionTabManager {
         // Its terminal and socket go with it — and before the delete below, so
         // the server's session_deleted finds no socket of ours to land on.
         if (this.claudeInterface && this.claudeInterface.disposeView) this.claudeInterface.disposeView(sessionId);
+        // A split pane showing it would be left on a deleted session: fold the
+        // split onto the other pane (splits.js onSessionClosed).
+        const split = this.claudeInterface && this.claudeInterface.splitContainer;
+        if (split && typeof split.onSessionClosed === 'function') split.onSessionClosed(sessionId);
 
         // Remove tab
         tab.remove();

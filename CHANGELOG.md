@@ -159,6 +159,32 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **Each split pane has its own jump-to-latest button.** There was one
+  page-wide button that answered for the focused pane only: scrolling the
+  other pane up (a wheel does not move focus) showed nothing, and a shown
+  button sat in the right pane's corner while acting on the left one
+  (measured on 32353). Now every pane carries its own in its own corner,
+  shown while that pane is scrolled up whatever has focus; it lifts itself
+  above the install button and the ESC/MODE stack, inside its pane. The
+  single view keeps the page button. Plan:
+  `docs/fix-plan-split-jump-button-2026-11-09.md`.
+- **Split panes no longer mix up sessions.** Entering a split used
+  `leaveSession()` and closing it `joinSession(id)` — both on whatever socket
+  was current, which since per-tab views is one tab's own. Closing a split with
+  the other pane focused left tab A's terminal attached to session B until a
+  reload (measured on 32353), re-joining wiped the scrollback, and the current
+  session was null right after entering. Now the main view is parked as an
+  ordinary background view (size vote withdrawn, still joined) and closing
+  switches to the focused pane's session like a tab click. Toolbar Esc /
+  Shift+Tab / →, the plan dialog's answer and pasted or dropped images go to
+  the pane or session they belong to; panes start a stopped session, resume a
+  hibernated one on focus, and fold away when their tab is closed or deleted
+  elsewhere. Alongside: a background tab whose Claude stops no longer raises
+  the Start prompt over the tab you are on, a view whose socket died is joined
+  again when shown, every socket gets the heartbeat, the theme reaches
+  background views, and the server ignores a second `start_claude` while one
+  is in flight instead of answering with an error. Plan:
+  `docs/fix-plan-split-view-2026-11-09.md`; guards: `test/split-views.test.js`.
 - **Permission mode "default" no longer reaches the CLI.** Old sessions carry
   `permissionMode: "default"`; `launchArgs` passed it through as
   `--permission-mode default`, a choice the installed CLI no longer has

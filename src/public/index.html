@@ -1087,6 +1087,7 @@
                 });
                 
                 document.body.appendChild(installBtn);
+                if (window.app && window.app.reclearPaneJumps) window.app.reclearPaneJumps();
             }
         });
         
@@ -1096,6 +1097,7 @@
             const installBtn = document.getElementById('installBtn');
             if (installBtn) {
                 installBtn.remove();
+                if (window.app && window.app.reclearPaneJumps) window.app.reclearPaneJumps();
             }
         });
     </script>
