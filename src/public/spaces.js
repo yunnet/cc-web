@@ -145,7 +145,7 @@ class SpacesSidebar {
         const recent = this.sortMode === 'recent';
         btn.classList.toggle('active', recent);
         btn.setAttribute('aria-pressed', String(recent));
-        btn.title = recent ? '排序：最近更新（点击切为手动）' : '排序：手动（点击切为最近更新）';
+        btn.title = recent ? 'Sort: recently updated (click for manual)' : 'Sort: manual (click for recently updated)';
         btn.setAttribute('aria-label', btn.title);
     }
 
@@ -271,11 +271,11 @@ class SpacesSidebar {
         row.type = 'button';
         row.className = 'remote-task';
         row.dataset.sessionId = s.id;
-        row.title = `${s.name || 'Session'}\n未在本设备打开，点击打开`;
+        row.title = `${s.name || 'Session'}\nNot open on this device, click to open`;
         row.innerHTML = `
             <span class="remote-dot" aria-hidden="true"></span>
             <span class="remote-name">${escapeHtml(s.name || 'Session')}</span>
-            <span class="remote-hint">未在本设备打开</span>
+            <span class="remote-hint">Not open on this device</span>
         `;
         row.addEventListener('click', () => this.openRemote(s));
         return row;
@@ -442,12 +442,12 @@ class SpacesSidebar {
         const params = new URLSearchParams();
         if (path) params.append('path', path);
         if (hidden) params.append('showHidden', 'true');
-        list.innerHTML = '<div class="nsb-empty">加载中…</div>';
+        list.innerHTML = '<div class="nsb-empty">Loading…</div>';
         try {
             const res = await this.app.authFetch(`/api/folders?${params}`);
             if (!res || !res.ok) {
                 if (res && res.status === 401 && window.authManager) { window.authManager.showLoginPrompt(); return; }
-                list.innerHTML = '<div class="nsb-empty">无法打开这个目录</div>';
+                list.innerHTML = '<div class="nsb-empty">Cannot open this folder</div>';
                 return;
             }
             const data = await res.json();
@@ -461,7 +461,7 @@ class SpacesSidebar {
             if (!data.folders || data.folders.length === 0) {
                 // An empty folder is a perfectly good project dir — say so,
                 // or "empty" reads as "wrong place".
-                list.innerHTML = '<div class="nsb-empty">这个目录是空的。如果它就是你要绑定的目录，直接点「选定此目录」。</div>';
+                list.innerHTML = '<div class="nsb-empty">This folder is empty. If it is the folder you want, click Use this folder.</div>';
                 return;
             }
             data.folders.forEach(folder => {
@@ -479,7 +479,7 @@ class SpacesSidebar {
                 list.appendChild(row);
             });
         } catch (error) {
-            list.innerHTML = '<div class="nsb-empty">无法打开这个目录</div>';
+            list.innerHTML = '<div class="nsb-empty">Cannot open this folder</div>';
         }
     }
 
@@ -584,7 +584,7 @@ class SpacesSidebar {
             for (const [sessionId, session] of tabs.activeSessions) {
                 const spaceId = this.sessionSpace(sessionId);
                 const space = spaceId ? this.spaceById(spaceId) : null;
-                const spaceName = space ? space.name : '未分组';
+                const spaceName = space ? space.name : 'Ungrouped';
                 const name = (session && session.name) || 'Session';
                 if (!name.toLowerCase().includes(q) && !spaceName.toLowerCase().includes(q)) continue;
                 count++;
@@ -605,7 +605,7 @@ class SpacesSidebar {
         for (const s of this.serverSessions.values()) {
             if (tabs && tabs.tabs.has(s.id)) continue;
             const space = (s.spaceId && this.spaceById(s.spaceId)) || null;
-            const spaceName = space ? space.name : '未分组';
+            const spaceName = space ? space.name : 'Ungrouped';
             const name = s.name || 'Session';
             if (!name.toLowerCase().includes(q) && !spaceName.toLowerCase().includes(q)) continue;
             count++;
@@ -614,13 +614,13 @@ class SpacesSidebar {
             row.innerHTML = `
                 <span class="remote-dot" aria-hidden="true"></span>
                 <span class="search-hit-name">${escapeHtml(name)}</span>
-                <span class="search-hit-space">${escapeHtml(spaceName)} · 未在本设备打开</span>
+                <span class="search-hit-space">${escapeHtml(spaceName)} · Not open on this device</span>
             `;
             row.addEventListener('click', () => { this.clearSearch(); this.openRemote(s); });
             box.appendChild(row);
         }
         if (count === 0) {
-            box.innerHTML = '<div class="nsb-empty">没有匹配的任务</div>';
+            box.innerHTML = '<div class="nsb-empty">No matching tasks</div>';
         }
     }
 
@@ -785,12 +785,12 @@ class SpacesSidebar {
         const name = nameInput.value.trim() || (dir ? (dir.split('/').pop() || dir) : '');
         this.setNewSpaceError(null);
         if (!dir) {
-            this.setNewSpaceError('请填写工作目录。');
+            this.setNewSpaceError('Enter a working folder');
             dirInput.focus();
             return;
         }
         if (this.spaces.some(s => s.dir === dir)) {
-            this.setNewSpaceError('这个目录已经是另一个空间的工作目录。');
+            this.setNewSpaceError('This folder is already the working folder of another space');
             dirInput.focus();
             return;
         }
@@ -804,14 +804,14 @@ class SpacesSidebar {
             });
             if (!res || !res.ok) {
                 const data = res ? await res.json().catch(() => ({})) : {};
-                this.setNewSpaceError(data.message || data.error || '创建空间失败，请检查目录路径。');
+                this.setNewSpaceError(data.message || data.error || 'Could not create the space, check the folder path');
                 return;
             }
             this.closeNewSpaceDialog();
             await this.reloadSpaces();
-            if (this.app.showToast) this.app.showToast(`空间「${name}」已创建`);
+            if (this.app.showToast) this.app.showToast(`Space "${name}" created`);
         } catch (error) {
-            this.setNewSpaceError('创建空间失败，请检查连接后重试。');
+            this.setNewSpaceError('Could not create the space, check the connection and try again');
         } finally {
             btn.disabled = false;
         }
@@ -848,7 +848,7 @@ class SpacesSidebar {
             ? sidebar.classList.contains('drawer-open')
             : !document.body.classList.contains('sidebar-hidden');
         toggle.setAttribute('aria-expanded', String(open));
-        toggle.title = open ? '收起侧边栏' : '展开侧边栏';
+        toggle.title = open ? 'Collapse sidebar' : 'Expand sidebar';
     }
 
     closeDrawer() {
@@ -963,17 +963,17 @@ class SpacesSidebar {
                     <polyline points="9 18 15 12 9 6"/>
                 </svg>
             </span>
-            <span class="space-name" title="${space ? escapeHtml(space.dir) : '不属于任何空间的任务'}">${space ? escapeHtml(space.name) : '未分组'}</span>
+            <span class="space-name" title="${space ? escapeHtml(space.dir) : 'Tasks not in any space'}">${space ? escapeHtml(space.name) : 'Ungrouped'}</span>
             <span class="space-dir" title="${space ? escapeHtml(space.dir) : ''}">${space ? escapeHtml(space.dir) : ''}</span>
             <span class="space-actions">
-                <button class="space-action space-add-task" title="在这个空间新建任务">
+                <button class="space-action space-add-task" title="New task in this space">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/>
                         <line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
                 </button>
                 ${space ? `
-                <button class="space-action space-delete" title="删除空间（任务保留，转入未分组）">
+                <button class="space-action space-delete" title="Delete space (tasks are kept and move to Ungrouped)">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <line x1="18" y1="6" x2="6" y2="18"/>
                         <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1058,11 +1058,11 @@ class SpacesSidebar {
                     this.updateBreadcrumb();
                 } else {
                     span.textContent = currentName;
-                    if (this.app.showToast) this.app.showToast('空间改名失败', true);
+                    if (this.app.showToast) this.app.showToast('Rename space failed', true);
                 }
             }).catch(() => {
                 span.textContent = currentName;
-                if (this.app.showToast) this.app.showToast('空间改名失败', true);
+                if (this.app.showToast) this.app.showToast('Rename space failed', true);
             });
         };
         input.addEventListener('blur', save);
@@ -1075,19 +1075,19 @@ class SpacesSidebar {
     async deleteSpace(space) {
         const count = this.countTasks(space.id);
         const ok = await this.app.confirmDialog({
-            title: '删除空间',
-            body: `删除空间「${space.name}」？其中的 ${count} 个任务会保留，转入「未分组」。`,
-            confirmText: '删除空间',
+            title: 'Delete space',
+            body: `Delete space "${space.name}"? Its ${count} task(s) are kept and move to Ungrouped.`,
+            confirmText: 'Delete space',
             danger: true,
         });
         if (!ok) return;
         const res = await this.app.authFetch(`/api/spaces/${encodeURIComponent(space.id)}`, { method: 'DELETE' });
         if (!res || !res.ok) {
-            if (this.app.showToast) this.app.showToast('删除空间失败', true);
+            if (this.app.showToast) this.app.showToast('Delete space failed', true);
             return;
         }
         await this.reloadSpaces();
-        if (this.app.showToast) this.app.showToast(`空间已删除，${count} 个任务转入未分组`);
+        if (this.app.showToast) this.app.showToast(`Space deleted, ${count} task(s) moved to Ungrouped`);
     }
 
     // Every task of the space on the server, not just the ones open here —
@@ -1163,13 +1163,13 @@ class SpacesSidebar {
             rows.forEach((row, i) => row.classList.toggle('wm-hidden', i >= wanted));
             if (wanted >= rows.length) {
                 if (wanted > SpacesSidebar.WATERMARK_DEFAULT) {
-                    moreRow.textContent = '收起';
+                    moreRow.textContent = 'Show less';
                     moreRow.hidden = false;
                 } else {
                     moreRow.remove();
                 }
             } else {
-                moreRow.textContent = `显示更多（还有 ${rows.length - wanted} 个）`;
+                moreRow.textContent = `Show more (${rows.length - wanted} more)`;
                 moreRow.hidden = false;
             }
         }
@@ -1225,8 +1225,8 @@ class SpacesSidebar {
         const spaceId = this.sessionSpace(sessionId);
         const space = spaceId ? this.spaceById(spaceId) : null;
         if (crumbSpace) {
-            crumbSpace.textContent = space ? space.name : '未分组';
-            crumbSpace.title = space ? `${space.name} · ${space.dir}` : '未分组';
+            crumbSpace.textContent = space ? space.name : 'Ungrouped';
+            crumbSpace.title = space ? `${space.name} · ${space.dir}` : 'Ungrouped';
             crumbSpace.classList.toggle('ungrouped', !space);
         }
         if (crumbTask) {
@@ -1269,13 +1269,13 @@ class SpacesSidebar {
             body: JSON.stringify({ spaceId: spaceId || null })
         });
         if (!res || !res.ok) {
-            if (this.app.showToast) this.app.showToast('移动任务失败', true);
+            if (this.app.showToast) this.app.showToast('Move task failed', true);
             return;
         }
         this.noteSession(sessionId, spaceId || null);
         this.render();
         const space = spaceId ? this.spaceById(spaceId) : null;
-        if (this.app.showToast) this.app.showToast(spaceId ? `已移入「${space ? space.name : ''}」` : '已移入未分组');
+        if (this.app.showToast) this.app.showToast(spaceId ? `Moved to "${space ? space.name : ''}"` : 'Moved to Ungrouped');
     }
 
     // Where Ctrl+T / the header + create: the space of the active task, so a

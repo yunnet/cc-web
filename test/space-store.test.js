@@ -211,7 +211,7 @@ describe('spaces on the server', function () {
       const res = mockRes();
       route('post', '/api/spaces')({ body: { name: 'x', dir: path.join(dir, 'nope') } }, res);
       assert.strictEqual(res.statusCode, 400);
-      assert.ok(res.body.message.includes('工作目录'), 'the refusal says so in Chinese');
+      assert.ok(res.body.message.includes('working folder'), 'the refusal says so');
       assert.strictEqual(server.spaces.length, 0);
     });
 

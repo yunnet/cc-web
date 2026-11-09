@@ -164,7 +164,7 @@ describe('per-user data (M2)', function () {
     const byBob = await request('POST', '/api/sessions/create', { cookie: bob.cookie, body: { workingDir: work, resumeId: convId } });
     assert.strictEqual(byBob.status, 409);
     assert.strictEqual(byBob.json.sessionId, undefined);
-    assert.ok(/其他用户/.test(byBob.json.message));
+    assert.ok(/Another user/.test(byBob.json.message));
     const byAlice = await request('POST', '/api/sessions/create', { cookie: alice.cookie, body: { workingDir: work, resumeId: convId } });
     assert.strictEqual(byAlice.status, 409);
     assert.strictEqual(byAlice.json.sessionId, convId, 'her own tab is still offered');

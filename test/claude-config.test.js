@@ -398,13 +398,13 @@ describe('Claude directory on the server (shared ~/.claude since 2026-11-06)', f
 
     const get = async (who, owner) => (await request('GET', `/api/usage/overview?range=7d&owner=${owner}`, { cookie: who.cookie })).json;
     const all = await get(alice, 'all');
-    assert.deepStrictEqual(all.groups.map((g) => [g.name, g.tokens, g.me]), [['不在 cc-web 里', 40, false], ['bob', 20, false], ['alice', 10, true]]);
+    assert.deepStrictEqual(all.groups.map((g) => [g.name, g.tokens, g.me]), [['Outside cc-web', 40, false], ['bob', 20, false], ['alice', 10, true]]);
     assert.strictEqual(all.sessions.find((s) => s.id === ID_B).account, 'bob');
     assert.deepStrictEqual((await get(alice, bob.user.id)).sessions.map((s) => s.id), [ID_B]);
     assert.deepStrictEqual((await get(alice, 'none')).sessions.map((s) => s.id), [ID_C]);
 
     const b = await get(bob, 'all');
-    assert.deepStrictEqual(b.groups.map((g) => [g.name, g.tokens]), [['其他账号', 50], ['bob', 20]]);
+    assert.deepStrictEqual(b.groups.map((g) => [g.name, g.tokens]), [['Other accounts', 50], ['bob', 20]]);
     assert.ok(!JSON.stringify(b).includes('alice'), 'no other account is named to a regular user');
     assert.deepStrictEqual((await get(bob, 'me')).sessions.map((s) => s.id), [ID_B]);
     const peek = await get(bob, alice.user.id);

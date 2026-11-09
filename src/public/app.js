@@ -1025,7 +1025,7 @@ class ClaudeCodeWebInterface {
     // confirm button; cancel, ×, Esc and the backdrop all answer false. If the
     // markup is somehow missing, falls back to window.confirm rather than
     // silently confirming.
-    confirmDialog({ title = '确认', body = '', confirmText = '确认', cancelText = '取消', danger = false } = {}) {
+    confirmDialog({ title = 'Confirm', body = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) {
         const modal = document.getElementById('confirmModal');
         if (!modal) return Promise.resolve(window.confirm(`${title}\n\n${body}`));
         if (this._confirmResolve) this._confirmResolve(false); // one question at a time; withdraw the older one
@@ -1679,7 +1679,7 @@ class ClaudeCodeWebInterface {
     resumeHibernated(view) {
         if (!view || !view.hibernated || view !== this.activeView) return;
         view.hibernated = false;
-        view.terminal.writeln(`\x1b[33m正在恢复 ${this.getAlias()} 对话…\x1b[0m`);
+        view.terminal.writeln(`\x1b[33mResuming ${this.getAlias()} conversation…\x1b[0m`);
         this.startClaudeSession(this.startDefaultsOptions());
     }
 
@@ -1872,7 +1872,7 @@ class ClaudeCodeWebInterface {
                     // start straight away with the defaults. (The panel still
                     // appears when a session you are watching stops, TERM-28.)
                     this.flushTerminalWrites(view);
-                    ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} 未在运行，按默认选项启动…\x1b[0m`);
+                    ((view && view.terminal) || this.terminal).writeln(`\r\n\x1b[33m${this.getAlias()} is not running, starting with default options…\x1b[0m`);
                     this.startClaudeSession(this.startDefaultsOptions());
                 }
                 // Joined a session: pull its question list once (the rail then
@@ -1925,10 +1925,10 @@ class ClaudeCodeWebInterface {
                 }
                 this.flushTerminalWrites(view);
                 const why = message.reason === 'cap'
-                    ? `同时运行的 ${this.getAlias()} 超过上限`
-                    : `闲置 ${message.idleMinutes} 分钟`;
+                    ? `too many ${this.getAlias()} instances running at once`
+                    : `idle for ${message.idleMinutes} min`;
                 ((view && view.terminal) || this.terminal).writeln(
-                    `\r\n\x1b[2m[已休眠] ${why}，已停止 ${this.getAlias()} 以节省内存。切回这个任务时自动恢复对话。\x1b[0m`);
+                    `\r\n\x1b[2m[Hibernated] ${why}, so ${this.getAlias()} was stopped to save memory. The conversation resumes when you switch back to this task.\x1b[0m`);
                 // Watching it when it happened (the server only picks unseen
                 // ones, but a window can come back in between): resume now.
                 if (forActive && view && document.visibilityState === 'visible') this.resumeHibernated(view);
@@ -2161,7 +2161,7 @@ class ClaudeCodeWebInterface {
         if (account && accountItem) {
             accountItem.hidden = account.hidden;
             const name = account.querySelector('.header-account-name')?.textContent.trim();
-            accountItem.textContent = name ? `账号（${name}）` : '账号';
+            accountItem.textContent = name ? `Account (${name})` : 'Account';
         }
     }
 
@@ -2450,9 +2450,9 @@ class ClaudeCodeWebInterface {
             const norm = (p) => /^[A-Za-z]:/.test(p) ? p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase() : p;
             return norm(a) === norm(b);
         };
-        if (this.baseFolder && same(dir, this.baseFolder)) return `${dir} 是本服务的启动目录，不是工程目录，请选择一个工程目录。`;
-        if (this.homeDir && same(dir, this.homeDir)) return `${dir} 是你的主目录，不是工程目录，请选择一个工程目录。`;
-        if (dir === '/' || /^[A-Za-z]:[\\/]?$/.test(dir)) return `根目录 ${dir} 不是工程目录，请选择一个工程目录。`;
+        if (this.baseFolder && same(dir, this.baseFolder)) return `${dir} is the folder this server was started in, not a project folder. Choose a project folder.`;
+        if (this.homeDir && same(dir, this.homeDir)) return `${dir} is your home folder, not a project folder. Choose a project folder.`;
+        if (dir === '/' || /^[A-Za-z]:[\\/]?$/.test(dir)) return `The root folder ${dir} is not a project folder. Choose a project folder.`;
         return null;
     }
 
@@ -2855,7 +2855,7 @@ class ClaudeCodeWebInterface {
         }
         const toggle = document.getElementById('themeToggleBtn');
         if (toggle) {
-            const label = theme === 'light' ? '切换到深色主题' : '切换到浅色主题';
+            const label = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
             toggle.title = label;
             toggle.setAttribute('aria-label', label);
         }
@@ -3044,7 +3044,7 @@ class ClaudeCodeWebInterface {
         // the task in whatever folder was current before. Refuse and say why
         // (NEW-15's discipline).
         if (this._newTabSpace && !loaded) {
-            this.setNewTabError(`空间目录无法打开：${this._newTabSpace.dir}。请删除该空间后重新创建（任务会保留转入未分组）。`);
+            this.setNewTabError(`Can't open the space folder: ${this._newTabSpace.dir}. Delete the space and create it again (its tasks are kept and move to Ungrouped).`);
             $('newTabStartBtn').disabled = true;
             $('newTabDangerousBtn').disabled = true;
         } else {
@@ -3201,7 +3201,7 @@ class ClaudeCodeWebInterface {
             return true;
         } catch (error) {
             console.error('Failed to load folders:', error);
-            this.setNewTabError(`无法打开目录：${error.message}`);
+            this.setNewTabError(`Can't open the folder: ${error.message}`);
             return false;
         }
     }
@@ -3234,7 +3234,7 @@ class ClaudeCodeWebInterface {
                     <polyline points="12 15 9 12 12 9"/>
                     <line x1="9" y1="12" x2="16" y2="12"/>
                 </svg>
-                <span class="folder-name">.. (上一级)</span>
+                <span class="folder-name">.. (up one level)</span>
             `;
             upItem.addEventListener('click', () => this.loadFolders(data.parentPath));
             folderList.appendChild(upItem);
@@ -3243,7 +3243,7 @@ class ClaudeCodeWebInterface {
         if (data.folders.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'empty-folder-message';
-            empty.textContent = data.parentPath ? '这里没有子文件夹' : '没有文件夹';
+            empty.textContent = data.parentPath ? 'No subfolders here' : 'No folders';
             folderList.appendChild(empty);
             return;
         }
@@ -3312,12 +3312,12 @@ class ClaudeCodeWebInterface {
         const folderName = input.value.trim();
         
         if (!folderName) {
-            this.setNewTabError('请输入文件夹名称。');
+            this.setNewTabError('Enter a folder name.');
             return;
         }
         
         if (folderName.includes('/') || folderName.includes('\\')) {
-            this.setNewTabError('文件夹名称不能包含 / 或 \\。');
+            this.setNewTabError('A folder name can\'t contain / or \\.');
             return;
         }
         
@@ -3328,7 +3328,7 @@ class ClaudeCodeWebInterface {
             await this.loadFolders(this.currentFolderPath);
         } catch (error) {
             console.error('Failed to create folder:', error);
-            this.setNewTabError(`创建文件夹失败：${error.message}`);
+            this.setNewTabError(`Creating the folder failed: ${error.message}`);
         }
     }
 
@@ -3443,33 +3443,33 @@ class ClaudeCodeWebInterface {
             const checked = (persistedIds.has(sv.id) || extraIds.has(sv.id)) ? 'checked' : '';
             const isActive = sv.id === persisted.activeId;
             const folder = sv.workingDir ? sv.workingDir.split(/[\\/]/).filter(Boolean).pop() : '';
-            const statusText = sv.active ? this.getAlias() + ' 运行中' : '空闲';
-            const isNew = extraIds.has(sv.id) ? '<span class="rc-new">其他设备新建</span>' : '';
+            const statusText = sv.active ? this.getAlias() + ' running' : 'Idle';
+            const isNew = extraIds.has(sv.id) ? '<span class="rc-new">Created on another device</span>' : '';
             return `
             <div class="session-item reconcile-row" data-id="${esc(sv.id)}">
-              <input type="checkbox" class="rc-open" ${checked} aria-label="打开">
+              <input type="checkbox" class="rc-open" ${checked} aria-label="Open">
               <div class="session-details">
                 <div class="session-name">${esc(sv.name)}${isNew}</div>
                 <div class="session-meta"><span class="dot ${sv.active ? 'dot-on' : 'dot-idle'}"></span> ${esc(statusText)}${folder ? ' · ' + esc(folder) : ''}</div>
               </div>
-              <label class="rc-current" title="设为当前任务"><input type="radio" name="rc-active" value="${esc(sv.id)}" ${isActive ? 'checked' : ''}> 当前</label>
-              <button class="btn-icon rc-del" title="删除任务">
+              <label class="rc-current" title="Make this the current task"><input type="radio" name="rc-active" value="${esc(sv.id)}" ${isActive ? 'checked' : ''}> Current</label>
+              <button class="btn-icon rc-del" title="Delete task">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>`;
         }).join('');
         const notes = [];
-        if (dead.length) notes.push(`本设备有 ${dead.length} 个标签对应的任务已不存在，会被移除。`);
-        if (extra.length) notes.push(`有 ${extra.length} 个任务是在其他设备上新建的，默认一起打开；不想在本设备打开的可以取消勾选，它们仍会以淡色显示在所属空间下。`);
+        if (dead.length) notes.push(`${dead.length} tab(s) on this device point to tasks that no longer exist and will be removed.`);
+        if (extra.length) notes.push(`${extra.length} task(s) were created on another device and open here too by default. Untick any you don't want on this device; they still show, dimmed, under their space.`);
         modal.innerHTML = `
           <div class="modal-content">
-            <div class="modal-header"><h2>恢复任务</h2><button class="close-btn rc-close" type="button" aria-label="关闭">&times;</button></div>
-            <p class="rc-note">本设备的标签和服务器上的任务不一致，请选择要打开的任务：</p>
+            <div class="modal-header"><h2>Restore tasks</h2><button class="close-btn rc-close" type="button" aria-label="Close">&times;</button></div>
+            <p class="rc-note">The tabs on this device don't match the tasks on the server. Choose the tasks to open:</p>
             ${notes.map((n) => `<p class="rc-note">${esc(n)}</p>`).join('')}
-            <div class="session-list">${rows || '<div class="no-sessions">没有任务</div>'}</div>
+            <div class="session-list">${rows || '<div class="no-sessions">No tasks</div>'}</div>
             <div class="modal-actions">
-              <button class="btn btn-secondary" id="rcNew">+ 新建任务</button>
-              <button class="btn btn-primary" id="rcConfirm">打开</button>
+              <button class="btn btn-secondary" id="rcNew">+ New task</button>
+              <button class="btn btn-primary" id="rcConfirm">Open</button>
             </div>
           </div>`;
         document.body.appendChild(modal);
@@ -3503,7 +3503,7 @@ class ClaudeCodeWebInterface {
             e.preventDefault(); e.stopPropagation();
             const row = btn.closest('.reconcile-row');
             const id = row && row.dataset.id;
-            if (id && confirm('删除这个任务？此操作不能撤销。')) { this.deleteSession(id, { skipConfirm: true }); row.remove(); }
+            if (id && confirm('Delete this task? This can\'t be undone.')) { this.deleteSession(id, { skipConfirm: true }); row.remove(); }
         }));
         modal.querySelector('#rcNew').addEventListener('click', () => { teardown(); this.openNewTabDialog(); });
         modal.querySelector('#rcConfirm').addEventListener('click', async () => {
@@ -3721,7 +3721,7 @@ class ClaudeCodeWebInterface {
         const dangerBtn = document.getElementById('newTabDangerousBtn');
         const startLabel = startBtn.textContent;
         startBtn.disabled = dangerBtn.disabled = true;
-        startBtn.textContent = '启动中…';
+        startBtn.textContent = 'Starting…';
 
         try {
             // A path typed into the bar but not yet entered is still the one meant.
@@ -3730,7 +3730,7 @@ class ClaudeCodeWebInterface {
 
             const workingDir = this.currentFolderPath;
             if (!workingDir) {
-                this.setNewTabError('请先选择一个工程目录。');
+                this.setNewTabError('Choose a project folder first.');
                 return;
             }
             const reason = this.nonProjectDirReason(workingDir);
@@ -3740,7 +3740,7 @@ class ClaudeCodeWebInterface {
             }
             const resuming = this.newSessionMode === 'resume';
             if (resuming && !this.selectedConversation) {
-                this.setNewTabError('请先在列表里选一个要继续的对话。');
+                this.setNewTabError('Pick a conversation to continue from the list first.');
                 return;
             }
             const resumeId = resuming ? this.selectedConversation.id : undefined;
@@ -3804,10 +3804,10 @@ class ClaudeCodeWebInterface {
                 const data = await response.json().catch(() => ({}));
                 // Held by another user: there is no tab of ours to go to.
                 if (!data.sessionId) {
-                    this.showToast(data.message || '其他用户正在使用这个对话', true, 5000);
+                    this.showToast(data.message || 'Another user is using this conversation', true, 5000);
                     return null;
                 }
-                this.showToast('这个对话已经在另一个标签页里打开，正在切换过去', true);
+                this.showToast('This conversation is already open in another tab, switching to it', true);
                 if (data.sessionId && this.sessionTabManager) {
                     this.hideNewTabDialog({ cancelled: false });
                     await this.sessionTabManager.switchToTab(data.sessionId);
@@ -3815,7 +3815,7 @@ class ClaudeCodeWebInterface {
                 return null;
             }
             if (response.status === 404) {
-                this.showToast('这个目录下已经没有这个对话了', true);
+                this.showToast('This conversation is no longer in this folder', true);
                 return null;
             }
             if (!response.ok) throw new Error(`create failed: ${response.status}`);
@@ -3823,7 +3823,7 @@ class ClaudeCodeWebInterface {
             return await response.json();
         } catch (error) {
             console.error('Failed to create session:', error);
-            this.showToast('创建会话失败，请检查连接后重试', true, 5000);
+            this.showToast('Creating the session failed. Check your connection and try again', true, 5000);
             return null;
         }
     }
@@ -3901,11 +3901,11 @@ class ClaudeCodeWebInterface {
         card.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
         card.innerHTML = `
           <div style="background:var(--bg-elevated,#1e1e1e);color:var(--text,#eee);border-radius:10px;padding:20px;max-width:560px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,.5);">
-            <div style="font-weight:600;font-size:15px;margin-bottom:10px;">Claude 想执行一条命令（ccweb-companion）</div>
+            <div style="font-weight:600;font-size:15px;margin-bottom:10px;">Claude wants to run a command (ccweb-companion)</div>
             <pre style="background:rgba(127,127,127,.15);padding:10px;border-radius:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;font-size:12px;margin:0 0 14px;">${esc(message.tool_input && message.tool_input.command)}</pre>
             <div style="display:flex;gap:10px;justify-content:flex-end;">
-              <button data-decision="deny" style="padding:8px 16px;border-radius:6px;border:1px solid #888;background:transparent;color:inherit;cursor:pointer;">拒绝</button>
-              <button data-decision="allow" style="padding:8px 16px;border-radius:6px;border:0;background:#2f7df6;color:#fff;cursor:pointer;">允许</button>
+              <button data-decision="deny" style="padding:8px 16px;border-radius:6px;border:1px solid #888;background:transparent;color:inherit;cursor:pointer;">Deny</button>
+              <button data-decision="allow" style="padding:8px 16px;border-radius:6px;border:0;background:#2f7df6;color:#fff;cursor:pointer;">Allow</button>
             </div>
           </div>`;
         card.addEventListener('click', (ev) => {

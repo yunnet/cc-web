@@ -178,9 +178,9 @@ function registerAdminRoutes(server) {
     if (body.role !== undefined) {
       if (body.role !== 'admin' && body.role !== 'user') return res.status(400).json({ error: 'role is admin or user' });
       if (body.role !== target.role) {
-        if (self) return res.status(400).json({ error: '不能修改自己的角色' });
+        if (self) return res.status(400).json({ error: 'You cannot change your own role' });
         if (target.role === 'admin' && !target.disabled && otherActiveAdmins(target.id) === 0) {
-          return res.status(400).json({ error: '至少要保留一个可用的管理员' });
+          return res.status(400).json({ error: 'At least one active admin must remain' });
         }
         patch.role = body.role;
       }
@@ -188,9 +188,9 @@ function registerAdminRoutes(server) {
     if (body.disabled !== undefined) {
       if (typeof body.disabled !== 'boolean') return res.status(400).json({ error: 'disabled is true or false' });
       if (body.disabled !== !!target.disabled) {
-        if (self) return res.status(400).json({ error: '不能停用自己' });
+        if (self) return res.status(400).json({ error: 'You cannot disable yourself' });
         if (body.disabled && target.role === 'admin' && otherActiveAdmins(target.id) === 0) {
-          return res.status(400).json({ error: '至少要保留一个可用的管理员' });
+          return res.status(400).json({ error: 'At least one active admin must remain' });
         }
         patch.disabled = body.disabled;
       }
@@ -211,7 +211,7 @@ function registerAdminRoutes(server) {
         if (!dirs.includes(resolved)) dirs.push(resolved);
       }
       if (rejected.length) {
-        return res.status(400).json({ error: `这些不是存在的绝对路径目录：${rejected.join('，')}`, rejected });
+        return res.status(400).json({ error: `Not existing absolute folder paths: ${rejected.join(', ')}`, rejected });
       }
       patch.rootDirs = dirs;
     }
@@ -229,7 +229,7 @@ function registerAdminRoutes(server) {
   app.post('/api/admin/users/:id/reset-password', asyncRoute(async (req, res) => {
     const target = userStore.getUser(req.params.id);
     if (!target) return res.status(404).json({ error: 'No such user' });
-    if (target.id === req.user.id) return res.status(400).json({ error: '修改自己的密码请用「账号」里的修改密码' });
+    if (target.id === req.user.id) return res.status(400).json({ error: 'To change your own password, use Change password under Account' });
     const password = UserStore.tempPassword();
     await userStore.setPassword(target.id, password, { mustChangePassword: true, revokeAll: true });
     await server.endUserAccess(target.id, 'Password reset');
@@ -240,9 +240,9 @@ function registerAdminRoutes(server) {
   app.delete('/api/admin/users/:id', asyncRoute(async (req, res) => {
     const target = userStore.getUser(req.params.id);
     if (!target) return res.status(404).json({ error: 'No such user' });
-    if (target.id === req.user.id) return res.status(400).json({ error: '不能删除自己' });
+    if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot delete yourself' });
     if (target.role === 'admin' && !target.disabled && otherActiveAdmins(target.id) === 0) {
-      return res.status(400).json({ error: '至少要保留一个可用的管理员' });
+      return res.status(400).json({ error: 'At least one active admin must remain' });
     }
     userStore.deleteUser(target.id);
     await server.endUserAccess(target.id, 'Account deleted');

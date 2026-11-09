@@ -242,8 +242,8 @@
 
       const del = document.createElement('button');
       del.className = 'conv-act';
-      del.title = '删除会话';
-      del.setAttribute('aria-label', `删除会话 ${session.name || ''}`.trim());
+      del.title = 'Delete session';
+      del.setAttribute('aria-label', `Delete session ${session.name || ''}`.trim());
       del.appendChild(icon('trash'));
       del.addEventListener('click', (e) => {
         e.stopPropagation(); // the row itself means "switch"
@@ -261,14 +261,14 @@
         meta: [
           relativeTime(conv.updatedAt),
           conv.id.slice(0, 8),
-          conv.inUseByOther ? '其他用户正在使用' : (conv.openInTab ? 'open in a tab' : '')
+          conv.inUseByOther ? 'in use by another user' : (conv.openInTab ? 'open in a tab' : '')
         ].filter(Boolean).join(' · ')
       });
 
       if (conv.openInTab) {
         row.title = 'Already open in a tab';
         // Held by another user's tab: still not selectable, and not ours to open.
-        if (conv.inUseByOther) row.title = '其他用户正在使用这个对话';
+        if (conv.inUseByOther) row.title = 'Another user is using this conversation';
         return row; // not selectable: one conversation, one tab
       }
 
@@ -309,9 +309,9 @@
       if (app.sessionTabManager && app.sessionTabManager.tabs.has(session.id)) {
         app.sessionTabManager.closeSession(session.id);  // asks its own dialog
       } else if (!(await app.confirmDialog({
-        title: '删除会话',
-        body: `删除会话「${label}」？其中正在运行的 Claude 会被停止。\n对话记录保留，之后可从「继续之前的对话」里恢复。`,
-        confirmText: '删除',
+        title: 'Delete session',
+        body: `Delete session "${label}"? Any Claude running in it will be stopped.\nThe conversation history is kept; you can pick it up later from "Continue a conversation".`,
+        confirmText: 'Delete',
         danger: true,
       }))) {
         return;

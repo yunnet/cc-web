@@ -109,6 +109,13 @@
   applies from the next start.
 
 ### Changed
+- **The browser UI is in English.** Every label, button, dialog, tooltip,
+  toast and error the page shows — spaces sidebar, new tab dialog, menu,
+  account and users, usage, skills, branches, login — moved from Chinese to
+  English, with one glossary (Space, Task, Session, Conversation, Usage…)
+  and relative times as `just now` / `5m` / `3h` (user 2026-11-09). The
+  awaiting-approval badge on a tab reads `Pending`. The `cc-web user` CLI
+  output stays Chinese.
 - **UI polish pass (unslop, 2026-11-09).** The active task is a surface step
   with a 2px accent edge instead of a solid accent fill; ESC / MODE / → are
   neutral key caps (ESC turns red only on hover); only a running session's

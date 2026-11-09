@@ -225,22 +225,22 @@ class AuthManager {
                     : `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">Sign in with username and password</button>`
             },
             register: {
-                heading: '注册账号',
-                intro: '你收到了一个邀请。设置用户名和密码，注册后直接登录。',
-                fields: field('auth-username', '用户名', 'text', '2–32 位字母、数字或 _ . -', 'username')
-                    + field('auth-password', '密码', 'password', '至少 8 位', 'new-password')
-                    + field('auth-password2', '再输一次密码', 'password', '再输一次密码', 'new-password'),
-                button: '注册并登录',
-                footer: `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">已有账号？直接登录</button>`
+                heading: 'Create account',
+                intro: 'You have been invited. Choose a username and password; you are signed in once the account is created.',
+                fields: field('auth-username', 'Username', 'text', '2–32 letters, digits or _ . -', 'username')
+                    + field('auth-password', 'Password', 'password', 'At least 8 characters', 'new-password')
+                    + field('auth-password2', 'Password again', 'password', 'Password again', 'new-password'),
+                button: 'Create account and sign in',
+                footer: `<button type="button" id="auth-switch" data-mode="login" style="${linkStyle}">Already have an account? Sign in</button>`
             },
             change: {
-                heading: '请先修改密码',
-                intro: '你现在用的是管理员给的临时密码。设置一个只有你知道的新密码后才能继续使用。',
-                fields: field('auth-current', '临时密码（当前密码）', 'password', '当前密码', 'current-password')
-                    + field('auth-password', '新密码', 'password', '至少 8 位', 'new-password')
-                    + field('auth-password2', '再输一次新密码', 'password', '再输一次新密码', 'new-password'),
-                button: '修改密码',
-                footer: `<button type="button" id="auth-logout" style="${linkStyle}">退出登录</button>`
+                heading: 'Change your password first',
+                intro: 'You are using a temporary password from an admin. Set a new password only you know to continue.',
+                fields: field('auth-current', 'Temporary (current) password', 'password', 'Current password', 'current-password')
+                    + field('auth-password', 'New password', 'password', 'At least 8 characters', 'new-password')
+                    + field('auth-password2', 'New password again', 'password', 'New password again', 'new-password'),
+                button: 'Change password',
+                footer: `<button type="button" id="auth-logout" style="${linkStyle}">Sign out</button>`
             },
             setup: {
                 heading: 'Create administrator',
@@ -344,9 +344,9 @@ class AuthManager {
             if (mode === 'change') {
                 const current = value('auth-current');
                 const next = value('auth-password');
-                if (!current || !next) return showError('请填写当前密码和新密码');
-                if (next !== value('auth-password2')) return showError('两次输入的新密码不一致');
-                setBusy(true, '正在修改…');
+                if (!current || !next) return showError('Enter your current and new password');
+                if (next !== value('auth-password2')) return showError('The new passwords don\'t match');
+                setBusy(true, 'Changing…');
                 const result = await this.postJson('/api/auth/password', { current, next });
                 if (!result.ok) {
                     setBusy(false, screen.button);
@@ -358,9 +358,9 @@ class AuthManager {
             const username = value('auth-username').trim();
             const password = value('auth-password');
             if (mode === 'register') {
-                if (!username || !password) return showError('请填写用户名和密码');
-                if (password !== value('auth-password2')) return showError('两次输入的密码不一致');
-                setBusy(true, '正在注册…');
+                if (!username || !password) return showError('Enter a username and password');
+                if (password !== value('auth-password2')) return showError('The passwords don\'t match');
+                setBusy(true, 'Creating account…');
                 const result = await this.postJson('/api/auth/register', { invite: this.invite, username, password });
                 if (!result.ok) {
                     setBusy(false, screen.button);
@@ -399,27 +399,10 @@ class AuthManager {
         if (inputs[0]) inputs[0].focus();
     }
 
-    // The server's account errors, in the words the new (Chinese) screens use.
-    // Anything not listed is shown as sent.
+    // The server's account errors are already English and are shown as sent.
+    // Kept as a function because account.js calls it.
     static zh(message) {
-        const known = [
-            [/^Current password is incorrect/, '当前密码不对'],
-            [/^The new password must be different/, '新密码不能和当前密码相同'],
-            [/^Password must be at least (\d+)/, (m) => `密码至少 ${m[1]} 位`],
-            [/^Password must be at most (\d+)/, (m) => `密码最多 ${m[1]} 位`],
-            [/^Username must be/, '用户名为 2–32 位字母、数字或 _ . -，以字母或数字开头'],
-            [/^Username already exists/, '这个用户名已经有人用了'],
-            [/^Invite code is invalid or has expired/, '邀请链接无效或已过期，请向管理员要一个新的'],
-            [/^Too many attempts/, '尝试次数太多，请一分钟后再试'],
-            [/^Could not reach the server/, '连不上服务器'],
-            [/^Unauthorized/, '登录已失效，请刷新页面重新登录'],
-        ];
-        const text = String(message || '');
-        for (const [re, out] of known) {
-            const m = text.match(re);
-            if (m) return typeof out === 'function' ? out(m) : out;
-        }
-        return text;
+        return String(message || '');
     }
 
     // Only the shared token travels in a header. A signed-in browser sends its

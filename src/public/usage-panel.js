@@ -44,13 +44,18 @@ var UsageView = (function () {
     return typeof r === 'number' && isFinite(r) ? Math.round(r * 100) + '%' : '—';
   }
 
+  // "1 request", "3 requests".
+  function count(n, word) {
+    return n + ' ' + word + (n === 1 ? '' : 's');
+  }
+
   function span(from, to) {
     var a = Date.parse(from), b = Date.parse(to);
     if (!isFinite(a) || !isFinite(b) || b < a) return '—';
     var m = Math.round((b - a) / 60000);
-    if (m < 60) return m + ' 分钟';
-    if (m < 60 * 48) return (m / 60).toFixed(1).replace(/\.0$/, '') + ' 小时';
-    return Math.round(m / 1440) + ' 天';
+    if (m < 60) return m + ' min';
+    if (m < 60 * 48) return (m / 60).toFixed(1).replace(/\.0$/, '') + ' h';
+    return Math.round(m / 1440) + ' d';
   }
 
   function ctxOf(r) { return r.input + r.cacheRead + r.cacheCreate; }
@@ -60,14 +65,14 @@ var UsageView = (function () {
     var all = t.input + t.cacheRead + t.cacheCreate + t.output;
     var sub = usage.subagents && usage.subagents.count ? usage.subagents : null;
     var cells = [
-      ['请求', String(t.requests)],
-      ['Token', tokens(all), '输入 ' + tokens(t.input) + ' · 缓存读 ' + tokens(t.cacheRead) + ' · 缓存写 ' + tokens(t.cacheCreate) + ' · 输出 ' + tokens(t.output)],
-      ['缓存命中', pct(t.cacheHitRate), '缓存读 ÷ 全部输入'],
-      ['花费（API 折算）', usd(t.costUsd), t.unpriced ? t.unpriced + ' 个请求的模型没有价格，未计入' : '按 API 价格估算，订阅不按此计费'],
-      ['时长', span(usage.firstAt, usage.lastAt)]
+      ['Requests', String(t.requests)],
+      ['Tokens', tokens(all), 'Input ' + tokens(t.input) + ' · Cache read ' + tokens(t.cacheRead) + ' · Cache write ' + tokens(t.cacheCreate) + ' · Output ' + tokens(t.output)],
+      ['Cache hit rate', pct(t.cacheHitRate), 'Cache read ÷ all input'],
+      ['Cost (API-equivalent)', usd(t.costUsd), t.unpriced ? count(t.unpriced, 'request') + ' on a model with no known price, not counted' : 'Estimated at API prices; a subscription is not billed this way'],
+      ['Duration', span(usage.firstAt, usage.lastAt)]
     ];
     if (sub) {
-      cells.push(['子 Agent', sub.count + ' 个', tokens(sub.totals.input + sub.totals.cacheRead + sub.totals.cacheCreate + sub.totals.output) + ' Token · ' + usd(sub.totals.costUsd) + '（API 折算）']);
+      cells.push(['Subagents', String(sub.count), tokens(sub.totals.input + sub.totals.cacheRead + sub.totals.cacheCreate + sub.totals.output) + ' tokens · ' + usd(sub.totals.costUsd) + ' (API-equivalent)']);
     }
     return '<div class="usage-kpis">' + cells.map(function (c) {
       return '<div class="usage-kpi"' + (c[2] ? tip(c[2]) : '') + '><div class="usage-kpi-value">' + esc(c[1]) +
@@ -86,11 +91,11 @@ var UsageView = (function () {
       var w = whole ? (n / whole) * 100 : 0;
       return w > 0 ? '<span class="usage-seg ' + cls + '" style="width:' + w.toFixed(2) + '%"' + tip(label + ' ' + tokens(n)) + '></span>' : '';
     };
-    var caption = '当前上下文 ' + tokens(c.ctx) + (windowSize ? ' / ' + tokens(windowSize) + '（' + Math.round((c.ctx / windowSize) * 100) + '%）' : '');
+    var caption = 'Context now ' + tokens(c.ctx) + (windowSize ? ' / ' + tokens(windowSize) + ' (' + Math.round((c.ctx / windowSize) * 100) + '%)' : '');
     return '<div class="usage-section"><div class="usage-section-title">' + esc(caption) + '</div>' +
-      '<div class="usage-bar">' + part('u-read', c.cacheRead, '缓存读') + part('u-write', c.cacheCreate, '缓存写') + part('u-input', c.input, '新输入') + '</div>' +
-      '<div class="usage-legend"><span><i class="u-read"></i>缓存读</span><span><i class="u-write"></i>缓存写</span><span><i class="u-input"></i>新输入</span>' +
-      (windowSize ? '<span><i class="u-free"></i>剩余</span>' : '') + '</div></div>';
+      '<div class="usage-bar">' + part('u-read', c.cacheRead, 'Cache read') + part('u-write', c.cacheCreate, 'Cache write') + part('u-input', c.input, 'New input') + '</div>' +
+      '<div class="usage-legend"><span><i class="u-read"></i>Cache read</span><span><i class="u-write"></i>Cache write</span><span><i class="u-input"></i>New input</span>' +
+      (windowSize ? '<span><i class="u-free"></i>Free</span>' : '') + '</div></div>';
   }
 
   var BAR = 6, GAP = 2, HEIGHT = 140;
@@ -100,7 +105,7 @@ var UsageView = (function () {
   // before — a compaction is the long bar down, and it is marked ✂.
   function trendSvg(trend, mode) {
     var reqs = trend.requests;
-    if (!reqs.length) return '<div class="usage-empty">还没有请求</div>';
+    if (!reqs.length) return '<div class="usage-empty">No requests yet</div>';
     var delta = mode === 'delta';
     var values = reqs.map(function (r, i) { return delta ? ctxOf(r) - (i ? ctxOf(reqs[i - 1]) : 0) : ctxOf(r); });
     // In delta mode one compaction (hundreds of k down) would flatten every
@@ -115,8 +120,8 @@ var UsageView = (function () {
     reqs.forEach(function (r, i) {
       var x = i * (BAR + GAP);
       var tip = '#' + (trend.skipped + i + 1) + (r.t ? ' · ' + r.t.replace('T', ' ').slice(0, 19) : '') +
-        '\n上下文 ' + tokens(ctxOf(r)) + (delta ? '（' + (values[i] >= 0 ? '+' : '') + tokens(values[i]) + '）' : '') +
-        '\n缓存读 ' + tokens(r.cacheRead) + ' · 缓存写 ' + tokens(r.cacheCreate) + ' · 新输入 ' + tokens(r.input) + '\n输出 ' + tokens(r.output) +
+        '\nContext ' + tokens(ctxOf(r)) + (delta ? ' (' + (values[i] >= 0 ? '+' : '') + tokens(values[i]) + ')' : '') +
+        '\nCache read ' + tokens(r.cacheRead) + ' · Cache write ' + tokens(r.cacheCreate) + ' · New input ' + tokens(r.input) + '\nOutput ' + tokens(r.output) +
         (r.model ? '\n' + r.model : '');
       out.push('<g><title>' + esc(tip) + '</title>');
       if (delta) {
@@ -137,8 +142,8 @@ var UsageView = (function () {
     (trend.compactions || []).forEach(function (c) {
       if (c.atRequest < 0 || c.atRequest > reqs.length) return;
       var x = Math.max(0, c.atRequest * (BAR + GAP) - GAP / 2);
-      var tip = '压缩' + (c.trigger === 'auto' ? '（自动）' : c.trigger === 'manual' ? '（手动 /compact）' : '') +
-        (c.preTokens ? '：压缩前 ' + tokens(c.preTokens) : '') + (c.t ? '\n' + c.t.replace('T', ' ').slice(0, 19) : '');
+      var tip = 'Compaction' + (c.trigger === 'auto' ? ' (auto)' : c.trigger === 'manual' ? ' (manual /compact)' : '') +
+        (c.preTokens ? ': ' + tokens(c.preTokens) + ' before' : '') + (c.t ? '\n' + c.t.replace('T', ' ').slice(0, 19) : '');
       out.push('<g class="u-compact"><title>' + esc(tip) + '</title><line x1="' + x + '" x2="' + x + '" y1="10" y2="' + HEIGHT + '"/>' +
         '<text x="' + (x + 2) + '" y="10">✂</text></g>');
     });
@@ -148,13 +153,13 @@ var UsageView = (function () {
 
   function trend(usage, mode) {
     var tr = usage.trend;
-    var note = tr.skipped ? '（只画最近 ' + tr.requests.length + ' 个请求，前面还有 ' + tr.skipped + ' 个）' : '';
+    var note = tr.skipped ? ' (last ' + count(tr.requests.length, 'request') + ' only; ' + tr.skipped + ' earlier not shown)' : '';
     var compactions = (tr.compactions || []).length;
-    return '<div class="usage-section"><div class="usage-section-title">每个请求的上下文' + esc(note) +
-      (compactions ? ' · 压缩 ' + compactions + ' 次' : '') +
+    return '<div class="usage-section"><div class="usage-section-title">Context per request' + esc(note) +
+      (compactions ? ' · ' + count(compactions, 'compaction') : '') +
       '<span class="usage-mode">' +
-      '<button type="button" class="usage-mode-btn' + (mode !== 'delta' ? ' active' : '') + '" data-mode="total">总量</button>' +
-      '<button type="button" class="usage-mode-btn' + (mode === 'delta' ? ' active' : '') + '" data-mode="delta">增量</button>' +
+      '<button type="button" class="usage-mode-btn' + (mode !== 'delta' ? ' active' : '') + '" data-mode="total">Total</button>' +
+      '<button type="button" class="usage-mode-btn' + (mode === 'delta' ? ' active' : '') + '" data-mode="delta">Change</button>' +
       '</span></div><div class="usage-trend">' + trendSvg(tr, mode) + '</div></div>';
   }
 
@@ -178,16 +183,16 @@ var UsageView = (function () {
     var files = (t.files || []).map(function (f) { return [shortPath(f[0]), f[1], f[0], f[2]]; });
     var skills = (t.skills || []).concat((t.commands || []).map(function (c) { return ['/' + c[0], c[1]]; }))
       .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 15);
-    var html = list('工具', t.tools) +
-      list('Bash 程序', t.programs) +
-      list('文件', files, function (f) { return f[2] + '\n读 ' + f[3].read + ' · 改 ' + f[3].edit + ' · 写 ' + f[3].write; }) +
-      list('技能与斜杠命令', skills);
+    var html = list('Tools', t.tools) +
+      list('Bash programs', t.programs) +
+      list('Files', files, function (f) { return f[2] + '\nRead ' + f[3].read + ' · Edit ' + f[3].edit + ' · Write ' + f[3].write; }) +
+      list('Skills and slash commands', skills);
     return html ? '<div class="usage-tops">' + html + '</div>' : '';
   }
 
   function session(data, mode) {
     if (!data || !data.usage) {
-      return '<div class="usage-empty">这个标签还没有对话记录（Claude 没启动过，或记录不在这台机器上）。</div>';
+      return '<div class="usage-empty">This tab has no conversation yet (Claude has not started, or its transcript is not on this machine)</div>';
     }
     return kpis(data.usage) + now(data.usage, data.liveUsage) + trend(data.usage, mode) + tops(data.usage);
   }
@@ -199,23 +204,23 @@ var UsageView = (function () {
     var ms = Date.parse(t);
     if (!isFinite(ms)) return '';
     var m = Math.max(0, Math.round((nowMs - ms) / 60000));
-    if (m < 1) return '刚刚';
-    if (m < 60) return m + ' 分钟前';
-    if (m < 60 * 24) return Math.round(m / 60) + ' 小时前';
-    return Math.round(m / 1440) + ' 天前';
+    if (m < 1) return 'just now';
+    if (m < 60) return m + ' min ago';
+    if (m < 60 * 24) return Math.round(m / 60) + ' h ago';
+    return Math.round(m / 1440) + ' d ago';
   }
 
-  var RANGES = [['7d', '7 天'], ['30d', '30 天'], ['all', '全部']];
-  var SORTS = [['recent', '最近'], ['tokens', 'Token'], ['cost', '花费']];
+  var RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['all', 'All time']];
+  var SORTS = [['recent', 'Recent'], ['tokens', 'Tokens'], ['cost', 'Cost']];
 
   function overviewKpis(o) {
     var t = o.totals;
     var cells = [
-      ['对话', String(t.sessions || 0)],
-      ['请求', String(t.requests)],
-      ['Token', tokens(t.input + t.cacheRead + t.cacheCreate + t.output), '输入 ' + tokens(t.input) + ' · 缓存读 ' + tokens(t.cacheRead) + ' · 缓存写 ' + tokens(t.cacheCreate) + ' · 输出 ' + tokens(t.output)],
-      ['缓存命中', pct(t.cacheHitRate), '缓存读 ÷ 全部输入'],
-      ['花费（API 折算）', usd(t.costUsd), t.unpriced ? t.unpriced + ' 个请求的模型没有价格，未计入' : '按 API 价格估算，订阅不按此计费']
+      ['Conversations', String(t.sessions || 0)],
+      ['Requests', String(t.requests)],
+      ['Tokens', tokens(t.input + t.cacheRead + t.cacheCreate + t.output), 'Input ' + tokens(t.input) + ' · Cache read ' + tokens(t.cacheRead) + ' · Cache write ' + tokens(t.cacheCreate) + ' · Output ' + tokens(t.output)],
+      ['Cache hit rate', pct(t.cacheHitRate), 'Cache read ÷ all input'],
+      ['Cost (API-equivalent)', usd(t.costUsd), t.unpriced ? count(t.unpriced, 'request') + ' on a model with no known price, not counted' : 'Estimated at API prices; a subscription is not billed this way']
     ];
     return '<div class="usage-kpis">' + cells.map(function (c) {
       return '<div class="usage-kpi"' + (c[2] ? tip(c[2]) : '') + '><div class="usage-kpi-value">' + esc(c[1]) +
@@ -234,7 +239,7 @@ var UsageView = (function () {
     var out = days.map(function (d, i) {
       var h = d.tokens ? Math.max((d.tokens / max) * (H - 4), 1) : 0;
       var x = i * (bw + gap);
-      return '<g><title>' + esc(d.day + '\n' + tokens(d.tokens) + ' Token · ' + d.requests + ' 个请求\n' + usd(d.costUsd) + '（API 折算）') + '</title>' +
+      return '<g><title>' + esc(d.day + '\n' + tokens(d.tokens) + ' tokens · ' + count(d.requests, 'request') + '\n' + usd(d.costUsd) + ' (API-equivalent)') + '</title>' +
         '<rect class="u-input" x="' + x.toFixed(1) + '" y="' + (H - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '"/></g>';
     });
     var labels = days.map(function (d, i) {
@@ -256,7 +261,7 @@ var UsageView = (function () {
     for (var i = 0; i < lead; i++) cells.push('<span class="usage-heat-cell u-blank"></span>');
     days.forEach(function (d) {
       var lvl = !d.tokens ? 0 : d.tokens <= cuts[0] ? 1 : d.tokens <= cuts[1] ? 2 : d.tokens <= cuts[2] ? 3 : 4;
-      cells.push('<span class="usage-heat-cell" data-level="' + lvl + '"' + tip(d.day + ' · ' + tokens(d.tokens) + ' Token · ' + usd(d.costUsd) + '（API 折算）') + '></span>');
+      cells.push('<span class="usage-heat-cell" data-level="' + lvl + '"' + tip(d.day + ' · ' + tokens(d.tokens) + ' tokens · ' + usd(d.costUsd) + ' (API-equivalent)') + '></span>');
     });
     return '<div class="usage-heat">' + cells.join('') + '</div>';
   }
@@ -271,18 +276,18 @@ var UsageView = (function () {
   }
 
   function sessionRows(o, sort, nowMs) {
-    if (!o.sessions.length) return '<div class="usage-empty">这段时间没有对话</div>';
+    if (!o.sessions.length) return '<div class="usage-empty">No conversations in this period</div>';
     return sortSessions(o.sessions, sort).map(function (s) {
       var where = s.cwd || s.project;
       var search = ((s.title || '') + ' ' + (where || '')).toLowerCase();
       return '<button type="button" class="usage-conv" data-id="' + esc(s.id) + '"' +
         (s.openSessionId ? ' data-open="' + esc(s.openSessionId) + '"' : '') +
         ' data-cwd="' + esc(s.cwd || '') + '" data-name="' + esc(s.title || '') + '" data-search="' + esc(search) + '"' +
-        tip((s.title || s.id) + '\n' + (where || '') + '\n' + s.requests + ' 个请求 · 缓存命中 ' + pct(s.cacheHitRate) +
-          (s.ctx !== null ? ' · 最后上下文 ' + tokens(s.ctx) : '') + (s.subagents ? ' · 子 Agent ' + s.subagents : '') +
-          (s.openSessionId ? '\n已在标签中打开，点击切换过去' : '\n点击在新标签中继续这段对话')) + '>' +
-        '<span class="usage-conv-main"><span class="usage-conv-title">' + esc(s.title || '（无标题）') +
-        (s.openSessionId ? '<span class="usage-conv-open">已打开</span>' : '') + '</span>' +
+        tip((s.title || s.id) + '\n' + (where || '') + '\n' + count(s.requests, 'request') + ' · cache hit rate ' + pct(s.cacheHitRate) +
+          (s.ctx !== null ? ' · last context ' + tokens(s.ctx) : '') + (s.subagents ? ' · subagents ' + s.subagents : '') +
+          (s.openSessionId ? '\nOpen in a tab; click to switch to it' : '\nClick to continue this conversation in a new tab')) + '>' +
+        '<span class="usage-conv-main"><span class="usage-conv-title">' + esc(s.title || '(untitled)') +
+        (s.openSessionId ? '<span class="usage-conv-open">Open</span>' : '') + '</span>' +
         '<span class="usage-conv-where">' + (s.account && o.owner === 'all' ? esc(s.account) + ' · ' : '') + esc(shortPath(where || '')) + ' · ' + esc(ago(s.lastAt, nowMs)) + '</span></span>' +
         '<span class="usage-conv-num">' + tokens(s.tokens) + '</span><span class="usage-conv-num">' + usd(s.costUsd) + '</span></button>';
     }).join('');
@@ -300,50 +305,50 @@ var UsageView = (function () {
     if (!o.groups) return '';
     var owner = o.owner || 'all';
     var total = o.groups.reduce(function (n, g) { return n + g.tokens; }, 0) || 1;
-    var chips = [['all', '全部'], ['me', '我的']].map(function (c) {
+    var chips = [['all', 'All'], ['me', 'Mine']].map(function (c) {
       return '<button type="button" class="usage-owner-btn usage-mode-btn' + (owner === c[0] ? ' active' : '') + '" data-owner="' + c[0] + '">' + c[1] + '</button>';
     }).join('');
     var rows = o.groups.map(function (g) {
       var value = ownerValue(g);
       var pick = g.id !== 'others';
       var share = g.tokens / total;
-      var inner = '<span class="usage-acct-name">' + esc(g.name) + (g.me ? '<span class="usage-conv-open">我</span>' : '') + '</span>' +
+      var inner = '<span class="usage-acct-name">' + esc(g.name) + (g.me ? '<span class="usage-conv-open">You</span>' : '') + '</span>' +
         '<span class="usage-acct-bar"><span style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
-        '<span class="usage-conv-num">' + g.sessions + ' 段</span>' +
+        '<span class="usage-conv-num">' + g.sessions + ' conv.</span>' +
         '<span class="usage-conv-num">' + tokens(g.tokens) + '</span><span class="usage-conv-num">' + usd(g.costUsd) + '</span>';
-      var hint = g.name + '\n' + g.sessions + ' 段对话 · ' + g.requests + ' 个请求 · 占 ' + pct(share) +
-        (g.id === '' ? '\n本机命令行、32352 等 cc-web 账号之外开的对话，或记录之前就关掉的标签' : '') +
-        (pick ? '\n点击只看这个账号' : '');
+      var hint = g.name + '\n' + count(g.sessions, 'conversation') + ' · ' + count(g.requests, 'request') + ' · ' + pct(share) + ' of tokens' +
+        (g.id === '' ? '\nConversations started outside cc-web accounts (this machine\'s command line, port 32352 and the like), or tabs closed before records were kept' : '') +
+        (pick ? '\nClick to show only this account' : '');
       return pick
         ? '<button type="button" class="usage-acct usage-owner-btn' + (owner === value ? ' active' : '') + '" data-owner="' + esc(value) + '"' + tip(hint) + '>' + inner + '</button>'
         : '<div class="usage-acct"' + tip(hint) + '>' + inner + '</div>';
     }).join('');
-    return '<div class="usage-section"><div class="usage-section-title">按账号<span class="usage-mode">' + chips + '</span></div>' +
-      '<div class="usage-accts">' + (rows || '<div class="usage-empty">这段时间没有对话</div>') + '</div></div>';
+    return '<div class="usage-section"><div class="usage-section-title">By account<span class="usage-mode">' + chips + '</span></div>' +
+      '<div class="usage-accts">' + (rows || '<div class="usage-empty">No conversations in this period</div>') + '</div></div>';
   }
 
   function overview(o, opts) {
     opts = opts || {};
     var nowMs = opts.now || Date.now();
     var range = '<div class="usage-section-title">' +
-      (o.scanning ? '<span class="usage-scanning">正在读取对话记录（' + o.files.read + ' / ' + o.files.total + '）…</span>' : '') +
+      (o.scanning ? '<span class="usage-scanning">Scanning conversations (' + o.files.read + ' / ' + o.files.total + ')…</span>' : '') +
       '<span class="usage-mode">' + RANGES.map(function (r) {
         return '<button type="button" class="usage-range-btn usage-mode-btn' + (o.range === r[0] ? ' active' : '') + '" data-range="' + r[0] + '">' + r[1] + '</button>';
       }).join('') + '</span></div>';
-    var daily = '<div class="usage-section"><div class="usage-section-title">每日用量' + (o.days.length > 7 ? '（最近 ' + o.days.length + ' 天）' : '') + '</div>' + dailySvg(o.days) + '</div>';
-    var heat = '<div class="usage-section"><div class="usage-section-title">最近 8 周</div>' + heatmap(o.heatmap) + '</div>';
-    var convs = '<div class="usage-section"><div class="usage-section-title">对话' +
-      (o.sessionsTotal > o.sessions.length ? '（显示 ' + o.sessions.length + ' / ' + o.sessionsTotal + '）' : '（' + o.sessions.length + '）') +
+    var daily = '<div class="usage-section"><div class="usage-section-title">Daily usage' + (o.days.length > 7 ? ' (last ' + o.days.length + ' days)' : '') + '</div>' + dailySvg(o.days) + '</div>';
+    var heat = '<div class="usage-section"><div class="usage-section-title">Last 8 weeks</div>' + heatmap(o.heatmap) + '</div>';
+    var convs = '<div class="usage-section"><div class="usage-section-title">Conversations' +
+      (o.sessionsTotal > o.sessions.length ? ' (showing ' + o.sessions.length + ' / ' + o.sessionsTotal + ')' : ' (' + o.sessions.length + ')') +
       '<span class="usage-mode">' + SORTS.map(function (s) {
         return '<button type="button" class="usage-sort-btn usage-mode-btn' + ((opts.sort || 'recent') === s[0] ? ' active' : '') + '" data-sort="' + s[0] + '">' + s[1] + '</button>';
       }).join('') + '</span></div>' +
-      '<input type="search" class="usage-conv-search skills-search" placeholder="搜索标题或目录…" autocomplete="off" spellcheck="false">' +
+      '<input type="search" class="usage-conv-search skills-search" placeholder="Search titles or folders…" autocomplete="off" spellcheck="false">' +
       '<div class="usage-convs">' + sessionRows(o, opts.sort, nowMs) + '</div></div>';
     var t = o.top;
     var skills = (t.skills || []).concat((t.commands || []).map(function (c) { return ['/' + c[0], c[1]]; }))
       .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 15);
-    var lists = list('工具', t.tools) + list('Bash 程序', t.programs) + list('技能与斜杠命令', skills);
-    var topsHtml = lists ? '<div class="usage-section"><div class="usage-section-title">这些对话累计</div><div class="usage-tops">' + lists + '</div></div>' : '';
+    var lists = list('Tools', t.tools) + list('Bash programs', t.programs) + list('Skills and slash commands', skills);
+    var topsHtml = lists ? '<div class="usage-section"><div class="usage-section-title">Across these conversations</div><div class="usage-tops">' + lists + '</div></div>' : '';
     return range + accounts(o) + overviewKpis(o) + daily + heat + convs + topsHtml;
   }
 
@@ -484,16 +489,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
           // it has read; ask again until it is done.
           if (data.scanning) self.pollTimer = setTimeout(function () { if (self.isOpen() && self.view === 'overview') self.load(); }, 1500);
         })
-        .catch(function (e) { self.error = '读取失败：' + e.message; })
+        .catch(function (e) { self.error = 'Load failed: ' + e.message; })
         .then(function () { self.loading = false; if (self.view === 'overview') self.render({ keepScroll: true }); });
     }
     var id = this.sessionId;
-    if (!id) { this.error = '没有打开的标签'; return this.render(); }
+    if (!id) { this.error = 'No tab is open'; return this.render(); }
     this.loading = true;
     this.render();
     getJson('/api/sessions/' + encodeURIComponent(id) + '/usage')
       .then(function (data) { if (self.sessionId === id) self.data = data; })
-      .catch(function (e) { if (self.sessionId === id) self.error = '读取失败：' + e.message; })
+      .catch(function (e) { if (self.sessionId === id) self.error = 'Load failed: ' + e.message; })
       .then(function () { if (self.sessionId === id && self.view === 'session') { self.loading = false; self.render(); } });
   };
 
@@ -515,9 +520,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
     var title = this.el('usageTitle');
     if (!body) return;
     if (this.view === 'overview') return this.renderOverview(body, title, opts);
-    if (title) title.textContent = '上下文与用量' + (this.data && this.data.name ? ' · ' + this.data.name : '');
+    if (title) title.textContent = 'Context and usage' + (this.data && this.data.name ? ' · ' + this.data.name : '');
     if (this.error) { body.innerHTML = '<div class="usage-empty">' + UsageView.esc(this.error) + '</div>'; return; }
-    if (!this.data) { body.innerHTML = '<div class="usage-empty">' + (this.loading ? '正在读取对话记录…' : '') + '</div>'; return; }
+    if (!this.data) { body.innerHTML = '<div class="usage-empty">' + (this.loading ? 'Loading…' : '') + '</div>'; return; }
     // Switching total/delta keeps the reader where they were; new data
     // starts at the right, where the newest requests are.
     var trend = body.querySelector('.usage-trend');
@@ -528,9 +533,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') (function 
   };
 
   UsagePanel.prototype.renderOverview = function (body, title, opts) {
-    if (title) title.textContent = '上下文与用量 · 总览';
+    if (title) title.textContent = 'Context and usage · Overview';
     if (this.error) { body.innerHTML = '<div class="usage-empty">' + UsageView.esc(this.error) + '</div>'; return; }
-    if (!this.overviewData) { body.innerHTML = '<div class="usage-empty">' + (this.loading ? '正在读取对话记录…' : '') + '</div>'; return; }
+    if (!this.overviewData) { body.innerHTML = '<div class="usage-empty">' + (this.loading ? 'Loading…' : '') + '</div>'; return; }
     // A poll repaints the whole view: keep the reader's scroll and search.
     var scroller = body.closest('.modal-body') || body;
     var top = opts && opts.keepScroll ? scroller.scrollTop : 0;

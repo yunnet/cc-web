@@ -597,7 +597,7 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 .space-tasks:empty::before {
-    content: '（空）';
+    content: '(empty)';
     font-size: 11px;
     color: var(--text-secondary);
     opacity: .6;
@@ -4646,7 +4646,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 .session-tab[data-awaiting] .tab-content::after {
-    content: '待批准';
+    content: 'Pending';
     flex-shrink: 0;
     padding: 1px 5px;
     border-radius: 3px;

@@ -125,7 +125,7 @@ describe('tab finished (✓)', function () {
     assert.strictEqual(timers.find(t => t.live).ms, 8000);
     fire();
     assert.strictEqual(done('b'), true);
-    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Fix bug', id: 'b' }]);
+    assert.deepStrictEqual(notes, [{ title: 'B is done', body: 'Fix bug', id: 'b' }]);
   });
 
   it('leaves the tab being looked at alone, but not when the page is hidden', function () {
@@ -256,7 +256,7 @@ describe('tab awaiting approval', function () {
     fire();
     assert.strictEqual(has('b', 'awaiting'), true);
     assert.strictEqual(has('b', 'done'), false);
-    assert.deepStrictEqual(notes, [{ title: 'B 待批准', body: 'Claude needs your permission', id: 'b' }]);
+    assert.deepStrictEqual(notes, [{ title: 'B is awaiting approval', body: 'Claude needs your permission', id: 'b' }]);
   });
 
   it('does not mark the tab being looked at, nor let it turn into ✓ once the page is left', function () {
@@ -296,7 +296,7 @@ describe('tab awaiting approval', function () {
     assert.strictEqual(has('b', 'awaiting'), false, 'idle_prompt is not a request');
     m.hookEvent('b', { event: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission' });
     assert.strictEqual(has('b', 'awaiting'), true);
-    assert.deepStrictEqual(notes, [{ title: 'B 待批准', body: 'Claude needs your permission', id: 'b' }]);
+    assert.deepStrictEqual(notes, [{ title: 'B is awaiting approval', body: 'Claude needs your permission', id: 'b' }]);
   });
 
   it('keeps the plan modal on hook_event in the main view (UI-04)', function () {
@@ -310,7 +310,7 @@ describe('tab awaiting approval', function () {
   it('is styled off an attribute, with the label after the name', function () {
     const CSS = read('style.css');
     assert.ok(/\.session-tab\[data-awaiting\] \.tab-status \{/.test(CSS));
-    assert.ok(/\.session-tab\[data-awaiting\] \.tab-content::after \{[\s\S]*?content: '待批准';[\s\S]*?flex-shrink: 0;/.test(CSS));
+    assert.ok(/\.session-tab\[data-awaiting\] \.tab-content::after \{[\s\S]*?content: 'Pending';[\s\S]*?flex-shrink: 0;/.test(CSS));
   });
 });
 
@@ -386,7 +386,7 @@ describe('tab finished by the Stop hook', function () {
     m.setTabWorking('b', true, 'Fix bug');
     stop(m, 'b', '\n\n  Done:   the bug was in\nthe parser.');
     assert.strictEqual(done('b'), true, 'no grace period');
-    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Done: the bug was in', id: 'b' }]);
+    assert.deepStrictEqual(notes, [{ title: 'B is done', body: 'Done: the bug was in', id: 'b' }]);
     assert.strictEqual(timers.filter(t => t.live).length, 0);
   });
 
@@ -412,7 +412,7 @@ describe('tab finished by the Stop hook', function () {
     ctx.document.hidden = true;          // walks away inside the grace period
     fire();
     assert.strictEqual(done('a'), true);
-    assert.deepStrictEqual(notes, [{ title: 'A 答完了', body: 'The reply', id: 'a' }]);
+    assert.deepStrictEqual(notes, [{ title: 'A is done', body: 'The reply', id: 'a' }]);
   });
 
   it('still falls back to the title after the grace period when no Stop comes', function () {
@@ -421,7 +421,7 @@ describe('tab finished by the Stop hook', function () {
     m.setTabWorking('b', false, 'Topic');
     fire();
     assert.strictEqual(done('b'), true);
-    assert.deepStrictEqual(notes, [{ title: 'B 答完了', body: 'Topic', id: 'b' }]);
+    assert.deepStrictEqual(notes, [{ title: 'B is done', body: 'Topic', id: 'b' }]);
   });
 
   it('forgets the last reply when a new turn starts', function () {

@@ -26,21 +26,21 @@
   // Why the plugin half of a listing can be empty, said in the user's language
   // rather than as a code.
   const PROBLEMS = {
-    'no-claude-cli': '找不到 claude 命令，插件部分无法读取（技能目录仍然正常）',
-    timeout: 'claude 命令没有在限定时间内返回'
+    'no-claude-cli': 'claude command not found, plugins cannot be read (skill folders still work)',
+    timeout: 'The claude command did not return in time'
   };
 
   // Failures the CLI reports often enough to be worth translating; anything
   // else falls through to the CLI's own message, unchanged.
   const FAILURES = {
-    not_installed: '这个插件并没有装在该范围里',
-    busy: '另一个技能操作正在进行，请等它结束',
-    'no-claude-cli': '找不到 claude 命令',
-    timeout: '命令超时，已结束它和它启动的子进程',
-    'bad-id': '插件 id 不合法',
-    'bad-source': '市场地址要写成 owner/repo 或 https:// 开头的网址',
-    'bad-sha': 'sha256 不合法',
-    'bad-scope': '安装范围不合法'
+    not_installed: 'This plugin is not installed in that scope',
+    busy: 'Another skills operation is running, wait for it to finish',
+    'no-claude-cli': 'claude command not found',
+    timeout: 'Command timed out, it and its child processes were stopped',
+    'bad-id': 'Invalid plugin id',
+    'bad-source': 'Marketplace source must be owner/repo or a URL starting with https://',
+    'bad-sha': 'Invalid sha256',
+    'bad-scope': 'Invalid install scope'
   };
 
   function authHeaders(json) {
@@ -82,7 +82,7 @@
     }
 
     async act(action, target, extra) {
-      if (this.running) { this.note('另一个操作还在进行', true); return null; }
+      if (this.running) { this.note('Another operation is still running', true); return null; }
       this.running = true;
       this.render();
       try {
@@ -102,13 +102,13 @@
     // ── Loading
 
     async load() {
-      this.note('读取中…');
+      this.note('Loading…');
       try {
         this.installed = await this.get('/api/skills');
         this.note(PROBLEMS[this.installed.problem] || '', !!this.installed.problem);
       } catch (err) {
         this.installed = { plugins: [], skills: [] };
-        this.note(`读取已安装的技能失败：${err.message}`, true);
+        this.note(`Loading installed skills failed: ${err.message}`, true);
       }
       this.render();
       // The catalogue is a second, slower call; the installed list should not
@@ -122,7 +122,7 @@
         if (this.catalog.problem) this.note(PROBLEMS[this.catalog.problem] || '', true);
       } catch (err) {
         this.catalog = { rows: [], recommended: [], marketplaces: [], total: 0 };
-        this.note(`读取可安装列表失败：${err.message}`, true);
+        this.note(`Loading the install list failed: ${err.message}`, true);
       }
       this.render();
     }
@@ -150,7 +150,7 @@
       const counts = this.el('skillsTabInstalled');
       if (counts && this.installed) {
         const n = (this.installed.plugins || []).length + (this.installed.skills || []).length;
-        counts.textContent = `已安装 ${n}`;
+        counts.textContent = `Installed ${n}`;
       }
     }
 
@@ -216,18 +216,18 @@
       if (!list) return;
       list.textContent = '';
       const data = this.installed;
-      if (!data) { list.appendChild(this.empty('读取中…')); return; }
+      if (!data) { list.appendChild(this.empty('Loading…')); return; }
 
       const plugins = data.plugins || [];
-      list.appendChild(this.group(`插件（${plugins.length}）`));
-      if (!plugins.length) list.appendChild(this.empty('还没有装任何插件'));
+      list.appendChild(this.group(`Plugins (${plugins.length})`));
+      if (!plugins.length) list.appendChild(this.empty('No plugins installed yet'));
       for (const p of plugins) {
         const skillNames = (p.skills || []).map((s) => s.name);
         const meta = [
           p.version ? `v${String(p.version).slice(0, 12)}` : null,
-          `范围 ${p.scope}`,
-          skillNames.length ? `技能：${skillNames.join('、')}` : '不带技能',
-          p.enabled ? null : '已停用'
+          `Scope ${p.scope}`,
+          skillNames.length ? `Skills: ${skillNames.join(', ')}` : 'No skills',
+          p.enabled ? null : 'Disabled'
         ].filter(Boolean).join(' · ');
         list.appendChild(this.row({
           icon: 'plugin',
@@ -236,10 +236,10 @@
           meta,
           actions: [
             {
-              label: p.enabled ? '停用' : '启用',
+              label: p.enabled ? 'Disable' : 'Enable',
               onClick: () => this.runAction(p.enabled ? 'disable' : 'enable', p.id, { scope: p.scope })
             },
-            { label: '卸载', onClick: () => this.uninstall(p) }
+            { label: 'Uninstall', onClick: () => this.uninstall(p) }
           ],
           onClick: () => this.toggleDetail(list, `plugin:${p.id}`, (p.skills || [])[0] && (p.skills || [])[0].file)
         }));
@@ -247,17 +247,17 @@
       }
 
       const dirSkills = data.skills || [];
-      list.appendChild(this.group(`技能目录（${dirSkills.length}）`));
-      if (!dirSkills.length) list.appendChild(this.empty('~/.claude/skills 和项目的 .claude/skills 都是空的'));
+      list.appendChild(this.group(`Skill folders (${dirSkills.length})`));
+      if (!dirSkills.length) list.appendChild(this.empty('~/.claude/skills and the project\'s .claude/skills are both empty'));
       for (const s of dirSkills) {
         list.appendChild(this.row({
           icon: 'skill',
           title: s.name,
-          badge: s.kind === 'user' ? '个人' : '本项目',
+          badge: s.kind === 'user' ? 'Personal' : 'This project',
           badgeKind: s.kind === 'user' ? '' : 'project',
           meta: s.description || s.dir,
           actions: s.readOnly
-            ? [{ label: '只读', disabled: true, title: `这个目录归别的用户所有，cc-web 删不掉：${s.dir}` }]
+            ? [{ label: 'Read-only', disabled: true, title: `This folder belongs to another user, cc-web cannot delete it: ${s.dir}` }]
             : [],
           onClick: () => this.toggleDetail(list, `skill:${s.id}`, s.file)
         }));
@@ -270,10 +270,10 @@
       if (!list) return;
       list.textContent = '';
       const cat = this.catalog;
-      if (!cat) { list.appendChild(this.empty('读取中…')); return; }
+      if (!cat) { list.appendChild(this.empty('Loading…')); return; }
 
       if (!this.query && (cat.recommended || []).length) {
-        list.appendChild(this.group('推荐给你'));
+        list.appendChild(this.group('Recommended for you'));
         for (const r of cat.recommended) list.appendChild(this.catalogRow(r, this.reasonText(r.reason)));
       }
 
@@ -288,44 +288,44 @@
         const mine = (this.installed && this.installed.plugins || [])
           .filter((p) => `${p.name} ${p.marketplace || ''}`.toLowerCase().includes(needle));
         if (mine.length) {
-          list.appendChild(this.group(`你已经装了（${mine.length}）`));
+          list.appendChild(this.group(`Installed (${mine.length})`));
           for (const p of mine) {
             list.appendChild(this.row({
               icon: 'plugin',
               title: p.name,
-              badge: '已安装',
+              badge: 'Installed',
               badgeKind: 'on',
-              meta: `范围 ${p.scope}${p.enabled ? '' : ' · 已停用'} · 在「已安装」里管理它`,
-              actions: [{ label: '去管理', onClick: () => { this.pane = 'installed'; this.render(); } }]
+              meta: `Scope ${p.scope}${p.enabled ? '' : ' · Disabled'} · manage it under Installed`,
+              actions: [{ label: 'Manage', onClick: () => { this.pane = 'installed'; this.render(); } }]
             }));
           }
         }
       }
 
       const rows = cat.rows || [];
-      list.appendChild(this.group(this.query ? `搜索结果（${rows.length}）` : `全部可安装（${rows.length} / ${cat.total || rows.length}）`));
-      if (!rows.length) list.appendChild(this.empty('没有匹配的技能'));
+      list.appendChild(this.group(this.query ? `Search results (${rows.length})` : `All installable (${rows.length} / ${cat.total || rows.length})`));
+      if (!rows.length) list.appendChild(this.empty('No matching skills'));
       for (const r of rows.slice(0, 100)) list.appendChild(this.catalogRow(r));
     }
 
     reasonText(reason) {
       if (!reason) return '';
-      if (reason.kind === 'signal') return `你的项目里有 ${reason.file}`;
-      return `已有 ${fmtCount(reason.installCount)} 人安装`;
+      if (reason.kind === 'signal') return `Your project has ${reason.file}`;
+      return `${fmtCount(reason.installCount)} installs`;
     }
 
     catalogRow(r, reason) {
-      const meta = [reason, r.description, r.source ? `来源：${r.source}` : null]
+      const meta = [reason, r.description, r.source ? `Source: ${r.source}` : null]
         .filter(Boolean).join(' · ');
       return this.row({
         icon: 'plugin',
         title: r.name,
-        badge: r.installed ? '已安装' : (r.marketplace || undefined),
+        badge: r.installed ? 'Installed' : (r.marketplace || undefined),
         badgeKind: r.installed ? 'on' : '',
         meta,
         actions: r.installed
-          ? [{ label: '已安装', disabled: true, title: '在「已安装」里管理它' }]
-          : [{ label: '安装', primary: true, onClick: () => this.install(r) }]
+          ? [{ label: 'Installed', disabled: true, title: 'Manage it under Installed' }]
+          : [{ label: 'Install', primary: true, onClick: () => this.install(r) }]
       });
     }
 
@@ -334,16 +334,16 @@
       if (!list) return;
       list.textContent = '';
       const markets = (this.catalog && this.catalog.marketplaces) || [];
-      list.appendChild(this.group(`已接入的市场（${markets.length}）`));
-      if (!markets.length) list.appendChild(this.empty('还没有接入任何市场'));
+      list.appendChild(this.group(`Marketplaces (${markets.length})`));
+      if (!markets.length) list.appendChild(this.empty('No marketplaces added yet'));
       for (const m of markets) {
         list.appendChild(this.row({
           icon: 'market',
           title: m.name,
           meta: m.source || '',
           actions: [
-            { label: '更新', onClick: () => this.runAction('marketplace-update', m.name) },
-            { label: '移除', onClick: () => this.removeMarket(m) }
+            { label: 'Update', onClick: () => this.runAction('marketplace-update', m.name) },
+            { label: 'Remove', onClick: () => this.removeMarket(m) }
           ]
         }));
       }
@@ -354,7 +354,7 @@
     detailBox(key) {
       const box = document.createElement('pre');
       box.className = 'skills-detail';
-      box.textContent = this.details && this.details[key] !== undefined ? this.details[key] : '读取中…';
+      box.textContent = this.details && this.details[key] !== undefined ? this.details[key] : 'Loading…';
       return box;
     }
 
@@ -363,14 +363,14 @@
       this.expanded.add(key);
       this.details = this.details || {};
       if (this.details[key] === undefined) {
-        if (!file) { this.details[key] = '这一项没有 SKILL.md 可以显示'; }
+        if (!file) { this.details[key] = 'This item has no SKILL.md to show'; }
         else {
           this.render();
           try {
             const data = await this.get('/api/skills/file', { path: file });
             this.details[key] = data.text || '';
           } catch (err) {
-            this.details[key] = `读取失败：${err.message}`;
+            this.details[key] = `Loading failed: ${err.message}`;
           }
         }
       }
@@ -384,13 +384,13 @@
       if (!result) return null;
       if (result.ok) {
         this.note(result.restartRequired
-          ? '完成。已在运行的 Claude 不受影响，下次启动会话时生效。'
-          : '完成。');
+          ? 'Done. Running Claude sessions are not affected; it takes effect the next time a session starts.'
+          : 'Done');
         await this.load();
       } else if (result.needsConfirmation && result.confirm) {
         this.confirmCommand(action, target, result.confirm, extra);
       } else {
-        this.note(`失败：${FAILURES[result.failureCode] || result.message || '未知原因'}`, true);
+        this.note(`Failed: ${FAILURES[result.failureCode] || result.message || 'unknown reason'}`, true);
         this.render();
       }
       return result;
@@ -401,28 +401,28 @@
     // nothing is sent back unless a person agrees to that exact text.
     confirmCommand(action, target, confirm, extra) {
       const ok = window.confirm(
-        `安装 ${target} 需要先运行市场声明的一条命令：\n\n${confirm.command}\n\nsha256: ${confirm.sha256}\n\n` +
-        '这条命令会以你的身份在这台机器上运行。确认要继续吗？'
+        `Installing ${target} first runs a command declared by the marketplace:\n\n${confirm.command}\n\nsha256: ${confirm.sha256}\n\n` +
+        'This command runs as you on this machine. Continue?'
       );
-      if (!ok) { this.note('已取消，没有运行任何命令。'); this.render(); return; }
+      if (!ok) { this.note('Cancelled, no command was run'); this.render(); return; }
       this.runAction(action, target, Object.assign({}, extra, { acceptSha: confirm.sha256 }));
     }
 
     install(r) {
-      const where = r.source ? `\n\n来源：${r.source}` : '';
-      if (!window.confirm(`安装 ${r.name}？${where}\n\n安装第三方技能等于把别人写的指令交给 Claude 去读，请确认来源可信。`)) return;
-      this.note(`正在安装 ${r.name}…`);
+      const where = r.source ? `\n\nSource: ${r.source}` : '';
+      if (!window.confirm(`Install ${r.name}?${where}\n\nInstalling a third-party skill gives Claude instructions someone else wrote. Make sure you trust the source.`)) return;
+      this.note(`Installing ${r.name}…`);
       this.runAction('install', r.id);
     }
 
     uninstall(p) {
-      if (!window.confirm(`卸载 ${p.name}？\n\n它带的技能会一起消失。已记录的对话不受影响。`)) return;
-      this.note(`正在卸载 ${p.name}…`);
+      if (!window.confirm(`Uninstall ${p.name}?\n\nThe skills it carries go with it. Recorded conversations are not affected.`)) return;
+      this.note(`Uninstalling ${p.name}…`);
       this.runAction('uninstall', p.id, { scope: p.scope });
     }
 
     removeMarket(m) {
-      if (!window.confirm(`移除市场 ${m.name}？\n\n已经装好的插件不会被删除，只是不再从这个市场看到新的。`)) return;
+      if (!window.confirm(`Remove marketplace ${m.name}?\n\nInstalled plugins are not deleted; you just stop seeing new ones from this marketplace.`)) return;
       this.runAction('marketplace-remove', m.name);
     }
 
@@ -430,8 +430,8 @@
       const input = this.el('skillsMarketInput');
       if (!input) return;
       const src = input.value.trim();
-      if (!src) { this.note('填一个 owner/repo 或 https:// 网址', true); return; }
-      this.note(`正在添加 ${src}…`);
+      if (!src) { this.note('Enter owner/repo or an https:// URL', true); return; }
+      this.note(`Adding ${src}…`);
       this.runAction('marketplace-add', src).then((r) => { if (r && r.ok) input.value = ''; });
     }
 

@@ -189,13 +189,13 @@ describe('usage overview view', function() {
       owner: 'all',
       groups: [
         { id: 'u-1', name: '<i>alice</i>', me: true, sessions: 2, requests: 4, tokens: 3000, costUsd: 0.012 },
-        { id: '', name: '不在 cc-web 里', me: false, sessions: 1, requests: 1, tokens: 1000, costUsd: 0.004 },
-        { id: 'others', name: '其他账号', me: false, sessions: 1, requests: 1, tokens: 0, costUsd: 0 }
+        { id: '', name: 'Outside cc-web', me: false, sessions: 1, requests: 1, tokens: 1000, costUsd: 0.004 },
+        { id: 'others', name: 'Other accounts', me: false, sessions: 1, requests: 1, tokens: 0, costUsd: 0 }
       ],
       sessions: data.sessions.map((s) => Object.assign({}, s, { account: 'alice' }))
     });
     const html = UsageView.overview(withAccounts, { now: NOW_MS });
-    assert.ok(html.includes('按账号'));
+    assert.ok(html.includes('By account'));
     assert.ok(html.includes('&lt;i&gt;alice&lt;/i&gt;') && !html.includes('<i>alice'));
     assert.ok(/usage-owner-btn usage-mode-btn active" data-owner="all"/.test(html));
     assert.ok(html.includes('data-owner="me"') && html.includes('data-owner="none"'));
@@ -205,22 +205,22 @@ describe('usage overview view', function() {
     const mine = UsageView.overview(Object.assign({}, withAccounts, { owner: 'me' }), { now: NOW_MS });
     assert.ok(/usage-acct usage-owner-btn active" data-owner="me"/.test(mine));
     assert.ok(!mine.includes('alice · '));
-    assert.ok(!UsageView.overview(data, { now: NOW_MS }).includes('按账号'), 'no accounts, no section');
+    assert.ok(!UsageView.overview(data, { now: NOW_MS }).includes('By account'), 'no accounts, no section');
   });
 
   it('shows the scan in progress, the range, and the cost as an API estimate', function() {
     const html = UsageView.overview(data, { now: NOW_MS });
-    assert.ok(html.includes('正在读取对话记录（2 / 5）'));
+    assert.ok(html.includes('Scanning conversations (2 / 5)'));
     assert.ok(html.includes('data-range="7d"') && /usage-range-btn usage-mode-btn active" data-range="7d"/.test(html));
-    assert.ok(html.includes('花费（API 折算）'));
+    assert.ok(html.includes('Cost (API-equivalent)'));
   });
 
   it('lists conversations, escaped, the open one marked, sortable', function() {
     const html = UsageView.overview(data, { now: NOW_MS });
     assert.ok(!html.includes('<b>Fix</b>') && html.includes('&lt;b&gt;Fix&lt;/b&gt;'));
-    assert.ok(html.includes('已打开'));
-    assert.ok(html.includes('（无标题）'));
-    assert.ok(html.includes('1 分钟前'));
+    assert.ok(html.includes('>Open<'));
+    assert.ok(html.includes('(untitled)'));
+    assert.ok(html.includes('1 min ago'));
     assert.deepStrictEqual(UsageView.sortSessions(data.sessions, 'tokens').map((s) => s.id), ['b', 'a']);
     assert.deepStrictEqual(UsageView.sortSessions(data.sessions, 'cost').map((s) => s.id), ['a', 'b']);
   });
@@ -236,6 +236,6 @@ describe('usage overview view', function() {
   it('gives every day a bar with its numbers on hover', function() {
     const svg = UsageView.dailySvg(data.days);
     assert.strictEqual((svg.match(/<rect/g) || []).length, 2);
-    assert.ok(svg.includes('2026-11-06\n3k Token · 3 个请求\n$0.01（API 折算）'));
+    assert.ok(svg.includes('2026-11-06\n3k tokens · 3 requests\n$0.01 (API-equivalent)'));
   });
 });

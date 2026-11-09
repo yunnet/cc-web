@@ -25,10 +25,10 @@
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, status: res.status, error: zh(data.error || `请求失败（${res.status}）`) };
+      if (!res.ok) return { ok: false, status: res.status, error: zh(data.error || `Request failed (${res.status})`) };
       return { ok: true, data };
     } catch (_) {
-      return { ok: false, error: '连不上服务器' };
+      return { ok: false, error: 'Could not reach the server' };
     }
   }
 
@@ -36,13 +36,13 @@
     const t = Date.parse(iso);
     if (!t) return '—';
     const mins = Math.round((Date.now() - t) / 60000);
-    if (mins < 1) return '刚刚';
-    if (mins < 60) return `${mins} 分钟前`;
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
     const hours = Math.round(mins / 60);
-    if (hours < 24) return `${hours} 小时前`;
+    if (hours < 24) return `${hours} h ago`;
     const days = Math.round(hours / 24);
-    if (days < 30) return `${days} 天前`;
-    return new Date(t).toLocaleDateString();
+    if (days < 30) return `${days} d ago`;
+    return new Date(t).toLocaleDateString('en-US');
   }
 
   // "Chrome · Windows" from a user-agent string; good enough to tell your
@@ -54,7 +54,7 @@
         : /Firefox\//.test(s) ? 'Firefox'
           : /Chrome\//.test(s) ? 'Chrome'
             : /Safari\//.test(s) ? 'Safari'
-              : (s ? s.split(/[\s/]/)[0] : '未知浏览器');
+              : (s ? s.split(/[\s/]/)[0] : 'Unknown browser');
     const os = /Windows/.test(s) ? 'Windows'
       : /iPhone|iPad/.test(s) ? 'iOS'
         : /Android/.test(s) ? 'Android'
@@ -110,8 +110,8 @@
       if (!modal) return;
       setStatus('accountStatus', '');
       if (this.me) {
-        $('accountTitle').textContent = `账号：${this.me.username}`;
-        $('accountRole').textContent = this.me.role === 'admin' ? '管理员' : '普通用户';
+        $('accountTitle').textContent = `Account: ${this.me.username}`;
+        $('accountRole').textContent = this.me.role === 'admin' ? 'Admin' : 'Member';
       }
       modal.classList.add('active');
       await this.loadDevices();
@@ -119,7 +119,7 @@
 
     async loadDevices() {
       const list = $('accountDeviceList');
-      list.innerHTML = '<div class="account-hint">正在读取…</div>';
+      list.innerHTML = '<div class="account-hint">Loading…</div>';
       const r = await api('GET', '/api/auth/devices');
       if (!r.ok) {
         list.innerHTML = `<div class="account-hint">${escapeHtml(r.error)}</div>`;
@@ -131,35 +131,35 @@
         row.className = 'users-row';
         row.innerHTML = `
           <div class="users-row-head">
-            <span class="users-row-name">${escapeHtml(deviceName(d.ua))}${d.current ? ' <span class="users-tag accent">本机</span>' : ''}</span>
+            <span class="users-row-name">${escapeHtml(deviceName(d.ua))}${d.current ? ' <span class="users-tag accent">This device</span>' : ''}</span>
             <span class="users-row-actions"></span>
           </div>
-          <div class="users-row-meta">${escapeHtml(d.ip || '未知地址')} · 登录于 ${escapeHtml(when(d.createdAt))} · 最近使用 ${escapeHtml(when(d.lastSeenAt))}</div>`;
+          <div class="users-row-meta">${escapeHtml(d.ip || 'Unknown address')} · Signed in ${escapeHtml(when(d.createdAt))} · Last used ${escapeHtml(when(d.lastSeenAt))}</div>`;
         if (!d.current) {
           const out = document.createElement('button');
           out.type = 'button';
           out.className = 'btn btn-secondary btn-small';
-          out.textContent = '退出这台设备';
+          out.textContent = 'Sign out this device';
           out.addEventListener('click', async () => {
             out.disabled = true;
             const res = await api('DELETE', `/api/auth/devices/${encodeURIComponent(d.id)}`);
             if (!res.ok) { out.disabled = false; return setStatus('accountStatus', res.error, true); }
-            setStatus('accountStatus', '那台设备已退出登录');
+            setStatus('accountStatus', 'That device is signed out');
             this.loadDevices();
           });
           row.querySelector('.users-row-actions').appendChild(out);
         }
         list.appendChild(row);
       }
-      if (!r.data.devices.length) list.innerHTML = '<div class="account-hint">没有登录中的设备</div>';
+      if (!r.data.devices.length) list.innerHTML = '<div class="account-hint">No signed-in devices</div>';
     },
 
     async changePassword(e) {
       e.preventDefault();
       const current = $('accountCurrentPassword').value;
       const next = $('accountNewPassword').value;
-      if (!current || !next) return setStatus('accountStatus', '请填写当前密码和新密码', true);
-      if (next !== $('accountNewPassword2').value) return setStatus('accountStatus', '两次输入的新密码不一致', true);
+      if (!current || !next) return setStatus('accountStatus', 'Enter your current password and a new password', true);
+      if (next !== $('accountNewPassword2').value) return setStatus('accountStatus', 'The new passwords do not match', true);
       const btn = $('accountChangePasswordBtn');
       btn.disabled = true;
       const r = await api('POST', '/api/auth/password', { current, next });
@@ -167,7 +167,7 @@
       if (!r.ok) return setStatus('accountStatus', r.error, true);
       ['accountCurrentPassword', 'accountNewPassword', 'accountNewPassword2'].forEach((id) => { $(id).value = ''; });
       const n = r.data.signedOut || 0;
-      setStatus('accountStatus', n ? `密码已修改，其他 ${n} 台设备已退出登录` : '密码已修改');
+      setStatus('accountStatus', n ? `Password changed; ${n} other ${n === 1 ? 'device was' : 'devices were'} signed out` : 'Password changed');
       this.loadDevices();
     },
   };
@@ -200,17 +200,17 @@
     showSecret(username, password, what) {
       const box = $('usersSecret');
       box.hidden = false;
-      box.innerHTML = `${escapeHtml(what)}：<strong>${escapeHtml(username)}</strong> 的临时密码 <code>${escapeHtml(password)}</code>`
-        + '<button type="button" class="btn btn-secondary btn-small">复制</button>'
-        + '<div class="account-hint">只显示这一次。把它交给对方，对方第一次登录时必须改成自己的密码。</div>';
+      box.innerHTML = `${escapeHtml(what)}: temporary password for <strong>${escapeHtml(username)}</strong> <code>${escapeHtml(password)}</code>`
+        + '<button type="button" class="btn btn-secondary btn-small">Copy</button>'
+        + '<div class="account-hint">Shown only once. Give it to them; they must change it to their own password when they first sign in.</div>';
       box.querySelector('button').addEventListener('click', async (e) => {
-        e.target.textContent = (await copyText(password)) ? '已复制' : '请手动选中复制';
+        e.target.textContent = (await copyText(password)) ? 'Copied' : 'Select and copy it by hand';
       });
     },
 
     async loadUsers() {
       const list = $('usersList');
-      list.innerHTML = '<div class="account-hint">正在读取…</div>';
+      list.innerHTML = '<div class="account-hint">Loading…</div>';
       const r = await api('GET', '/api/admin/users');
       if (!r.ok) {
         list.innerHTML = `<div class="account-hint">${escapeHtml(r.error)}</div>`;
@@ -225,19 +225,19 @@
       const row = document.createElement('div');
       row.className = `users-row${u.disabled ? ' disabled' : ''}`;
       const tags = [
-        u.role === 'admin' ? '<span class="users-tag accent">管理员</span>' : '<span class="users-tag">普通用户</span>',
-        me ? '<span class="users-tag">你</span>' : '',
-        u.disabled ? '<span class="users-tag">已停用</span>' : '',
-        u.mustChangePassword ? '<span class="users-tag">待改密码</span>' : '',
+        u.role === 'admin' ? '<span class="users-tag accent">Admin</span>' : '<span class="users-tag">Member</span>',
+        me ? '<span class="users-tag">You</span>' : '',
+        u.disabled ? '<span class="users-tag">Disabled</span>' : '',
+        u.mustChangePassword ? '<span class="users-tag">Must change password</span>' : '',
       ].join(' ');
-      const roots = u.effectiveRoots ? u.effectiveRoots.join('；') : '不限';
+      const roots = u.effectiveRoots ? u.effectiveRoots.join('; ') : 'Anywhere';
       row.innerHTML = `
         <div class="users-row-head">
           <span class="users-row-name">${escapeHtml(u.username)} ${tags}</span>
           <span class="users-row-actions"></span>
         </div>
-        <div class="users-row-meta">可浏览目录：${escapeHtml(roots)}</div>
-        <div class="users-row-meta">登录设备 ${u.devices} · 运行中会话 ${u.runningSessions} · 最近使用 ${escapeHtml(u.lastSeenAt ? when(u.lastSeenAt) : '—')} · 创建于 ${escapeHtml(when(u.createdAt))}</div>`;
+        <div class="users-row-meta">Folder access: ${escapeHtml(roots)}</div>
+        <div class="users-row-meta">Devices ${u.devices} · Running sessions ${u.runningSessions} · Last used ${escapeHtml(u.lastSeenAt ? when(u.lastSeenAt) : '—')} · Created ${escapeHtml(when(u.createdAt))}</div>`;
       const actions = row.querySelector('.users-row-actions');
       const button = (label, handler, danger) => {
         const b = document.createElement('button');
@@ -251,37 +251,37 @@
         actions.appendChild(b);
       };
 
-      if (u.role !== 'admin') button('目录', () => this.editRoots(row, u));
+      if (u.role !== 'admin') button('Folder access', () => this.editRoots(row, u));
       if (!me) {
-        button(u.role === 'admin' ? '设为普通用户' : '设为管理员', () => this.patch(u, { role: u.role === 'admin' ? 'user' : 'admin' }));
-        button(u.disabled ? '启用' : '停用', async () => {
+        button(u.role === 'admin' ? 'Make member' : 'Make admin', () => this.patch(u, { role: u.role === 'admin' ? 'user' : 'admin' }));
+        button(u.disabled ? 'Enable' : 'Disable', async () => {
           if (!u.disabled && !(await confirmAsk({
-            title: `停用 ${u.username}？`,
-            body: '对方的所有登录会立即退出，正在运行的 Claude 会停止。会话和数据都保留，重新启用后可以继续使用。',
-            confirmText: '停用', danger: true,
+            title: `Disable ${u.username}?`,
+            body: 'All their sign-ins end now and their running Claude stops. Their sessions and data are kept; enable them again to carry on.',
+            confirmText: 'Disable', danger: true,
           }))) return;
           await this.patch(u, { disabled: !u.disabled });
         });
-        button('重置密码', async () => {
+        button('Reset password', async () => {
           if (!(await confirmAsk({
-            title: `重置 ${u.username} 的密码？`,
-            body: '会生成一个临时密码；对方的所有登录会立即退出，正在运行的 Claude 会停止。下次登录时必须改密码。',
-            confirmText: '重置',
+            title: `Reset the password for ${u.username}?`,
+            body: 'A temporary password is generated. All their sign-ins end now and their running Claude stops. They must change the password at their next sign-in.',
+            confirmText: 'Reset',
           }))) return;
           const r = await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/reset-password`);
           if (!r.ok) return setStatus('usersStatus', r.error, true);
-          this.showSecret(u.username, r.data.password, '已重置');
+          this.showSecret(u.username, r.data.password, 'Reset');
           this.loadUsers();
         });
-        button('删除', async () => {
+        button('Delete', async () => {
           if (!(await confirmAsk({
-            title: `删除 ${u.username}？`,
-            body: `删除账号后对方不能再登录，正在运行的 Claude 会停止。对方的会话、空间和 Claude 记录保留在服务器的数据目录（${u.id}/）里，不会被删除。`,
-            confirmText: '删除', danger: true,
+            title: `Delete ${u.username}?`,
+            body: `They can no longer sign in and their running Claude stops. Their sessions, spaces and Claude history stay in the server's data folder (${u.id}/) and are not deleted.`,
+            confirmText: 'Delete', danger: true,
           }))) return;
           const r = await api('DELETE', `/api/admin/users/${encodeURIComponent(u.id)}`);
           if (!r.ok) return setStatus('usersStatus', r.error, true);
-          setStatus('usersStatus', `已删除 ${u.username}，数据保留在 ${r.data.dataDir}`);
+          setStatus('usersStatus', `Deleted ${u.username}; their data is kept in ${r.data.dataDir}`);
           this.loadUsers();
         }, true);
       }
@@ -293,20 +293,20 @@
       if (existing) { existing.parentElement.remove(); return; }
       const box = document.createElement('div');
       box.innerHTML = `
-        <textarea spellcheck="false" placeholder="每行一个绝对路径；留空 = 默认的 ${escapeHtml(u.id)}/workspace"></textarea>
+        <textarea spellcheck="false" placeholder="One absolute path per line; leave empty for the default ${escapeHtml(u.id)}/workspace"></textarea>
         <div class="users-row-actions" style="margin-top: 6px;"></div>`;
       const area = box.querySelector('textarea');
       area.value = (u.rootDirs || []).join('\n');
       const save = document.createElement('button');
       save.type = 'button';
       save.className = 'btn btn-primary btn-small';
-      save.textContent = '保存目录';
+      save.textContent = 'Save';
       save.addEventListener('click', async () => {
         const dirs = area.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
         save.disabled = true;
         const ok = await this.patch(u, { rootDirs: dirs });
         save.disabled = false;
-        if (ok) setStatus('usersStatus', `已更新 ${u.username} 的可浏览目录`);
+        if (ok) setStatus('usersStatus', `Updated folder access for ${u.username}`);
       });
       box.querySelector('.users-row-actions').appendChild(save);
       row.appendChild(box);
@@ -324,7 +324,7 @@
     async create(e) {
       e.preventDefault();
       const username = $('usersNewName').value.trim();
-      if (!username) return setStatus('usersStatus', '请填写用户名', true);
+      if (!username) return setStatus('usersStatus', 'Enter a username', true);
       const btn = $('usersCreateBtn');
       btn.disabled = true;
       const r = await api('POST', '/api/admin/users', { username, role: $('usersNewRole').value });
@@ -332,7 +332,7 @@
       if (!r.ok) return setStatus('usersStatus', r.error, true);
       $('usersNewName').value = '';
       setStatus('usersStatus', '');
-      this.showSecret(r.data.user.username, r.data.password, '已创建');
+      this.showSecret(r.data.user.username, r.data.password, 'Created');
       this.loadUsers();
     },
 
@@ -342,7 +342,7 @@
 
     async loadInvites() {
       const list = $('invitesList');
-      list.innerHTML = '<div class="account-hint">正在读取…</div>';
+      list.innerHTML = '<div class="account-hint">Loading…</div>';
       const r = await api('GET', '/api/admin/invites');
       if (!r.ok) {
         list.innerHTML = `<div class="account-hint">${escapeHtml(r.error)}</div>`;
@@ -358,17 +358,17 @@
             <span class="users-row-name"><code>${escapeHtml(link)}</code></span>
             <span class="users-row-actions"></span>
           </div>
-          <div class="users-row-meta">注册后为${inv.role === 'admin' ? '管理员' : '普通用户'} · ${escapeHtml(inv.createdBy || '')} 创建于 ${escapeHtml(when(inv.createdAt))} · ${escapeHtml(new Date(inv.expiresAt).toLocaleString())} 过期 · 只能用一次</div>`;
+          <div class="users-row-meta">Signs up as ${inv.role === 'admin' ? 'Admin' : 'Member'} · Created by ${escapeHtml(inv.createdBy || '')} ${escapeHtml(when(inv.createdAt))} · Expires ${escapeHtml(new Date(inv.expiresAt).toLocaleString('en-US'))} · Single use</div>`;
         const actions = row.querySelector('.users-row-actions');
         const copy = document.createElement('button');
         copy.type = 'button';
         copy.className = 'btn btn-secondary btn-small';
-        copy.textContent = '复制链接';
-        copy.addEventListener('click', async () => { copy.textContent = (await copyText(link)) ? '已复制' : '请手动选中复制'; });
+        copy.textContent = 'Copy link';
+        copy.addEventListener('click', async () => { copy.textContent = (await copyText(link)) ? 'Copied' : 'Select and copy it by hand'; });
         const revoke = document.createElement('button');
         revoke.type = 'button';
         revoke.className = 'btn btn-danger btn-small';
-        revoke.textContent = '作废';
+        revoke.textContent = 'Revoke';
         revoke.addEventListener('click', async () => {
           const res = await api('DELETE', `/api/admin/invites/${encodeURIComponent(inv.code)}`);
           if (!res.ok) return setStatus('usersStatus', res.error, true);
@@ -377,7 +377,7 @@
         actions.append(copy, revoke);
         list.appendChild(row);
       }
-      if (!r.data.invites.length) list.innerHTML = '<div class="account-hint">没有可用的邀请码</div>';
+      if (!r.data.invites.length) list.innerHTML = '<div class="account-hint">No active invite links</div>';
     },
 
     async createInvite(e) {
@@ -386,7 +386,7 @@
       if (!r.ok) return setStatus('usersStatus', r.error, true);
       const link = this.inviteLink(r.data.invite.code);
       const copied = await copyText(link);
-      setStatus('usersStatus', copied ? '邀请链接已生成并复制' : '邀请链接已生成');
+      setStatus('usersStatus', copied ? 'Invite link created and copied' : 'Invite link created');
       this.loadInvites();
     },
   };
@@ -417,8 +417,8 @@
     const headerBtn = $('accountHeaderBtn');
     if (headerBtn) {
       $('accountHeaderName').textContent = me.username;
-      headerBtn.setAttribute('aria-label', `账号：${me.username}`);
-      headerBtn.title = `账号：${me.username}`;
+      headerBtn.setAttribute('aria-label', `Account: ${me.username}`);
+      headerBtn.title = `Account: ${me.username}`;
       headerBtn.hidden = false;
     }
     if ($('usersBtnMobile')) $('usersBtnMobile').hidden = me.role !== 'admin';

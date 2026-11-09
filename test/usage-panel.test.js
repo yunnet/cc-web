@@ -36,28 +36,28 @@ describe('usage panel view', function() {
     assert.ok(html.includes('58.7k'), 'all tokens');
     assert.ok(html.includes('78%'), 'cache hit rate');
     assert.ok(html.includes('$0.12'), 'cost');
-    assert.ok(html.includes('花费（API 折算）'));
-    assert.ok(html.includes('1.5 小时'), 'span');
-    assert.ok(!html.includes('子 Agent'), 'no sub-agent cell without sub-agents');
+    assert.ok(html.includes('Cost (API-equivalent)'));
+    assert.ok(html.includes('1.5 h'), 'span');
+    assert.ok(!html.includes('Subagents'), 'no sub-agent cell without sub-agents');
   });
 
   it('says when some requests could not be priced', function() {
     const u = usage();
     u.totals.unpriced = 2;
-    assert.ok(UsageView.session({ usage: u }, 'total').includes('2 个请求的模型没有价格'));
+    assert.ok(UsageView.session({ usage: u }, 'total').includes('2 requests on a model with no known price'));
   });
 
   it('draws the context against the window when the ring knows its size', function() {
     const html = UsageView.now(usage(), { ctxSize: 200000 });
-    assert.ok(html.includes('当前上下文 6k / 200k（3%）'), html);
-    assert.ok(html.includes('剩余'));
-    assert.ok(!UsageView.now(usage(), null).includes('剩余'));
+    assert.ok(html.includes('Context now 6k / 200k (3%)'), html);
+    assert.ok(html.includes('Free'));
+    assert.ok(!UsageView.now(usage(), null).includes('Free'));
   });
 
   it('marks the compaction on the trend, and shows shrinkage in delta mode', function() {
     const total = UsageView.trendSvg(usage().trend, 'total');
     assert.ok(total.includes('✂'));
-    assert.ok(total.includes('压缩（手动 /compact）：压缩前 26.5k'));
+    assert.ok(total.includes('Compaction (manual /compact): 26.5k before'));
     assert.strictEqual((total.match(/<g><title>/g) || []).length, 3, 'one bar per request');
     const delta = UsageView.trendSvg(usage().trend, 'delta');
     assert.ok(delta.includes('u-shrink'), 'the drop after the compaction');
@@ -67,7 +67,7 @@ describe('usage panel view', function() {
   it('says how many requests the trend left out', function() {
     const u = usage();
     u.trend.skipped = 500;
-    assert.ok(UsageView.session({ usage: u }, 'total').includes('前面还有 500 个'));
+    assert.ok(UsageView.session({ usage: u }, 'total').includes('500 earlier not shown'));
   });
 
   it('never lets a tool name, path or command become markup', function() {
@@ -84,7 +84,7 @@ describe('usage panel view', function() {
   });
 
   it('explains an empty tab instead of showing zeros', function() {
-    assert.ok(UsageView.session({ usage: null }, 'total').includes('还没有对话记录'));
+    assert.ok(UsageView.session({ usage: null }, 'total').includes('has no conversation yet'));
   });
 
   it('is on the page, after the tab code that opens it', function() {

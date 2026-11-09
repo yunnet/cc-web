@@ -70,7 +70,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 |---|---|---|---|
 | TAB-01 | 每个会话在侧边栏显示为所属空间下的一行任务；默认名是目录名，自定义名优先；悬停显示完整路径（2026-10-26 由顶部标签栏迁入侧边栏，行为不变） | `file:src/public/session-manager.js` | `test/tab-working-dir.test.js` |
 | TAB-02 | 当前任务整行填充强调色、白色粗体 | 手工 | — |
-| TAB-03 | 任务的 × 删除按钮（悬停时出现），点了先弹确认框（用户 2026-10-26：「删除时，要有确认弹窗」），确认后删除任务并停止其中的 Claude；取消则不动；提示对话记录保留 | `js-control:session-manager.js:删除任务` | `test/session-views.test.js` |
+| TAB-03 | 任务的 × 删除按钮（悬停时出现），点了先弹确认框（用户 2026-10-26：「删除时，要有确认弹窗」），确认后删除任务并停止其中的 Claude；取消则不动；提示对话记录保留 | `js-control:session-manager.js:Delete task` | `test/session-views.test.js` |
 | TAB-04 | 中键点击标签关闭它 | 手工 | — |
 | TAB-05 | 右键标签弹出菜单「Close Others」，点菜单外关闭 | 手工 | — |
 | TAB-06 | 双击标签名原地重命名：回车或失焦保存，Esc 恢复，清空保留原名；名字写到服务器，自己的所有设备可见；只有真的改了才算自定义名 | `key:session-manager.js:Enter` `key:session-manager.js:Escape` `route:PATCH /api/sessions/:sessionId` | `test/session-rename.test.js` |
@@ -102,16 +102,16 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SPACE-03 | 一次性迁移（每个用户各自按自己的会话执行）：首次启动时 `spaces.json` 不存在而已有会话，按工作目录去重自动建空间（名字=目录名，重名加父目录前缀），并把每个会话归入其目录的空间；文件损坏同样触发重建 | 手工 | `test/space-store.test.js` |
 | SPACE-04 | 任务（会话）带 `spaceId` 归属：创建时可指定空间，未知 spaceId（包括别的用户的空间）降级为其目录所绑空间（只找自己的空间）、再降为未分组而不是拒绝；PATCH 会话可在空间间移动（null=未分组）；列表与 WS session_created 都带 spaceId | `route:POST /api/sessions/create` `route:PATCH /api/sessions/:sessionId` `ws-server:create_session` | `test/space-store.test.js` |
 | SPACE-05 | 侧边栏布局：左侧空间+任务树、右侧终端区（用户 2026-10-26：「左边是空间+任务，右边是session+console」）；任务行沿用原标签的全部行为（状态点、✓/待批准/旋转球 marks、双击改名、拖拽排序、右键菜单、中键关闭、Alt+1..9）；桌面可收起为图标轨道，窄屏（≤768px）变左滑抽屉带遮罩；头部 #sidebarToggleBtn 是唯一的开关，两个方向都管（桌面展开⇄收起、窄屏抽屉开⇄关，aria-expanded 与提示随状态变）。侧栏内的收起按钮 #sidebarCollapseBtn 已移除（用户 2026-11-04：「sidebarToggleBtn这个图标按钮做成双重开关，可以开，也可以关。 sidebarCollapseBtn按钮，不要了。」） | `control:sidebarToggleBtn` `file:src/public/spaces.js` | `test/features.test.js` |
-| SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器，自己的所有设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:在这个空间新建任务` `js-control:spaces.js:删除空间（任务保留，转入未分组）` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
+| SPACE-06 | 空间行：悬停浮现「+ 新建任务」与「× 删除空间」；双击就地改名（回车/失焦保存、Esc 恢复，写到服务器，自己的所有设备可见）；点行折叠/展开并记住；底部常驻「未分组」伪分组收纳无空间任务（空且存在真空间时隐藏） | `js-control:spaces.js:New task in this space` `js-control:spaces.js:Delete space (tasks are kept and move to Ungrouped)` `key:spaces.js:Enter` `key:spaces.js:Escape` | — |
 | SPACE-07 | 通用确认弹窗：删除任务/删除空间前弹出（用户 2026-10-26：「删除时，要有确认弹窗」），确认/取消/×/Esc/点遮罩五种关闭方式，只有确认键返回真；同一时刻只保留一问 | `control:confirmOkBtn` `control:confirmCancelBtn` `control:confirmCancelX` | — |
 | SPACE-08 | 侧边栏底部「＋ 新建空间」（640px 宽卡）：名字（留空自动取目录名）+ 工作目录——可手填/粘贴，也可点「浏览…」展开目录选择器（与新建标签对话框同一 /api/folders 数据、同款 .folder-item 大行：点行进入、符号链接标 ↗、显示隐藏目录开关、空目录提示「可直接选定」）；**面包屑导航**显示当前路径、每段可点跳转、自动滚到末段、当前段加粗；「选定此目录」为面板底部主操作；最近目录一键填入；路径服务端校验（越界 403、不存在 400，均中文提示）；重复目录拒绝（只和自己的空间比）；Enter 创建、Esc 取消（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:newSpaceBtn` `control:newSpaceName` `control:newSpaceDir` `control:newSpaceBrowseBtn` `control:newSpaceUpBtn` `control:newSpacePickBtn` `control:newSpaceHiddenToggle` `js-control:spaces.js:Symbolic link` `control:newSpaceCreateBtn` `control:newSpaceCancelBtn` `control:newSpaceCloseX` | `test/space-store.test.js` |
 | SPACE-09 | 空间下新建任务：对话框目录预填并**锁定**为空间目录（隐藏上一级/回到起始/浏览/最近目录/路径输入，NEW-06 的路径跳转随锁失效），默认名 `task N`（取该空间已用最大编号 +1，派生名不算自定义名）；「继续之前的对话」对该目录照常可用；**空间目录打不开时禁用两个启动键并给出中文原因与补救指引**（防止任务静默落到其它目录/错误空间） | `file:src/public/app.js` | — |
 | SPACE-10 | 每空间任务**水位线渐显**（借鉴 DSH）：默认只列前 5 个任务，超出部分隐藏（DOM 保留不丢）；正在运行/待批准/未读 ✓/当前任务自动抬升水位线保证可见（扫描前 50）；组尾「显示更多（还有 N 个）」每次 +5（剩 ≤5 全显）、「收起」复位；折叠空间即复位；不持久化（刷新重置） | `file:src/public/spaces.js` | — |
 | SPACE-11 | 侧栏**搜索**（借鉴 DSH）：标题行搜索图标展开输入框；非空查询把分组树替换为平铺命中列表（任务名/空间名子串、大小写不敏感；行内带状态点 + `任务名 · 空间名`）；点结果=清空收起搜索、切到该任务、展开所属空间并滚动到行；Esc 收起；无结果显示「没有匹配的任务」 | `control:sidebarSearchBtn` `control:sidebarSearchInput` | — |
 | SPACE-12 | 任务行**行尾相对时间**（刚刚/N 分钟/N 小时/N 天/M/D，三级灰字，悬停 title 见绝对时刻，60 秒粒度统一刷新、页面隐藏时跳过）；**超宽标题悬停滚动**到尾部完整显示、移开回到省略号截断（借鉴 DSH） | `file:src/public/session-manager.js` | — |
-| SPACE-13 | 任务行内 **⋯ 菜单按钮**：桌面悬停显示、触屏（hover:none）常显，点开与右键相同的菜单（Close Others / 移动到空间…）——触屏原先只能靠右键，无从打开 | `js-control:session-manager.js:任务菜单` | — |
+| SPACE-13 | 任务行内 **⋯ 菜单按钮**：桌面悬停显示、触屏（hover:none）常显，点开与右键相同的菜单（Close Others / 移动到空间…）——触屏原先只能靠右键，无从打开 | `js-control:session-manager.js:Task menu` | — |
 | SPACE-14 | 空态：全新安装（无空间无任务）侧栏显示居中引导「还没有空间 → 点下方＋新建空间」；展开的空间若无任务显示灰字「（空）」；搜索无结果有专属空态 | `file:src/public/spaces.js` | — |
-| SPACE-15 | **置顶任务**（借鉴 DSH）：行悬停时行尾时间淡出、置顶按钮淡入（同槽互换、零布局位移）；已置顶任务的图钉常亮强调色且时间常隐；点图钉或菜单「置顶/取消置顶」切换；置顶任务排其空间最前（两种排序模式下皆然，组内相对序保持）；取消置顶回原位；按设备记忆（localStorage） | `js-control:session-manager.js:置顶 / 取消置顶` | — |
+| SPACE-15 | **置顶任务**（借鉴 DSH）：行悬停时行尾时间淡出、置顶按钮淡入（同槽互换、零布局位移）；已置顶任务的图钉常亮强调色且时间常隐；点图钉或菜单「置顶/取消置顶」切换；置顶任务排其空间最前（两种排序模式下皆然，组内相对序保持）；取消置顶回原位；按设备记忆（localStorage） | `js-control:session-manager.js:Pin / unpin` | — |
 | SPACE-16 | **排序模式**（借鉴 DSH）：侧栏头切换按钮「手动（默认，现有拖拽序）/ 最近更新（各组按最后活动严格倒序、只读）」；最近模式下拖拽不重排（dragover 直接忽略）；置顶恒排最前；按钮显示当前模式（最近=强调色）、选择按设备记忆 | `control:sidebarSortBtn` | — |
 | SPACE-17 | **折叠为 56px 图标轨道**（借鉴 DSH）：侧栏收起时不再整条消失——每空间一枚圆形字徽（名字首字），当前任务所在空间填充强调色，含运行中/待批准/未读 ✓ 任务的空间带状态点（待批准琥珀优先）；点徽标=展开侧栏+展开该空间+滚动定位；底部「＋」=展开并打开新建空间；宽度 0.2s 过渡（reduced-motion 关） | `control:railAddBtn` `file:src/public/spaces.js` | — |
 | SPACE-18 | **安静滚动条**（借鉴 DSH）：侧栏任务树与搜索结果的滚动条拇指默认透明（4px 轨道恒定预留，行永不位移）；指针进入列内拇指现形，离开后残留 2 秒 | `file:src/public/spaces.js` | — |
@@ -147,7 +147,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | NEW-09 | 目录树顶部有「..」，点文件夹进入，符号链接文件夹标 ↗；空目录和打不开的目录有中文提示；遇到 401 弹出登录框（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `js-control:app.js:Symbolic link` `route:GET /api/folders` | — |
 | NEW-10 | 「显示隐藏文件夹」复选框（默认不勾），切换后刷新 | `control:showHiddenFolders` | — |
 | NEW-11 | 「新建文件夹」输入条：回车创建、Esc 取消；名称为空、含 / 或 \\、已存在等情况有中文提示；成功后刷新目录树（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:createFolderBtn` `control:newFolderNameInput` `control:confirmCreateFolderBtn` `control:cancelCreateFolderBtn` `route:POST /api/create-folder` | — |
-| NEW-12 | 「新对话 / 继续之前的对话」切换；继续模式列出该目录下 Claude 记录过的对话（标题、相对时间、id），已在别的标签打开的灰掉不能选（被其他用户占用的同样灰掉，标「其他用户正在使用」，悬停提示「其他用户正在使用这个对话」）；换目录时列表跟着刷新 | `js-control:conversations.js:Already open in a tab` `route:GET /api/claude-sessions` `js-control:conversations.js:其他用户正在使用这个对话` | `test/claude-history.test.js` `test/claude-resume.test.js` |
+| NEW-12 | 「新对话 / 继续之前的对话」切换；继续模式列出该目录下 Claude 记录过的对话（标题、相对时间、id），已在别的标签打开的灰掉不能选（被其他用户占用的同样灰掉，标「其他用户正在使用」，悬停提示「其他用户正在使用这个对话」）；换目录时列表跟着刷新 | `js-control:conversations.js:Already open in a tab` `route:GET /api/claude-sessions` `js-control:conversations.js:Another user is using this conversation` | `test/claude-history.test.js` `test/claude-resume.test.js` |
 | NEW-13 | 「启动」创建会话并直接启动 Claude，不再弹 Start 面板；「危险模式启动」以跳过权限的方式启动 | `control:newTabStartBtn` `control:newTabDangerousBtn` `route:POST /api/sessions/create` | `test/new-tab-dialog.test.js` `test/session-create-guard.test.js` |
 | NEW-14 | 启动请求进行中两个按钮都禁用，显示「启动中…」，防止连点建出多个会话 | 手工 | `test/session-create-guard.test.js` |
 | NEW-15 | 拒绝把服务启动目录、主目录、根目录 / 当作工程目录，分别给出中文原因；没选目录、继续模式没选对话时也有中文提示 | 手工 | `test/new-tab-dialog.test.js` |
@@ -168,7 +168,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | START-02 | Start 面板：模型、权限模式、思考强度三个下拉（选 Default 时用 Claude 自己的默认值），「Start Claude」和「Dangerous Claude」两个按钮，按钮文字随别名变化 | `control:claudeModelSelect` `control:claudePermissionSelect` `control:claudeEffortSelect` `control:startBtn` `control:dangerousSkipBtn` `ws-server:start_claude` `ws-client:app.js:claude_started` | `test/start-options.test.js` |
 | START-03 | 当前会话没有可用的工程目录时，按 Start 改为打开新建对话框，并带上已选选项和拒绝原因 | 手工 | `test/new-tab-dialog.test.js` |
 | START-04 | 本地标签与服务器会话一致时原样恢复；首次使用时采用服务器上自己的全部会话；服务器上没有会话时直接打开新建对话框；拉取列表失败时不清空本地标签并给出提示 | `route:GET /api/sessions/list` | — |
-| START-05 | 本地标签与服务器不一致时弹出「恢复任务」对话框（原「Restore sessions」，2026-11-07 改中文）：每行可勾选打开、选为当前、删除（先确认）；本机原有的和**其他设备新建的**任务都默认勾选（用户 2026-11-07 同意：手机上新任务默认不勾，确认后整个空间看起来是空的），后者带「其他设备新建」标记；没勾的记为已忽略，以后不再为它弹窗，但仍以淡色行显示在所属空间下（SPACE-19）；×、Esc、点背景可关闭——关闭只恢复本机原有标签，不把任何任务记为忽略；「+ 新建任务」打开新建对话框；手机上勾选框、当前、删除、× 的触控区放大 | `js-control:app.js:设为当前任务` `js-control:app.js:删除任务` | `test/feature-guards.test.js` |
+| START-05 | 本地标签与服务器不一致时弹出「恢复任务」对话框（原「Restore sessions」，2026-11-07 改中文）：每行可勾选打开、选为当前、删除（先确认）；本机原有的和**其他设备新建的**任务都默认勾选（用户 2026-11-07 同意：手机上新任务默认不勾，确认后整个空间看起来是空的），后者带「其他设备新建」标记；没勾的记为已忽略，以后不再为它弹窗，但仍以淡色行显示在所属空间下（SPACE-19）；×、Esc、点背景可关闭——关闭只恢复本机原有标签，不把任何任务记为忽略；「+ 新建任务」打开新建对话框；手机上勾选框、当前、删除、× 的触控区放大 | `js-control:app.js:Make this the current task` `js-control:app.js:Delete task` | `test/feature-guards.test.js` |
 | START-06 | 新会话或 Claude 未运行的会话加入时**不再弹 Start 面板**，终端打印黄色提示后直接按默认启动选项自动启动（平台用户第一次启动也不会停在 Claude 的主题选择和「是否使用这个 API key」上，见 CLA-19）（用户 2026-10-28：「这个弹窗能不能去掉，都使用默认值。在session管理中，给个地方设置默认值」）；默认值即「上次启动的选择」，可在设置面板编辑（SET-17）；正在看着的会话中 Claude 停止仍弹面板（见 TERM-28） | 手工 | `test/start-prompt-overlay.test.js` |
 | START-07 | 会话在自己的别的窗口或设备上被删除时，自动关掉本地对应的标签并提示 | `ws-client:app.js:session_deleted` | — |
 | START-08 | 离开会话时终端清空、状态点变红；没有任何标签时显示 Start 面板 | `ws-client:app.js:session_left` `ws-server:leave_session` | — |
@@ -189,7 +189,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SES-01 | 工具栏的对话气泡按钮打开 Sessions 面板，头部显示当前目录（长路径截掉前面） | `control:historyBtn` `file:src/public/conversations.js` | — |
 | SES-02 | 「Sessions (N)」列出服务器上自己的所有会话（看不到别的用户的）：运行状态、名称、文件夹、是否在本浏览器打开、id；当前标签高亮 | `route:GET /api/sessions/list` | — |
 | SES-03 | 点会话行：已开标签的切过去，没开的新开一个标签 | 手工 | — |
-| SES-04 | 会话行的垃圾桶删除会话（只能是自己的），先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:删除会话` `route:DELETE /api/sessions/:sessionId` | — |
+| SES-04 | 会话行的垃圾桶删除会话（只能是自己的），先弹统一确认框（2026-10-26 起与任务删除共用一个弹窗）；删除不删对话记录，对应对话会出现在下方可再继续 | `js-control:conversations.js:Delete session` `route:DELETE /api/sessions/:sessionId` | — |
 | SES-05 | 「Conversations in this folder (N)」列出 `~/.claude` 里（所有用户共用）、没有会话占用的历史对话（被其他用户的会话占用的也算占用，不列出），点击在新标签里继续；被拒绝后自动刷新重开 | `route:GET /api/claude-sessions` | `test/claude-resume.test.js` |
 | SES-06 | 空状态和出错提示：No sessions yet. / No previous conversations in this folder. / Every conversation here is already open. / Could not load sessions. / No folder selected | 手工 | — |
 | SES-07 | Refresh、Close、New Session 按钮，× 或点背景关闭 | `control:conversationsRefreshBtn` `control:conversationsDoneBtn` `control:closeConversationsBtn` | — |

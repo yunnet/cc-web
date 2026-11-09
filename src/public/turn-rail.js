@@ -192,7 +192,7 @@ class TurnRail {
         if (!list) return;
         list.innerHTML = '';
         if (!this.marks.length) {
-            list.innerHTML = '<div class="turn-rail-list-empty">这个会话里还没有留下提问</div>';
+            list.innerHTML = '<div class="turn-rail-list-empty">No prompts in this session yet</div>';
             return;
         }
         const current = this.currentMark();

@@ -98,7 +98,7 @@
             <!-- Spaces sidebar toggle, both ways: on desktop it folds the sidebar to
                  the rail and back; on narrow screens it opens and closes the
                  slide-in drawer (see style.css). -->
-            <button class="header-icon-btn" id="sidebarToggleBtn" title="收起侧边栏" aria-label="Toggle the spaces sidebar" aria-controls="spacesSidebar" aria-expanded="true">
+            <button class="header-icon-btn" id="sidebarToggleBtn" title="Collapse sidebar" aria-label="Toggle the spaces sidebar" aria-controls="spacesSidebar" aria-expanded="true">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="3" y="4" width="18" height="16" rx="2"/>
                     <line x1="9" y1="4" x2="9" y2="20"/>
@@ -119,7 +119,7 @@
                         <line x1="12" y1="5" x2="12" y2="19"/>
                         <line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
-                    <span>任务</span>
+                    <span>Task</span>
                 </button>
                 <button class="tab-settings" id="layoutBtn" title="Split layout (Ctrl+\\)" aria-label="Split layout">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -138,7 +138,7 @@
                     </button>
                     <div class="branch-panel" id="branchPanel">
                         <div class="branch-head">
-                            <input type="checkbox" class="branch-check" id="branchSelectAll" title="全选" aria-label="全选">
+                            <input type="checkbox" class="branch-check" id="branchSelectAll" title="Select all" aria-label="Select all">
                             <span class="branch-dir" id="branchDir"></span>
                             <button class="branch-refresh" id="branchRefreshBtn" title="Refresh" aria-label="Refresh branches">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -153,20 +153,20 @@
                         <div class="branch-actions" id="branchActions" hidden>
                             <div class="branch-actions-bar">
                                 <span class="branch-sel-count" id="branchSelCount"></span>
-                                <button type="button" class="branch-op-btn" id="branchOpSwitch" data-op="switch">切换分支</button>
-                                <button type="button" class="branch-op-btn" id="branchOpCreate" data-op="create">新建分支</button>
-                                <button type="button" class="branch-op-btn" id="branchOpRename" data-op="rename">改名</button>
+                                <button type="button" class="branch-op-btn" id="branchOpSwitch" data-op="switch">Switch branch</button>
+                                <button type="button" class="branch-op-btn" id="branchOpCreate" data-op="create">New branch</button>
+                                <button type="button" class="branch-op-btn" id="branchOpRename" data-op="rename">Rename</button>
                             </div>
                             <form class="branch-form" id="branchForm" hidden autocomplete="off">
                                 <div class="branch-form-hint" id="branchFormHint"></div>
-                                <input type="text" class="branch-form-input" id="branchFormInput" list="branchFormList" spellcheck="false" aria-label="分支名">
+                                <input type="text" class="branch-form-input" id="branchFormInput" list="branchFormList" spellcheck="false" aria-label="Branch name">
                                 <datalist id="branchFormList"></datalist>
                                 <label class="branch-form-checkout" id="branchCheckoutWrap">
-                                    <input type="checkbox" id="branchCheckout" checked> 创建后切换过去
+                                    <input type="checkbox" id="branchCheckout" checked> Switch to it after creating
                                 </label>
                                 <div class="branch-form-buttons">
-                                    <button type="button" class="branch-op-btn" id="branchFormCancel">取消</button>
-                                    <button type="submit" class="branch-op-btn primary" id="branchFormSubmit">确认</button>
+                                    <button type="button" class="branch-op-btn" id="branchFormCancel">Cancel</button>
+                                    <button type="submit" class="branch-op-btn primary" id="branchFormSubmit">Confirm</button>
                                 </div>
                             </form>
                         </div>
@@ -193,7 +193,7 @@
                      click away, like translate.google.com's header. The icon shows the
                      theme in use — moon for Dark, sun for Light — swapped in CSS off
                      html[data-theme], so it is right from first paint. -->
-                <button class="tab-settings" id="themeToggleBtn" title="切换到浅色主题" aria-label="切换到浅色主题">
+                <button class="tab-settings" id="themeToggleBtn" title="Switch to light theme" aria-label="Switch to light theme">
                     <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                     </svg>
@@ -212,7 +212,7 @@
                 </button>
                 <!-- Who is signed in; opens the 账号 panel (account.js). Shown
                      only for a signed-in platform user. -->
-                <button class="header-account" id="accountHeaderBtn" type="button" aria-label="账号" hidden>
+                <button class="header-account" id="accountHeaderBtn" type="button" aria-label="Account" hidden>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="8" r="4"/>
                         <path d="M4 21a8 8 0 0 1 16 0"/>
@@ -231,9 +231,9 @@
                  lived. -->
             <aside class="spaces-sidebar" id="spacesSidebar" aria-label="Spaces and tasks">
                 <div class="sidebar-head">
-                    <span class="sidebar-title">空间</span>
+                    <span class="sidebar-title">Spaces</span>
                     <span class="sidebar-head-actions">
-                        <button class="sidebar-icon-btn" id="sidebarSortBtn" title="排序：手动（点击切为最近更新）" aria-label="排序方式" aria-pressed="false">
+                        <button class="sidebar-icon-btn" id="sidebarSortBtn" title="Sort: manual (click for last updated)" aria-label="Sort order" aria-pressed="false">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="M11 5h10"/>
                                 <path d="M11 9h7"/>
@@ -243,7 +243,7 @@
                                 <path d="M6 5v14"/>
                             </svg>
                         </button>
-                        <button class="sidebar-icon-btn" id="sidebarSearchBtn" title="搜索任务 / 空间" aria-label="搜索任务 / 空间">
+                        <button class="sidebar-icon-btn" id="sidebarSearchBtn" title="Search tasks and spaces" aria-label="Search tasks and spaces">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <circle cx="11" cy="11" r="7"/>
                                 <line x1="21" y1="21" x2="16.5" y2="16.5"/>
@@ -252,7 +252,7 @@
                     </span>
                 </div>
                 <div class="sidebar-search" id="sidebarSearchBar" hidden>
-                    <input type="text" id="sidebarSearchInput" placeholder="搜索任务 / 空间" autocomplete="off" spellcheck="false">
+                    <input type="text" id="sidebarSearchInput" placeholder="Search tasks and spaces" autocomplete="off" spellcheck="false">
                 </div>
                 <div class="spaces-tree" id="spacesTree">
                     <!-- Space groups render here (spaces.js) -->
@@ -260,15 +260,15 @@
                 <!-- A non-blank search replaces the tree with this flat list. -->
                 <div class="search-results" id="sidebarSearchResults" hidden></div>
                 <div class="sidebar-empty" id="sidebarEmpty" hidden>
-                    <p>还没有空间</p>
-                    <p class="sidebar-empty-hint">点下方「＋ 新建空间」，把任务按工作目录归组</p>
+                    <p>No spaces yet</p>
+                    <p class="sidebar-empty-hint">Click "+ New space" below to group tasks by working directory</p>
                 </div>
                 <!-- The 56px rail shown while the sidebar is folded: every
                      space keeps a badge (spaces.js renders them), so a folded
                      column still tells you where things are happening. -->
-                <div class="sidebar-rail" id="sidebarRail" aria-label="空间轨道">
+                <div class="sidebar-rail" id="sidebarRail" aria-label="Spaces rail">
                     <div class="rail-badges"></div>
-                    <button class="rail-badge rail-add" id="railAddBtn" type="button" title="新建空间" aria-label="新建空间">
+                    <button class="rail-badge rail-add" id="railAddBtn" type="button" title="New space" aria-label="New space">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -281,7 +281,7 @@
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5" y1="12" x2="19" y2="12"/>
                         </svg>
-                        <span>新建空间</span>
+                        <span>New space</span>
                     </button>
                 </div>
             </aside>
@@ -297,17 +297,17 @@
                 <!-- On a phone (≤480px) these three leave the header for here,
                      so the header has room for the task name; each one just
                      presses its header button. Hidden at wider widths. -->
-                <button id="accountBtnMenu" class="mobile-menu-btn menu-narrow-only" hidden>账号</button>
-                <button id="explorerBtnMenu" class="mobile-menu-btn menu-narrow-only">文件</button>
-                <button id="branchBtnMenu" class="mobile-menu-btn menu-narrow-only">分支</button>
+                <button id="accountBtnMenu" class="mobile-menu-btn menu-narrow-only" hidden>Account</button>
+                <button id="explorerBtnMenu" class="mobile-menu-btn menu-narrow-only">Files</button>
+                <button id="branchBtnMenu" class="mobile-menu-btn menu-narrow-only">Branch</button>
                 <button id="sessionsBtnMobile" class="mobile-menu-btn">Sessions</button>
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
                 <button id="reconnectBtnMobile" class="mobile-menu-btn" disabled>Reconnect</button>
                 <button id="clearBtnMobile" class="mobile-menu-btn">Clear Terminal</button>
                 <button id="skillsBtnMobile" class="mobile-menu-btn">Skills</button>
-                <button id="usageBtnMobile" class="mobile-menu-btn">用量</button>
+                <button id="usageBtnMobile" class="mobile-menu-btn">Usage</button>
                 <button id="settingsBtnMobile" class="mobile-menu-btn">Settings</button>
-                <button id="usersBtnMobile" class="mobile-menu-btn" hidden>用户管理</button>
+                <button id="usersBtnMobile" class="mobile-menu-btn" hidden>Users</button>
             </div>
             <div class="mobile-menu-footer" id="menuVersion" title="version · port · build id (same build id = same code on both instances)">—</div>
         </div>
@@ -319,7 +319,7 @@
                 </div>
             </div>
             <!-- Scrolled up in the history: one press back to the newest screen. -->
-            <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button" title="回到最新" aria-label="回到最新" hidden>
+            <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button" title="Jump to latest" aria-label="Jump to latest" hidden>
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <line x1="12" y1="4" x2="12" y2="17"></line>
                     <polyline points="6 11 12 17 18 11"></polyline>
@@ -412,8 +412,8 @@
                         <span id="smoothScrollValue">100ms</span>
                     </div>
                     <div class="setting-group setting-group-block">
-                        <label>任务默认启动选项：</label>
-                        <p class="setting-hint">点击未运行的任务（含服务重启后）不再弹 Start 面板，直接按这里的默认值启动；新建任务对话框也以此为预填。与「上次启动的选择」是同一份记录，互相同步；跳过权限永远不会成为默认。</p>
+                        <label>Default task start options:</label>
+                        <p class="setting-hint">Clicking a task that is not running (including after a server restart) starts it with these defaults instead of showing the Start panel. The new task dialog is prefilled from them too. This is the same record as "last start choices" and stays in sync with it. Skipping permissions never becomes a default.</p>
                         <div class="start-options settings-start-options">
                             <label class="start-option">
                                 <span>Model</span>
@@ -566,26 +566,26 @@
         <div class="session-modal account-modal" id="accountModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2 id="accountTitle">账号</h2>
+                    <h2 id="accountTitle">Account</h2>
                     <button class="close-btn" id="closeAccountBtn">&times;</button>
                 </div>
                 <div class="modal-body">
                     <p class="account-role" id="accountRole"></p>
-                    <h3 class="account-section">修改密码</h3>
+                    <h3 class="account-section">Change password</h3>
                     <form class="account-form" id="accountPasswordForm" autocomplete="on">
-                        <input type="password" id="accountCurrentPassword" placeholder="当前密码" autocomplete="current-password">
-                        <input type="password" id="accountNewPassword" placeholder="新密码（至少 8 位）" autocomplete="new-password">
-                        <input type="password" id="accountNewPassword2" placeholder="再输一次新密码" autocomplete="new-password">
-                        <button class="btn btn-primary btn-small" id="accountChangePasswordBtn" type="submit">修改密码</button>
+                        <input type="password" id="accountCurrentPassword" placeholder="Current password" autocomplete="current-password">
+                        <input type="password" id="accountNewPassword" placeholder="New password (at least 8 characters)" autocomplete="new-password">
+                        <input type="password" id="accountNewPassword2" placeholder="New password again" autocomplete="new-password">
+                        <button class="btn btn-primary btn-small" id="accountChangePasswordBtn" type="submit">Change password</button>
                     </form>
-                    <p class="account-hint">改密码后，你在其他设备上的登录会退出，这台设备保持登录。</p>
+                    <p class="account-hint">Changing your password signs you out on your other devices. This device stays signed in.</p>
 
-                    <h3 class="account-section">登录设备</h3>
+                    <h3 class="account-section">Devices</h3>
                     <div class="conv-list" id="accountDeviceList"></div>
 
                     <div class="account-status" id="accountStatus" role="status"></div>
                     <div class="account-footer">
-                        <button class="btn btn-secondary btn-small" id="accountLogoutBtn" type="button">退出登录</button>
+                        <button class="btn btn-secondary btn-small" id="accountLogoutBtn" type="button">Sign out</button>
                     </div>
                 </div>
             </div>
@@ -595,23 +595,23 @@
         <div class="session-modal users-modal" id="usersModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>用户管理</h2>
+                    <h2>Users</h2>
                     <button class="close-btn" id="closeUsersBtn">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="skills-tabs" role="tablist">
-                        <button class="skills-tab active" id="usersTabUsers" type="button">用户</button>
-                        <button class="skills-tab" id="usersTabInvites" type="button">邀请码</button>
+                        <button class="skills-tab active" id="usersTabUsers" type="button">Users</button>
+                        <button class="skills-tab" id="usersTabInvites" type="button">Invites</button>
                     </div>
 
                     <div class="users-pane" id="usersPaneUsers">
                         <form class="users-add" id="usersCreateForm">
-                            <input type="text" id="usersNewName" placeholder="新用户名" spellcheck="false" autocomplete="off">
+                            <input type="text" id="usersNewName" placeholder="New username" spellcheck="false" autocomplete="off">
                             <select id="usersNewRole">
-                                <option value="user">普通用户</option>
-                                <option value="admin">管理员</option>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
                             </select>
-                            <button class="btn btn-primary btn-small" id="usersCreateBtn" type="submit">新建用户</button>
+                            <button class="btn btn-primary btn-small" id="usersCreateBtn" type="submit">New user</button>
                         </form>
                         <div class="users-secret" id="usersSecret" hidden></div>
                         <div class="conv-list users-list" id="usersList"></div>
@@ -620,12 +620,12 @@
                     <div class="users-pane" id="usersPaneInvites" hidden>
                         <form class="users-add" id="invitesCreateForm">
                             <select id="invitesRole">
-                                <option value="user">普通用户</option>
-                                <option value="admin">管理员</option>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
                             </select>
-                            <label class="users-days">有效
-                                <input type="number" id="invitesDays" min="1" max="90" value="7"> 天</label>
-                            <button class="btn btn-primary btn-small" id="invitesCreateBtn" type="submit">生成邀请链接</button>
+                            <label class="users-days">Valid for
+                                <input type="number" id="invitesDays" min="1" max="90" value="7"> days</label>
+                            <button class="btn btn-primary btn-small" id="invitesCreateBtn" type="submit">Create invite link</button>
                         </form>
                         <div class="conv-list users-list" id="invitesList"></div>
                     </div>
@@ -638,19 +638,19 @@
         <div class="session-modal" id="usageModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2 id="usageTitle">上下文与用量</h2>
+                    <h2 id="usageTitle">Context and usage</h2>
                     <button class="close-btn" id="closeUsageBtn">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="skills-tabs" role="tablist">
-                        <button class="skills-tab active" id="usageTabSession" type="button">本标签</button>
-                        <button class="skills-tab" id="usageTabOverview" type="button">总览</button>
+                        <button class="skills-tab active" id="usageTabSession" type="button">This tab</button>
+                        <button class="skills-tab" id="usageTabOverview" type="button">Overview</button>
                     </div>
                     <div id="usageBody"></div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" id="usageRefreshBtn" type="button">刷新</button>
-                    <button class="btn btn-secondary" id="usageDoneBtn" type="button">关闭</button>
+                    <button class="btn btn-secondary" id="usageRefreshBtn" type="button">Refresh</button>
+                    <button class="btn btn-secondary" id="usageDoneBtn" type="button">Close</button>
                 </div>
             </div>
         </div>
@@ -658,14 +658,14 @@
         <div class="session-modal" id="skillsModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>技能</h2>
+                    <h2>Skills</h2>
                     <button class="close-btn" id="closeSkillsBtn">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="skills-tabs" role="tablist">
-                        <button class="skills-tab active" id="skillsTabInstalled" type="button">已安装</button>
-                        <button class="skills-tab" id="skillsTabDiscover" type="button">发现</button>
-                        <button class="skills-tab" id="skillsTabMarkets" type="button">市场</button>
+                        <button class="skills-tab active" id="skillsTabInstalled" type="button">Installed</button>
+                        <button class="skills-tab" id="skillsTabDiscover" type="button">Discover</button>
+                        <button class="skills-tab" id="skillsTabMarkets" type="button">Marketplaces</button>
                     </div>
 
                     <div class="skills-pane" id="skillsPaneInstalled">
@@ -673,23 +673,23 @@
                     </div>
 
                     <div class="skills-pane" id="skillsPaneDiscover" hidden>
-                        <input type="text" class="skills-search" id="skillsSearchInput" placeholder="搜索可安装的技能…" spellcheck="false" autocomplete="off">
+                        <input type="text" class="skills-search" id="skillsSearchInput" placeholder="Search installable skills…" spellcheck="false" autocomplete="off">
                         <div class="conv-list" id="skillsDiscoverList"></div>
                     </div>
 
                     <div class="skills-pane" id="skillsPaneMarkets" hidden>
                         <div class="conv-list" id="skillsMarketList"></div>
                         <div class="skills-add-market">
-                            <input type="text" id="skillsMarketInput" placeholder="owner/repo 或 https://…" spellcheck="false" autocomplete="off">
-                            <button class="btn btn-secondary btn-small" id="skillsMarketAddBtn" type="button">添加市场</button>
+                            <input type="text" id="skillsMarketInput" placeholder="owner/repo or https://…" spellcheck="false" autocomplete="off">
+                            <button class="btn btn-secondary btn-small" id="skillsMarketAddBtn" type="button">Add marketplace</button>
                         </div>
                     </div>
 
                     <div class="skills-note" id="skillsNote" hidden></div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" id="skillsRefreshBtn" type="button">刷新</button>
-                    <button class="btn btn-secondary" id="skillsDoneBtn" type="button">关闭</button>
+                    <button class="btn btn-secondary" id="skillsRefreshBtn" type="button">Refresh</button>
+                    <button class="btn btn-secondary" id="skillsDoneBtn" type="button">Close</button>
                 </div>
             </div>
         </div>
@@ -706,7 +706,7 @@
         <div class="session-modal new-space-modal" id="newSpaceModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>新建空间</h2>
+                    <h2>New space</h2>
                     <button class="close-btn" id="newSpaceCloseX" type="button">&times;</button>
                 </div>
                 <div class="modal-body">
@@ -714,8 +714,8 @@
                          one consistent pattern (the plain .setting-group is a
                          horizontal flex row). -->
                     <div class="setting-group setting-group-block">
-                        <label for="newSpaceName">空间名</label>
-                        <input type="text" id="newSpaceName" maxlength="200" placeholder="如：投标前台" autocomplete="off">
+                        <label for="newSpaceName">Space name</label>
+                        <input type="text" id="newSpaceName" maxlength="200" placeholder="e.g. Bidding frontend" autocomplete="off">
                     </div>
                     <!-- Block layout (label above, controls stacked): the dir
                          row, the hint and the picker panel must stack — the
@@ -723,12 +723,12 @@
                          squeezed the panel to a sliver (the "不友好" first
                          round). -->
                     <div class="setting-group setting-group-block">
-                        <label for="newSpaceDir">工作目录</label>
+                        <label for="newSpaceDir">Working directory</label>
                         <div class="new-space-dir-row">
                             <input type="text" id="newSpaceDir" spellcheck="false" autocomplete="off" placeholder="/Users/you/work/project">
-                            <button class="btn btn-secondary btn-small" id="newSpaceBrowseBtn" type="button">浏览…</button>
+                            <button class="btn btn-secondary btn-small" id="newSpaceBrowseBtn" type="button">Browse…</button>
                         </div>
-                        <p class="setting-hint">可粘贴路径直接创建，或点「浏览…」挑选。挑选的目录会成为这个空间下新任务的工作目录。</p>
+                        <p class="setting-hint">Paste a path to create it directly, or click "Browse…" to pick one. The folder you pick becomes the working directory for new tasks in this space.</p>
                         <!-- The folder picker: same /api/folders data and the
                              same .folder-item rows as the new-tab dialog's
                              browser (spaces.js). Navigate with the breadcrumb
@@ -736,27 +736,27 @@
                              the bottom button confirms the CURRENT folder. -->
                         <div class="new-space-browser" id="newSpaceBrowser" hidden>
                             <div class="nsb-nav">
-                                <button class="nsb-up" id="newSpaceUpBtn" type="button" title="上一级" aria-label="上一级">
+                                <button class="nsb-up" id="newSpaceUpBtn" type="button" title="Up one level" aria-label="Up one level">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <polyline points="15 18 9 12 15 6"/>
                                     </svg>
                                 </button>
-                                <div class="nsb-crumbs" id="newSpaceCrumbs" aria-label="当前路径"></div>
+                                <div class="nsb-crumbs" id="newSpaceCrumbs" aria-label="Current path"></div>
                             </div>
                             <div class="nsb-list" id="newSpaceList"></div>
                             <div class="nsb-foot">
-                                <label class="nsb-hidden" for="newSpaceHiddenToggle"><input type="checkbox" id="newSpaceHiddenToggle"> 显示隐藏目录</label>
-                                <button class="btn btn-primary nsb-pick" id="newSpacePickBtn" type="button">选定此目录</button>
+                                <label class="nsb-hidden" for="newSpaceHiddenToggle"><input type="checkbox" id="newSpaceHiddenToggle"> Show hidden folders</label>
+                                <button class="btn btn-primary nsb-pick" id="newSpacePickBtn" type="button">Use this folder</button>
                             </div>
                         </div>
                     </div>
                     <div class="new-space-recents" id="newSpaceRecents"></div>
-                    <p class="setting-hint">空间 = 名字 + 工作目录；在空间下新建的任务都以该目录启动。之后改目录只影响新任务，不改已有任务。</p>
+                    <p class="setting-hint">A space is a name plus a working directory. New tasks in a space start in that folder. Changing the folder later affects only new tasks, not existing ones.</p>
                     <p class="new-space-error" id="newSpaceError" hidden></p>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" id="newSpaceCancelBtn" type="button">取消</button>
-                    <button class="btn btn-primary" id="newSpaceCreateBtn" type="button">创建</button>
+                    <button class="btn btn-secondary" id="newSpaceCancelBtn" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="newSpaceCreateBtn" type="button">Create</button>
                 </div>
             </div>
         </div>
@@ -767,15 +767,15 @@
         <div class="session-modal confirm-modal" id="confirmModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2 id="confirmTitle">确认</h2>
+                    <h2 id="confirmTitle">Confirm</h2>
                     <button class="close-btn" id="confirmCancelX" type="button">&times;</button>
                 </div>
                 <div class="modal-body">
                     <p class="confirm-body" id="confirmBody"></p>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" id="confirmCancelBtn" type="button">取消</button>
-                    <button class="btn btn-primary" id="confirmOkBtn" type="button">确认</button>
+                    <button class="btn btn-secondary" id="confirmCancelBtn" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="confirmOkBtn" type="button">Confirm</button>
                 </div>
             </div>
         </div>
@@ -783,40 +783,40 @@
         <div class="session-modal new-tab-modal" id="newTabModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>新建标签页</h2>
-                    <button class="close-btn" id="closeNewTabBtn" title="关闭">&times;</button>
+                    <h2>New tab</h2>
+                    <button class="close-btn" id="closeNewTabBtn" title="Close">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="nt-error" id="newTabError" role="alert" style="display: none;"></div>
 
                     <div class="nt-section">
-                        <label class="nt-label" for="currentPathInput">工程目录</label>
+                        <label class="nt-label" for="currentPathInput">Project folder</label>
                         <div class="folder-path-bar">
-                            <button class="btn-icon" id="folderUpBtn" title="上一级目录">
+                            <button class="btn-icon" id="folderUpBtn" title="Up one level">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M19 12H5M12 19l-7-7 7-7"/>
                                 </svg>
                             </button>
-                            <button class="btn-icon" id="folderHomeBtn" title="回到起始目录">
+                            <button class="btn-icon" id="folderHomeBtn" title="Back to the start folder">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                                 </svg>
                             </button>
-                            <input type="text" class="folder-path-input" id="currentPathInput" placeholder="输入路径后按回车" spellcheck="false" autocomplete="off">
-                            <button class="btn-icon" id="createFolderBtn" title="新建文件夹">
+                            <input type="text" class="folder-path-input" id="currentPathInput" placeholder="Type a path and press Enter" spellcheck="false" autocomplete="off">
+                            <button class="btn-icon" id="createFolderBtn" title="New folder">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                                     <line x1="12" y1="11" x2="12" y2="17"/>
                                     <line x1="9" y1="14" x2="15" y2="14"/>
                                 </svg>
                             </button>
-                            <button class="btn btn-secondary btn-small nt-browse-btn" id="newTabBrowseBtn" aria-expanded="false">浏览…</button>
+                            <button class="btn btn-secondary btn-small nt-browse-btn" id="newTabBrowseBtn" aria-expanded="false">Browse…</button>
                         </div>
                         <div class="nt-recent" id="newTabRecent"></div>
                         <div class="folder-create-bar" id="folderCreateBar" style="display: none;">
-                            <input type="text" class="folder-name-input" id="newFolderNameInput" placeholder="新文件夹名称">
-                            <button class="btn btn-primary btn-small" id="confirmCreateFolderBtn">创建</button>
-                            <button class="btn btn-secondary btn-small" id="cancelCreateFolderBtn">取消</button>
+                            <input type="text" class="folder-name-input" id="newFolderNameInput" placeholder="New folder name">
+                            <button class="btn btn-primary btn-small" id="confirmCreateFolderBtn">Create</button>
+                            <button class="btn btn-secondary btn-small" id="cancelCreateFolderBtn">Cancel</button>
                         </div>
                         <div class="nt-browser" id="newTabBrowser" style="display: none;">
                             <div class="folder-list-container">
@@ -824,7 +824,7 @@
                             </div>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="showHiddenFolders">
-                                显示隐藏文件夹
+                                Show hidden folders
                             </label>
                         </div>
                     </div>
@@ -834,8 +834,8 @@
                              conversations in this folder. Continuing binds the new
                              session to that conversation's id — see conversations.js. -->
                         <div class="session-mode-toggle" id="sessionModeToggle" role="tablist">
-                            <button class="session-mode-btn active" data-mode="new" role="tab">新对话</button>
-                            <button class="session-mode-btn" data-mode="resume" role="tab">继续之前的对话</button>
+                            <button class="session-mode-btn active" data-mode="new" role="tab">New conversation</button>
+                            <button class="session-mode-btn" data-mode="resume" role="tab">Continue a conversation</button>
                         </div>
                         <div id="resumePicker" style="display: none;">
                             <div class="conv-list" id="newSessionConversations"></div>
@@ -847,17 +847,17 @@
                          flow on their own row below (user ask, 2026-10-30). -->
                     <div class="nt-section">
                         <label class="start-option nt-name">
-                            <span>标签名称（可不填）</span>
-                            <input type="text" id="sessionName" placeholder="默认用目录名">
+                            <span>Tab name (optional)</span>
+                            <input type="text" id="sessionName" placeholder="Defaults to the folder name">
                         </label>
                     </div>
                     <div class="nt-section nt-row">
                         <label class="start-option">
-                            <span>模型</span>
+                            <span>Model</span>
                             <!-- Same values as #claudeModelSelect in the Start prompt,
                                  which maps them to `claude --model`. -->
                             <select id="newTabModelSelect">
-                                <option value="">默认</option>
+                                <option value="">Default</option>
                                 <option value="opus">Opus</option>
                                 <option value="sonnet">Sonnet</option>
                                 <option value="haiku">Haiku</option>
@@ -865,36 +865,36 @@
                             </select>
                         </label>
                         <label class="start-option">
-                            <span>权限模式</span>
+                            <span>Permission mode</span>
                             <!-- Same values as #claudePermissionSelect (`--permission-mode`). -->
                             <select id="newTabPermissionSelect">
-                                <option value="">默认</option>
-                                <option value="auto">自动（由分类器把关）</option>
-                                <option value="manual">逐项确认</option>
-                                <option value="plan">计划模式</option>
-                                <option value="acceptEdits">自动接受编辑</option>
-                                <option value="dontAsk">不询问（未预先允许的一律拒绝）</option>
+                                <option value="">Default</option>
+                                <option value="auto">Auto (checked by a classifier)</option>
+                                <option value="manual">Ask each time</option>
+                                <option value="plan">Plan mode</option>
+                                <option value="acceptEdits">Accept edits</option>
+                                <option value="dontAsk">Don't ask (deny anything not pre-allowed)</option>
                             </select>
                         </label>
                         <label class="start-option">
-                            <span>思考强度</span>
+                            <span>Effort</span>
                             <!-- Same values as #claudeEffortSelect (`--effort`). -->
                             <select id="newTabEffortSelect">
-                                <option value="">默认</option>
-                                <option value="low">低</option>
-                                <option value="medium">中</option>
-                                <option value="high">高</option>
-                                <option value="xhigh">很高</option>
-                                <option value="max">最高</option>
+                                <option value="">Default</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="xhigh">Extra high</option>
+                                <option value="max">Max</option>
                             </select>
                         </label>
                     </div>
                 </div>
                 <div class="modal-footer nt-footer">
-                    <button class="btn btn-secondary" id="cancelNewTabBtn">取消</button>
+                    <button class="btn btn-secondary" id="cancelNewTabBtn">Cancel</button>
                     <span class="nt-spacer"></span>
-                    <button class="btn btn-danger" id="newTabDangerousBtn" title="跳过所有权限确认（--dangerously-skip-permissions），请谨慎使用">危险模式启动</button>
-                    <button class="btn btn-primary" id="newTabStartBtn">启动</button>
+                    <button class="btn btn-danger" id="newTabDangerousBtn" title="Skips every permission check (--dangerously-skip-permissions). Use with care">Start without permissions</button>
+                    <button class="btn btn-primary" id="newTabStartBtn">Start</button>
                 </div>
             </div>
         </div>

@@ -41,15 +41,15 @@ var ContextRing = (function () {
     var lines = [];
     if (typeof usage.ctxPct === 'number') {
       var size = usage.ctxSize ? ' · ' + tokens(usage.ctxUsed) + ' / ' + tokens(usage.ctxSize) : '';
-      lines.push('上下文 ' + usage.ctxPct + '%' + size);
+      lines.push('Context ' + usage.ctxPct + '%' + size);
     }
     var cost = usd(usage.costUsd);
-    if (cost) lines.push('本次运行 ' + cost + '（API 折算）');
+    if (cost) lines.push('This run ' + cost + ' (API-equivalent)');
     if (usage.model) lines.push(usage.model);
     var limits = [];
-    if (typeof usage.fiveHourPct === 'number') limits.push('5 小时 ' + usage.fiveHourPct + '%');
-    if (typeof usage.sevenDayPct === 'number') limits.push('7 天 ' + usage.sevenDayPct + '%');
-    if (limits.length) lines.push('额度 ' + limits.join(' · '));
+    if (typeof usage.fiveHourPct === 'number') limits.push('5h ' + usage.fiveHourPct + '%');
+    if (typeof usage.sevenDayPct === 'number') limits.push('7d ' + usage.sevenDayPct + '%');
+    if (limits.length) lines.push('Limits ' + limits.join(' · '));
     return lines.join('\n');
   }
 

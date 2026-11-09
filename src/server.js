@@ -789,7 +789,7 @@ class ClaudeCodeWebServer {
 
     const roots = this.browseRoots(user);
     if (roots && !roots.some((root) => ClaudeCodeWebServer.isInside(resolvedPath, root))) {
-      return { valid: false, error: '超出你可以访问的目录范围' };
+      return { valid: false, error: 'Outside the folders you can access' };
     }
 
     return { valid: true, path: resolvedPath };
@@ -978,7 +978,7 @@ class ClaudeCodeWebServer {
           // A one-time password only buys the password change itself (the
           // /api/auth/* routes are registered before this middleware).
           if (login.user.mustChangePassword) {
-            return res.status(403).json({ error: 'Password change required', code: 'password_change_required', message: '请先修改密码' });
+            return res.status(403).json({ error: 'Password change required', code: 'password_change_required', message: 'Change your password first' });
           }
           req.user = login.user;
           req.loginId = login.session.id;
@@ -1179,7 +1179,7 @@ class ClaudeCodeWebServer {
           for (const g of result.groups) {
             const u = g.id && g.id !== 'others' ? this.userStore.getUser(g.id) : null;
             g.me = g.id === actor;
-            g.name = u ? u.username : g.id === 'others' ? '其他账号' : g.id ? '已删除的账号' : '不在 cc-web 里';
+            g.name = u ? u.username : g.id === 'others' ? 'Other accounts' : g.id ? 'Deleted account' : 'Outside cc-web';
           }
           const names = new Map(result.groups.map((g) => [g.id, g.name]));
           for (const s of result.sessions) {
@@ -1506,7 +1506,7 @@ class ClaudeCodeWebServer {
         return res.status(403).json({ error: validation.error, message: 'Cannot create a space outside the allowed area' });
       }
       if (!this.spaceDirIsReal(validation.path)) {
-        return res.status(400).json({ error: 'Not a directory', message: '工作目录不存在或不是目录，请检查路径' });
+        return res.status(400).json({ error: 'Not a directory', message: 'The working folder does not exist or is not a folder; check the path' });
       }
       const now = new Date().toISOString();
       const space = { id: uuidv4(), name: cleaned.name, dir: validation.path, createdAt: now, updatedAt: now };
@@ -1532,7 +1532,7 @@ class ClaudeCodeWebServer {
           return res.status(403).json({ error: validation.error, message: 'Cannot point a space outside the allowed area' });
         }
         if (!this.spaceDirIsReal(validation.path)) {
-          return res.status(400).json({ error: 'Not a directory', message: '工作目录不存在或不是目录，请检查路径' });
+          return res.status(400).json({ error: 'Not a directory', message: 'The working folder does not exist or is not a folder; check the path' });
         }
         space.dir = validation.path;
       }
@@ -1977,7 +1977,7 @@ class ClaudeCodeWebServer {
         if (holderSession && (holderSession.ownerId || null) !== ownerId) {
           return res.status(409).json({
             error: 'Conversation in use by another user',
-            message: '其他用户正在使用这个对话。'
+            message: 'Another user is using this conversation.'
           });
         }
         return res.status(409).json({

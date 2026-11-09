@@ -357,7 +357,7 @@ describe('SPACE-19 tasks not open on this device stay visible in their space', f
     assert.ok(/setInterval\([\s\S]{0,80}syncServerSessions[\s\S]{0,40}60000/.test(js));
   });
 
-  it('a space holding only such tasks does not say （空）, and folding hides them', function () {
+  it('a space holding only such tasks does not say (empty), and folding hides them', function () {
     assert.ok(/\.space-group\.has-remote \.space-tasks:empty\s*\{\s*display:\s*none/.test(css));
     assert.ok(/\.space-group\.collapsed \.space-remote\s*\{\s*display:\s*none/.test(css));
   });

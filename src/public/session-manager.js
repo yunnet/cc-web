@@ -288,13 +288,13 @@ class SessionTabManager {
     // tooltip.
     static relativeTime(from) {
         const ms = Date.now() - (from || 0);
-        if (ms < 60000) return '刚刚';
+        if (ms < 60000) return 'just now';
         const minutes = Math.floor(ms / 60000);
-        if (minutes < 60) return `${minutes} 分钟`;
+        if (minutes < 60) return `${minutes}m`;
         const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `${hours} 小时`;
+        if (hours < 24) return `${hours}h`;
         const days = Math.floor(hours / 24);
-        if (days < 7) return `${days} 天`;
+        if (days < 7) return `${days}d`;
         const t = new Date(from);
         return `${t.getMonth() + 1}/${t.getDate()}`;
     }
@@ -650,20 +650,20 @@ class SessionTabManager {
                 <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
             </div>
             <span class="tab-time" title=""></span>
-            <button class="tab-pin" type="button" title="置顶 / 取消置顶" aria-label="置顶 / 取消置顶">
+            <button class="tab-pin" type="button" title="Pin / unpin" aria-label="Pin / unpin">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 17v5"/>
                     <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>
                 </svg>
             </button>
-            <button class="tab-menu" type="button" title="任务菜单">
+            <button class="tab-menu" type="button" title="Task menu">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="5" cy="12" r="1.6"/>
                     <circle cx="12" cy="12" r="1.6"/>
                     <circle cx="19" cy="12" r="1.6"/>
                 </svg>
             </button>
-            <span class="tab-close" title="删除任务">
+            <span class="tab-close" title="Delete task">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -845,17 +845,17 @@ class SessionTabManager {
             return s && s.status === 'active';
         });
         const first = sessionIds.length === 1
-            ? `删除任务「${nameOf(sessionIds[0])}」？`
+            ? `Delete task "${nameOf(sessionIds[0])}"?`
             : (keeper
-                ? `删除「${nameOf(keeper)}」之外的 ${sessionIds.length} 个任务？`
-                : `删除这 ${sessionIds.length} 个任务？`);
+                ? `Delete the ${sessionIds.length} tasks other than "${nameOf(keeper)}"?`
+                : `Delete these ${sessionIds.length} tasks?`);
         const body = [first,
-            running.length > 0 ? `其中 ${running.length} 个任务正在运行 Claude，会被停止。` : null,
-            '对话记录保留，之后可从「继续之前的对话」里恢复。'].filter(Boolean).join('\n');
+            running.length > 0 ? `${running.length} of them are running Claude, which will be stopped.` : null,
+            'The conversation history is kept; you can pick it up later from "Continue a conversation".'].filter(Boolean).join('\n');
         return this.claudeInterface.confirmDialog({
-            title: sessionIds.length === 1 ? '删除任务' : '删除其他任务',
+            title: sessionIds.length === 1 ? 'Delete task' : 'Delete other tasks',
             body,
-            confirmText: '删除',
+            confirmText: 'Delete',
             danger: true,
         });
     }
@@ -1001,12 +1001,12 @@ class SessionTabManager {
             return el;
         };
         menu.appendChild(addItem('Close Others', () => this.closeOthers(sessionId)));
-        menu.appendChild(addItem('上下文与用量', () => window.usagePanel && window.usagePanel.open(sessionId)));
+        menu.appendChild(addItem('Context and usage', () => window.usagePanel && window.usagePanel.open(sessionId)));
         // Pin/unpin — leads the task to the front of its group (either sort
         // mode), per-device.
         if (this.sidebar) {
             const pinned = this.sidebar.isPinned(sessionId);
-            menu.appendChild(addItem(pinned ? '取消置顶' : '置顶', () => this.sidebar.togglePin(sessionId)));
+            menu.appendChild(addItem(pinned ? 'Unpin' : 'Pin', () => this.sidebar.togglePin(sessionId)));
         }
         // Moving a task between spaces — every space except the one it is in
         // (and out, into 未分组). Only when spaces exist at all.
@@ -1016,11 +1016,11 @@ class SessionTabManager {
             if (targets.length > 0 || current) {
                 const move = document.createElement('div');
                 move.className = 'pane-session-item pane-submenu';
-                move.textContent = '移动到空间…';
+                move.textContent = 'Move to space…';
                 const sub = document.createElement('div');
                 sub.className = 'pane-submenu-list';
                 if (current) {
-                    sub.appendChild(addItem('未分组', () => this.sidebar.moveSession(sessionId, null)));
+                    sub.appendChild(addItem('Ungrouped', () => this.sidebar.moveSession(sessionId, null)));
                 }
                 targets.forEach(space => {
                     sub.appendChild(addItem(space.name, () => this.sidebar.moveSession(sessionId, space.id)));
@@ -1161,7 +1161,7 @@ class SessionTabManager {
         const name = (session && session.name) || 'Session';
         const reply = this._lastReply && this._lastReply.get(sessionId);
         const body = replyOpening(reply) || (topic && topic !== 'Claude Code' ? topic : '');
-        this.sendNotification(`${name} 答完了`, body, sessionId);
+        this.sendNotification(`${name} is done`, body, sessionId);
     }
 
     // A hook event relayed by the server, for the tab marks. app.js and
@@ -1225,7 +1225,7 @@ class SessionTabManager {
         this.setTabAwaiting(sessionId, true);
         const session = this.activeSessions.get(sessionId);
         const name = (session && session.name) || 'Session';
-        this.sendNotification(`${name} 待批准`, message || '', sessionId);
+        this.sendNotification(`${name} is awaiting approval`, message || '', sessionId);
     }
 
     // The yellow mark. It outranks ✓: a tab waiting for an answer has not

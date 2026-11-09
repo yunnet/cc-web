@@ -265,7 +265,7 @@
         check.className = 'branch-check';
         check.dataset.repo = repo.name;
         check.checked = this.selected.has(repo.name);
-        check.setAttribute('aria-label', '选择 ' + repo.name);
+        check.setAttribute('aria-label', 'Select ' + repo.name);
         row.appendChild(check);
 
         const name = document.createElement('span');
@@ -294,7 +294,7 @@
         const branch = document.createElement('span');
         branch.className = 'branch-ref switchable' + (repo.detached ? ' detached' : '');
         branch.textContent = repo.detached ? 'detached @ ' + repo.branch : repo.branch;
-        branch.title = branch.textContent + '（点击切换分支）';
+        branch.title = branch.textContent + ' (click to switch branch)';
         branch.tabIndex = 0;
         branch.setAttribute('role', 'button');
         const g = group.get(repo.branch);
@@ -395,7 +395,7 @@
       const actions = this.el('branchActions');
       if (!actions) return;
       actions.hidden = n === 0;
-      this.el('branchSelCount').textContent = '已选 ' + n + ' 个';
+      this.el('branchSelCount').textContent = n + ' selected';
       if (n === 0) this.closeForm();
     }
 
@@ -426,7 +426,7 @@
       const box = document.createElement('div');
       box.className = 'branch-picker';
       box.dataset.repo = name;
-      box.textContent = '加载中...';
+      box.textContent = 'Loading…';
       row.after(box);
       this.picker = box;
 
@@ -438,7 +438,7 @@
       if (this.picker !== box) return;
       box.textContent = '';
       if (!refs || refs.error) {
-        box.textContent = '读不到分支列表';
+        box.textContent = 'Could not read the branch list';
         return;
       }
 
@@ -458,11 +458,11 @@
         h.textContent = text;
         return h;
       };
-      if (refs.local.length) box.appendChild(head('本地'));
+      if (refs.local.length) box.appendChild(head('Local'));
       for (const b of refs.local) box.appendChild(item(b, b === refs.current));
-      if (refs.remote.length) box.appendChild(head('远程（切换时建跟踪分支）'));
+      if (refs.remote.length) box.appendChild(head('Remote (switching creates a tracking branch)'));
       for (const b of refs.remote) box.appendChild(item(b, false));
-      if (!refs.local.length && !refs.remote.length) box.textContent = '没有可切换的分支';
+      if (!refs.local.length && !refs.remote.length) box.textContent = 'No branches to switch to';
     }
 
     async openForm(op) {
@@ -477,13 +477,13 @@
       this.el('branchCheckoutWrap').hidden = op !== 'create';
       hint.classList.remove('error');
       hint.textContent = {
-        switch: '把选中的 ' + n + ' 个仓库切换到：',
-        create: '基于各仓库当前分支，在 ' + n + ' 个仓库新建分支：',
-        rename: '把 ' + n + ' 个仓库的当前分支改名为（只改本地，远程不动）：',
+        switch: 'Switch ' + n + ' selected repo(s) to:',
+        create: 'New branch in ' + n + ' repo(s), from each repo\'s current branch:',
+        rename: 'Rename the current branch in ' + n + ' repo(s) to (local only, remote untouched):',
       }[op];
       list.textContent = '';
       input.value = '';
-      input.placeholder = op === 'switch' ? '输入或选择分支名' : '新分支名';
+      input.placeholder = op === 'switch' ? 'Type or pick a branch name' : 'New branch name';
 
       if (op === 'rename') {
         // Prefill only when the answer is unambiguous: every ticked repo sits
@@ -510,7 +510,7 @@
           for (const [b, c] of sorted) {
             const o = document.createElement('option');
             o.value = b;
-            o.label = c + '/' + names.length + ' 个仓库有';
+            o.label = 'in ' + c + '/' + names.length + ' repos';
             list.appendChild(o);
           }
         } catch (_) { /* typing a name still works */ }
@@ -530,7 +530,7 @@
       const hint = this.el('branchFormHint');
       if (!op) return;
       if (!branch) {
-        hint.textContent = '请输入分支名';
+        hint.textContent = 'Enter a branch name';
         hint.classList.add('error');
         return;
       }
@@ -544,13 +544,13 @@
     async runOp(op, names, branch, checkout = true) {
       const submit = this.el('branchFormSubmit');
       submit.disabled = true;
-      submit.textContent = '处理中...';
+      submit.textContent = 'Working…';
       const was = new Map();
       for (const name of names) {
         const ref = this.refFor(name);
         if (!ref) continue;
         was.set(ref, [ref.textContent, ref.className]);
-        ref.textContent = '处理中...';
+        ref.textContent = 'Working…';
         ref.className = 'branch-ref';
       }
 
@@ -562,13 +562,13 @@
         data = { error: error.message };
       } finally {
         submit.disabled = false;
-        submit.textContent = '确认';
+        submit.textContent = 'Confirm';
       }
 
       if (!data.results) {
         for (const [ref, [text, cls]] of was) { ref.textContent = text; ref.className = cls; }
         const hint = this.el('branchFormHint');
-        hint.textContent = data.reason === 'invalid-name' ? '分支名不合法' : '操作失败：' + (data.error || 'HTTP ' + status);
+        hint.textContent = data.reason === 'invalid-name' ? 'Invalid branch name' : 'Failed: ' + (data.error || 'HTTP ' + status);
         hint.classList.add('error');
         return false;
       }
@@ -578,10 +578,10 @@
         if (r.ok) {
           const ref = this.refFor(r.name);
           if (!ref) continue;
-          ref.textContent = r.reason === 'already' ? '已是该分支' : (op === 'create' ? '已新建 ' : '→ ') + branch;
+          ref.textContent = r.reason === 'already' ? 'Already on this branch' : (op === 'create' ? 'Created ' : '→ ') + branch;
           ref.className = 'branch-ref pull-ok';
         } else {
-          const why = BranchPanel.REASONS[r.reason] || '失败';
+          const why = BranchPanel.REASONS[r.reason] || 'Failed';
           this.notes.set(r.name, { text: why, title: r.message || why, until });
           this.applyNote(r.name, this.refFor(r.name));
         }
@@ -630,14 +630,14 @@
   }
 
   BranchPanel.REASONS = {
-    'not-found': '分支不存在',
-    'would-overwrite': '会覆盖未提交改动',
-    exists: '分支已存在',
-    'invalid-name': '分支名不合法',
-    detached: '游离 HEAD 无法改名',
-    'not-a-repo': '不是仓库',
-    forbidden: '无权访问',
-    failed: '失败',
+    'not-found': 'Branch not found',
+    'would-overwrite': 'Would overwrite uncommitted changes',
+    exists: 'Branch already exists',
+    'invalid-name': 'Invalid branch name',
+    detached: 'Cannot rename a detached HEAD',
+    'not-a-repo': 'Not a repository',
+    forbidden: 'Access denied',
+    failed: 'Failed',
   };
 
   window.branchPanel = new BranchPanel();

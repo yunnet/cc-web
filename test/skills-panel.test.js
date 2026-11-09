@@ -64,15 +64,15 @@ describe('SKILL-09 a plugin you already have is not "not found"', function () {
     // The CLI's available list leaves installed plugins out (measured: 299
     // available, 15 installed, 2 overlapping), so a search for one you have
     // would otherwise come back empty.
-    assert.ok(/你已经装了/.test(JS), 'the "already installed" group is gone');
+    assert.ok(/`Installed \(\$\{mine\.length\}\)`/.test(JS), 'the "already installed" group is gone');
     assert.ok(/this\.installed\s*&&\s*this\.installed\.plugins/.test(JS));
   });
 });
 
 describe('SKILL-11 / SKILL-12 nothing is installed without a person agreeing', function () {
   it('asks before installing, and names the risk', function () {
-    assert.ok(/window\.confirm\([^)]*安装/.test(JS) || /install\(r\)\s*\{[\s\S]{0,400}window\.confirm/.test(JS));
-    assert.ok(/把别人写的指令交给 Claude/.test(JS), 'the warning about third-party instructions is gone');
+    assert.ok(/window\.confirm\([^)]*Install/.test(JS) || /install\(r\)\s*\{[\s\S]{0,400}window\.confirm/.test(JS));
+    assert.ok(/gives Claude instructions someone else wrote/.test(JS), 'the warning about third-party instructions is gone');
   });
 
   it('shows a marketplace-declared command verbatim, with its sha, before running it', function () {
@@ -97,7 +97,7 @@ describe('SKILL-11 / SKILL-12 nothing is installed without a person agreeing', f
 
 describe('SKILL-15 the panel does not restart anything', function () {
   it('says when a change takes effect instead of acting on it', function () {
-    assert.ok(/下次启动会话时生效/.test(JS));
+    assert.ok(/takes effect the next time a session starts/.test(JS));
     // Nothing here may stop or start a session.
     assert.ok(!/startClaude|stopSession|closeSession/.test(JS));
   });
@@ -105,8 +105,8 @@ describe('SKILL-15 the panel does not restart anything', function () {
 
 describe('SKILL-16 the panel says why a half of it is empty', function () {
   it('translates the two problems the server reports', function () {
-    assert.ok(/'no-claude-cli':\s*'找不到 claude 命令/.test(JS));
-    assert.ok(/timeout:\s*'claude 命令没有在限定时间内返回'/.test(JS));
+    assert.ok(/'no-claude-cli':\s*'claude command not found/.test(JS));
+    assert.ok(/timeout:\s*'The claude command did not return in time'/.test(JS));
   });
 
   it('writes the status with textContent, never innerHTML', function () {

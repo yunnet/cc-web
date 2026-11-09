@@ -27,11 +27,11 @@ describe('context ring', function() {
     const tip = ContextRing.tooltip({
       ctxPct: 62, ctxUsed: 124000, ctxSize: 200000, costUsd: 1.234, model: 'Opus 5.5', fiveHourPct: 8, sevenDayPct: 40
     });
-    assert.strictEqual(tip, '上下文 62% · 124k / 200k\n本次运行 $1.23（API 折算）\nOpus 5.5\n额度 5 小时 8% · 7 天 40%');
+    assert.strictEqual(tip, 'Context 62% · 124k / 200k\nThis run $1.23 (API-equivalent)\nOpus 5.5\nLimits 5h 8% · 7d 40%');
   });
 
   it('leaves out what it does not know', function() {
-    assert.strictEqual(ContextRing.tooltip({ ctxPct: 5, ctxSize: null, costUsd: null }), '上下文 5%');
+    assert.strictEqual(ContextRing.tooltip({ ctxPct: 5, ctxSize: null, costUsd: null }), 'Context 5%');
     assert.strictEqual(ContextRing.tooltip(null), '');
   });
 
