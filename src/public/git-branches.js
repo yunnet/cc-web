@@ -361,8 +361,14 @@
         // what was true before the pull.
         setTimeout(() => this.load(), 1200);
       } else {
+        // A refused overwrite names the files right on the row: that is what
+        // has to be committed or stashed before the pull can go through.
+        const files = (result && result.files) || [];
+        const overwrite = files.length
+          ? 'would overwrite: ' + files.slice(0, 2).join(', ') + (files.length > 2 ? ' +' + (files.length - 2) : '')
+          : 'would overwrite local changes';
         const why = {
-          dirty: 'uncommitted changes',
+          'would-overwrite': overwrite,
           'no-upstream': 'no upstream',
           'not-fast-forward': 'needs a merge',
           timeout: 'timed out',
@@ -370,7 +376,7 @@
         }[result && result.reason] || 'failed';
         note.textContent = why;
         note.className = 'branch-ref pull-bad';
-        note.title = (result && result.message) || why;
+        note.title = files.length ? 'Commit or stash first:\n' + files.join('\n') : (result && result.message) || why;
         // Put the branch name back once the reason has been read.
         setTimeout(() => {
           if (note.classList.contains('pull-bad')) {

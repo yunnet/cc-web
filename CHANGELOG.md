@@ -109,6 +109,16 @@
   applies from the next start.
 
 ### Changed
+- **Branch panel pull no longer refuses any dirty tree.** It used to stop at
+  "uncommitted changes" over anything uncommitted, an untracked lock file
+  included. Now git decides: a fast-forward that touches none of your local
+  changes goes through and keeps them; one that would overwrite a change
+  (tracked or untracked) is refused by git with nothing touched, and the row
+  names the files (`would overwrite: …`, the full list on hover). git runs
+  with `LC_ALL=C` and `core.quotePath=false`, so the refusal is recognised on
+  a localized git and Chinese filenames read as themselves (user 2026-11-09).
+- **ESC key cap wears a red ring**, like MODE's green and →'s blue; it was
+  grey (user 2026-11-09).
 - **Right-side drawers.** Everything the header's right-hand buttons open —
   New tab, Sessions, Account, Branches, and from the gear menu Skills / Usage
   / Settings / Users — now slides in from the right edge at full height, like

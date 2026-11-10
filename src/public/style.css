@@ -3138,9 +3138,9 @@ pre, code {
 
 /* The three floating buttons send keystrokes, so they are drawn as key caps:
    a neutral raised surface, a hairline, a 2px lower lip. Colour is reserved
-   for meaning — a thin ring tells them apart (green MODE, blue →) and ESC
-   turns red only under the pointer, so nothing on screen reads as an alarm
-   at rest (unslop pass, 2026-11-09). */
+   for meaning — a thin ring tells them apart (red ESC, green MODE, blue →).
+   ESC's ring was grey until the user asked for red (2026-11-09); its text
+   still turns red only under the pointer. */
 .mode-switcher-btn,
 .escape-btn,
 .right-btn {
@@ -3167,6 +3167,10 @@ pre, code {
 
 .right-btn {
     border-color: var(--accent);
+}
+
+.escape-btn {
+    border-color: var(--error);
 }
 
 /* Both buttons send a keystroke, so both wear a word the way a key cap does. */

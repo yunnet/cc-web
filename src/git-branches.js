@@ -253,6 +253,21 @@ function redactCredentials(text) {
   return String(text == null ? '' : text).replace(/\/\/[^\s/@]*:[^\s/@]*@/g, '//***:***@');
 }
 
+// git lists the files a pull would overwrite as tab-indented lines under
+// "Your local changes to the following files would be overwritten by merge:"
+// (or the untracked-files variant), ended by a non-indented line.
+function overwrittenFiles(out) {
+  const files = [];
+  let inList = false;
+  for (const line of String(out).split(/\r?\n/)) {
+    if (/would be overwritten/i.test(line)) { inList = true; continue; }
+    if (!inList) continue;
+    if (/^\s+\S/.test(line)) files.push(line.trim());
+    else inList = false;
+  }
+  return files;
+}
+
 /**
  * Fast-forward one repository from its upstream.
  *
@@ -268,15 +283,11 @@ async function pullRepo(repoPath) {
   const head = readHead(repoPath);
   if (!head) return { ok: false, reason: 'not-a-repo' };
 
-  // Look before touching. A pull over uncommitted work is the one outcome that
-  // costs the user something they cannot get back, so it is checked first and
-  // through the existing status reader rather than a second `git status` here.
-  const status = await readStatus(repoPath);
-  if (status === null) return { ok: false, reason: 'failed', message: 'could not read the working tree' };
-  if (status.dirty > 0) {
-    return { ok: false, reason: 'dirty', message: `${status.dirty} uncommitted change(s)` };
-  }
-
+  // No dirty-tree check up front. It used to refuse any uncommitted change —
+  // an untracked file nobody pulls included — while git itself already does
+  // the safe thing: a fast-forward that would overwrite a local change (tracked
+  // or untracked) aborts before touching anything, and one that would not just
+  // carries the change along. So git decides, and a refusal names the files.
   const before = readHead(repoPath);
   return new Promise((resolve) => {
     // Time it out by hand rather than with execFile's own `timeout`, and kill
@@ -301,12 +312,15 @@ async function pullRepo(repoPath) {
     let timer = null;
     child = execFile(
       'git',
-      ['-C', repoPath, 'pull', '--ff-only'],
+      // quotePath off so a Chinese filename in a refusal reads as itself, not as octal escapes.
+      ['-c', 'core.quotePath=false', '-C', repoPath, 'pull', '--ff-only'],
       {
         maxBuffer: STATUS_MAX_BUFFER,
         windowsHide: true,
         // No terminal here, so a credential prompt would hang rather than ask.
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        // LC_ALL=C: the refusals below are matched by their English text, and a
+        // localized git would otherwise answer in Chinese.
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
       },
       (error, stdout, stderr) => {
         if (timer) clearTimeout(timer);
@@ -319,6 +333,10 @@ async function pullRepo(repoPath) {
           }
           if (/no tracking information|no upstream/i.test(out)) {
             return resolve({ ok: false, reason: 'no-upstream', message: 'this branch tracks nothing' });
+          }
+          if (/would be overwritten/i.test(out)) {
+            const files = overwrittenFiles(out);
+            return resolve({ ok: false, reason: 'would-overwrite', files, message: files.join(', ') || out.split('\n')[0] });
           }
           if (/not possible to fast-forward|diverge/i.test(out)) {
             return resolve({ ok: false, reason: 'not-fast-forward', message: 'local commits would need a merge' });
@@ -485,5 +503,5 @@ async function attachStatus(repos) {
   return repos;
 }
 
-module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, redactCredentials,
+module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, overwrittenFiles, redactCredentials,
   isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };

@@ -237,7 +237,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GIT-01 | 分支按钮打开或收起面板（右侧抽屉，标题 Branches + ×；用户 2026-11-09：「把右上角弹窗都改为抽屉弹窗，要统一UI」），列出当前标签工作目录下每个子项目的 git 分支；点面板外、× 或 Esc 关闭（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `control:branchBtn` `control:branchCloseBtn` `key:git-branches.js:Escape` `route:GET /api/git/branches` `file:src/public/git-branches.js` `file:src/git-branches.js` | `test/git-branches.test.js` |
 | GIT-02 | 刷新按钮；「Check changes」查询未提交改动、领先、落后（查询中禁用） | `control:branchRefreshBtn` `control:branchStatusBtn` | `test/git-branches.test.js` `test/async-route-safety.test.js` |
 | GIT-03 | 同一分支的多个仓库用同一种颜色标出（最多 6 组），深浅主题各一套；状态徽章 ● N、↑N、↓N | 手工 | `test/git-branches.test.js` |
-| GIT-04 | 每行拉取按钮（悬停出现）执行 `git pull --ff-only`；进行中旋转，结果和失败原因显示在该行，成功后自动刷新；有未提交改动、无上游、需合并、超时都有明确原因；不弹凭据提示，错误里的凭据打码（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/git/pull` | `test/git-branches.test.js` |
+| GIT-04 | 每行拉取按钮（悬停出现）执行 `git pull --ff-only`；进行中旋转，结果和失败原因显示在该行，成功后自动刷新；不相关的未提交改动（含未跟踪文件）不阻止快进，会覆盖本地改动时由 git 拒绝且不动任何文件，该行列出冲突文件名（悬停看全部）；无上游、需合并、超时都有明确原因；不弹凭据提示，错误里的凭据打码（普通用户只限自己的可浏览目录，越界 403，见 ACC-07） | `route:POST /api/git/pull` | `test/git-branches.test.js` |
 | GIT-05 | 面板底部统计仓库和分支数；空状态和错误提示；窄屏上面板对齐右侧不出屏 | 手工 | — |
 | GIT-06 | 面板顶部显示当前工程目录名（悬停看完整路径）；工作目录自身是仓库时那一行显示「(this directory)」 | 手工 | — |
 | GIT-07 | 游离 HEAD 显示「detached @ <短 sha>」，用琥珀色斜体，浅色主题另用更深的琥珀 | 手工 | `test/git-branches.test.js` |

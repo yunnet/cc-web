@@ -387,21 +387,59 @@ describe('git pull', function () {
     assert.strictEqual(result.reason, 'up-to-date');
   });
 
-  it('refuses over uncommitted work AND leaves it untouched', async function () {
-    // The one outcome that costs the user something they cannot recover: a
-    // pull merging over changes they never committed.
+  it('fast-forwards past uncommitted work the pull does not touch, and keeps it', async function () {
+    // Used to be refused outright: an untracked lock file blocked every pull.
+    fs.writeFileSync(path.join(mine, 'g.txt'), 'g1\n');
+    git(mine, 'add', 'g.txt');
+    git(mine, 'commit', '-qm', 'second');
+    git(mine, 'push', '-q');
+    git(theirs, 'pull', '-q');
     advanceUpstream('v2\n');
     fs.writeFileSync(path.join(mine, 'mywork.txt'), 'not committed yet\n');
+    fs.writeFileSync(path.join(mine, 'g.txt'), 'g edited\n');
+
+    const result = await gitb.pullRepo(mine);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.reason, 'updated');
+    assert.strictEqual(fs.readFileSync(path.join(mine, 'f.txt'), 'utf8'), 'v2\n');
+    assert.strictEqual(fs.readFileSync(path.join(mine, 'mywork.txt'), 'utf8'), 'not committed yet\n');
+    assert.strictEqual(fs.readFileSync(path.join(mine, 'g.txt'), 'utf8'), 'g edited\n');
+  });
+
+  it('refuses when the pull would overwrite a local change, names the file, and leaves it untouched', async function () {
+    // The one outcome that costs the user something they cannot recover: a
+    // pull writing over changes they never committed. git refuses; we report it.
+    advanceUpstream('v2\n');
+    fs.writeFileSync(path.join(mine, 'f.txt'), 'my edit\n');
     const statusBefore = execFileSync('git', ['-C', mine, 'status', '--porcelain'], { encoding: 'utf8' });
     const headBefore = execFileSync('git', ['-C', mine, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
 
     const result = await gitb.pullRepo(mine);
     assert.strictEqual(result.ok, false);
-    assert.strictEqual(result.reason, 'dirty');
+    assert.strictEqual(result.reason, 'would-overwrite');
+    assert.deepStrictEqual(result.files, ['f.txt']);
 
     assert.strictEqual(execFileSync('git', ['-C', mine, 'status', '--porcelain'], { encoding: 'utf8' }), statusBefore);
     assert.strictEqual(execFileSync('git', ['-C', mine, 'rev-parse', 'HEAD'], { encoding: 'utf8' }), headBefore);
-    assert.strictEqual(fs.readFileSync(path.join(mine, 'mywork.txt'), 'utf8'), 'not committed yet\n');
+    assert.strictEqual(fs.readFileSync(path.join(mine, 'f.txt'), 'utf8'), 'my edit\n');
+  });
+
+  it('refuses when the pull would overwrite an untracked file, and leaves it untouched', async function () {
+    fs.writeFileSync(path.join(theirs, '新文件.txt'), 'theirs\n');
+    git(theirs, 'add', '新文件.txt');
+    git(theirs, 'commit', '-qm', 'add new');
+    git(theirs, 'push', '-q');
+    fs.writeFileSync(path.join(mine, '新文件.txt'), 'mine, untracked\n');
+
+    const result = await gitb.pullRepo(mine);
+    assert.strictEqual(result.reason, 'would-overwrite');
+    assert.deepStrictEqual(result.files, ['新文件.txt']);
+    assert.strictEqual(fs.readFileSync(path.join(mine, '新文件.txt'), 'utf8'), 'mine, untracked\n');
+  });
+
+  it('reads the file list out of git\'s refusal', function () {
+    const out = 'Updating a..b\nerror: Your local changes to the following files would be overwritten by merge:\n\tsrc/app.js\n\tREADME.md\nPlease commit your changes or stash them before you merge.\nAborting';
+    assert.deepStrictEqual(gitb.overwrittenFiles(out), ['src/app.js', 'README.md']);
   });
 
   it('refuses a diverged branch instead of building a merge commit', async function () {
