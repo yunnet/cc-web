@@ -1719,8 +1719,18 @@ class ClaudeCodeWebServer {
     });
 
     this.wss.on('connection', (ws, req) => {
+      ws.isAlive = true;
+      ws.on('pong', () => { ws.isAlive = true; });
       this.handleWebSocketConnection(ws, req);
     });
+
+    // Heartbeat. A phone that loses its network or sleeps leaves a half-open
+    // socket the server cannot see for hours, and that socket keeps its size
+    // vote — the shared pty stays at phone width on every other device. A
+    // client that misses one ping round is terminated, which runs the normal
+    // close path and re-negotiates the size.
+    this.heartbeatInterval = setInterval(() => this.heartbeatTick(this.wss.clients), ClaudeCodeWebServer.HEARTBEAT_MS);
+    this.heartbeatInterval.unref();
 
     return new Promise((resolve, reject) => {
       server.listen(this.port, (err) => {
@@ -3578,6 +3588,20 @@ class ClaudeCodeWebServer {
   // allowed to fail the response: "which Claude am I running" must survive an
   // offline box, and the version string must survive a CLI that will not run.
   static VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
+
+  // One heartbeat round: drop every client that never answered the previous
+  // ping, ping the rest. terminate() fires 'close', so the usual cleanup runs.
+  heartbeatTick(clients) {
+    for (const ws of clients) {
+      if (ws.isAlive === false) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch (_) { /* closing anyway */ }
+    }
+  }
+
+  // WebSocket heartbeat period; a client gets between one and two of these to
+  // answer a ping before it is dropped.
+  static HEARTBEAT_MS = 30 * 1000;
   static NPM_DIST_TAGS_URL = 'https://registry.npmjs.org/-/package/@anthropic-ai/claude-code/dist-tags';
 
   // "2.1.247 (Claude Code)" -> "2.1.247". Anything else is null rather than a
@@ -4031,7 +4055,8 @@ class ClaudeCodeWebServer {
     if (this.autoSaveInterval) {
       clearInterval(this.autoSaveInterval);
     }
-    
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+
     if (this.wss) {
       this.wss.close();
     }

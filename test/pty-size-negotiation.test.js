@@ -122,4 +122,29 @@ describe('shared PTY size negotiation', function () {
     assert.deepStrictEqual(resizes.pop(), { id: SESSION_ID, cols: 173, rows: 45 },
       'garbage from one client must not shrink the canvas');
   });
+  it('heartbeat drops a client that stopped answering pings, and keeps live ones', function () {
+    // A phone that sleeps or loses its network leaves a half-open socket that
+    // kept its size vote for hours, holding every other device at phone width.
+    const mk = () => ({ pings: 0, terminated: false, ping() { this.pings++; }, terminate() { this.terminated = true; } });
+    const live = mk(); const dead = mk();
+    live.isAlive = true; dead.isAlive = true;
+    server.heartbeatTick([live, dead]);
+    assert.deepStrictEqual([live.pings, dead.pings], [1, 1]);
+    live.isAlive = true; // its pong came back; the dead one's never did
+    server.heartbeatTick([live, dead]);
+    assert.strictEqual(live.terminated, false);
+    assert.strictEqual(dead.terminated, true);
+  });
+
+  it('the page withdraws its size when hidden and re-asserts it when shown', function () {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'app.js'), 'utf8');
+    assert.match(src, /visibilitychange[\s\S]{0,300}this\.syncSizeVotes\(\)/);
+    const body = src.slice(src.indexOf('    syncSizeVotes() {'), src.indexOf('    syncSizeVotes() {') + 1600);
+    assert.match(body, /document\.hidden[\s\S]{0,300}detach_size/);
+    assert.match(body, /s\.syncSize\(\)/, 'split panes re-assert too');
+    assert.match(body, /type: 'resize', cols, rows/);
+    assert.match(body, /this\.showSession\(this\.activeView\.sessionId\)/, 'a socket that died while hidden rejoins');
+  });
 });

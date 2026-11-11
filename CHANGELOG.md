@@ -109,6 +109,12 @@
   applies from the next start.
 
 ### Changed
+- **The shared terminal follows the device you are using.** A session open on
+  several devices runs at the smallest of their sizes, but a phone put in a
+  pocket kept its vote, so the desktop stayed at phone width. A page now
+  withdraws its size when hidden and re-asserts it when shown (rejoining if
+  its socket died meanwhile), and the server pings every socket each 30s and
+  drops one that stops answering, which gives its size back (user 2026-11-10).
 - **Branch panel pull no longer refuses any dirty tree.** It used to stop at
   "uncommitted changes" over anything uncommitted, an untracked lock file
   included. Now git decides: a fast-forward that touches none of your local

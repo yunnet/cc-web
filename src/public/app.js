@@ -27,6 +27,7 @@ class ClaudeCodeWebInterface {
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && this.sessionTabManager) this.sessionTabManager.clearSeenMarks();
             this.updatePageTitle();
+            this.syncSizeVotes();
         });
         
         // Usage stats
@@ -1747,6 +1748,34 @@ class ClaudeCodeWebInterface {
     // or a keystroke that lands mid-switch).
     sendOn(view, data) {
         return this.sendOnSocket(view && view.socket, data);
+    }
+
+    // The pty runs at the smallest size among the clients on a session, so a
+    // page nobody is looking at must not keep a vote: a phone put in a pocket
+    // held the desktop at phone width until its socket finally dropped. A
+    // hidden page withdraws the size of everything on screen (the active view,
+    // or every split pane); coming back re-asserts it.
+    syncSizeVotes() {
+        const split = this.splitContainer && this.splitContainer.enabled;
+        if (document.hidden) {
+            if (split) this.splitContainer.splits.forEach(s => this.sendOnSocket(s.socket, { type: 'detach_size' }));
+            else this.sendOn(this.activeView, { type: 'detach_size' });
+            return;
+        }
+        if (split) {
+            this.splitContainer.splits.forEach(s => s.syncSize());
+        } else if (this.activeView && this.activeView !== this.idleView) {
+            // A socket that died while the page slept (the server's heartbeat
+            // closes ones that stop answering) rejoins here, as on a tab switch.
+            const sock = this.activeView.socket;
+            if (!sock || sock.readyState > WebSocket.OPEN) {
+                this.showSession(this.activeView.sessionId);
+                return;
+            }
+            this.fitTerminal();
+            const { cols, rows } = this.termDims();
+            if (cols && rows) this.sendOn(this.activeView, { type: 'resize', cols, rows });
+        }
     }
 
     // Show a session's terminal, creating it the first time. This is what tab

@@ -39,7 +39,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | TERM-19 | 大量输出按动画帧合并写入；积压过多时暂停该会话的 PTY，消化完再恢复，各标签分别限流 | `ws-server:pause` `ws-server:resume` | — |
 | TERM-20 | 过滤焦点上报序列（^[[I / ^[[O），不会作为乱码出现 | 手工 | — |
 | TERM-21 | 终端自动适配容器大小并同步给 PTY；窗口缩放、旋转、字体加载完成后重新适配并滚到底 | `ws-server:resize` | `test/pty-size-negotiation.test.js` |
-| TERM-22 | 同一用户的多个设备共享同一个 PTY 时取最小尺寸；切走的标签撤回尺寸投票，不会把 PTY 压小；加入正在运行的会话时同步为本机宽度 | `ws-server:detach_size` `ws-server:resize` | `test/pty-size-negotiation.test.js` `test/session-views.test.js` |
+| TERM-22 | 同一用户的多个设备共享同一个 PTY 时取最小尺寸；切走的标签、切到后台或锁屏的页面撤回尺寸投票，回到前台重新上报（断掉的连接顺带重连），不会把 PTY 压小；服务端每 30 秒心跳，掉线不回应的设备被断开并让出尺寸；加入正在运行的会话时同步为本机宽度 | `ws-server:detach_size` `ws-server:resize` | `test/pty-size-negotiation.test.js` `test/session-views.test.js` |
 | TERM-23 | 终端响铃时播放一声短提示音，后台标签响铃也会响 | `xterm:app.js:onBell` | `test/feature-guards.test.js` |
 | TERM-24 | 页面在后台时，响铃会弹出系统通知「Claude needs your attention」，同一会话的通知替换而不叠加；标签在「待批准」时只响铃不重复通知，已有 ✓ 时照常提醒（答完约 60 秒后的那次响铃） | `xterm:app.js:onBell` | `test/claude-title.test.js` |
 | TERM-25 | Claude 设置的终端标题去掉前面的动画符号后，作为浏览器标签标题；只有正在看的会话会改标题 | `xterm:app.js:onTitleChange` `file:src/public/claude-title.js` | `test/claude-title.test.js` |
