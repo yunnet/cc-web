@@ -428,6 +428,32 @@ describe('MOB-25 the phone header fits and names the task', function () {
   });
 });
 
+describe('header icons are one size (user 2026-11-11)', function () {
+  // 「增加图标，首要条件就要保持样式一致」: the Hand-offs button shipped at the
+  // bare .tab-settings 28px / 16px beside 44px / 24px neighbours.
+  const html = read('index.html');
+  const css = read('style.css');
+  const whole = html.slice(html.indexOf('<div class="header-actions">'), html.indexOf('id="accountHeaderBtn"'));
+  // The branch dropdown's own buttons live inside the row; they are a panel's.
+  const panelAt = whole.indexOf('class="branch-panel');
+  const row = whole.slice(0, panelAt) + whole.slice(whole.indexOf('<!-- Sessions + the folder', panelAt));
+
+  it('every icon button in the header row is a .tab-settings (or the ⚙ menu button)', function () {
+    const buttons = [...row.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
+    assert.ok(buttons.length >= 6, 'the header row moved; update this test');
+    for (const b of buttons) {
+      if (/class="(header-new-task|hamburger-btn)"/.test(b)) continue;
+      assert.match(b, /class="tab-settings[" ]/, `${b} is not sized like its neighbours`);
+    }
+  });
+
+  it('one rule gives them all a 44px target and a 24px glyph', function () {
+    assert.match(css, /\.header-actions \.tab-settings \{\s*width: 44px;\s*height: 44px;\s*\}/);
+    assert.match(css, /\.header-actions \.tab-settings svg \{\s*width: 24px;\s*height: 24px;\s*\}/);
+    assert.match(css, /\.hamburger-btn svg \{\s*width: 24px;\s*height: 24px;/);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 

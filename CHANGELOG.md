@@ -200,6 +200,10 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **Header icons are one size.** The Hand-offs button was drawn at 28px with
+  a 16px glyph beside 44px / 24px neighbours. One rule now sizes every icon
+  button in the header row, so a new one matches without a rule of its own,
+  and a guard test keeps it that way (user 2026-11-11).
 - **Each split pane has its own jump-to-latest button.** There was one
   page-wide button that answered for the focused pane only: scrolling the
   other pane up (a wheel does not move focus) showed nothing, and a shown

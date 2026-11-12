@@ -1084,6 +1084,20 @@ body.sidebar-hidden .sidebar-rail {
     height: 24px;
 }
 
+/* Every icon button in the header row is one size: a 44px target with a 24px
+   glyph (user 2026-11-11: 「增加图标，首要条件就要保持样式一致」). A new header
+   icon gets it from this rule, with no rule of its own — the Hand-offs button
+   once shipped at the bare .tab-settings 28px / 16px. Pinned in
+   test/feature-guards.test.js ("header icons are one size"). */
+.header-actions .tab-settings {
+    width: 44px;
+    height: 44px;
+}
+.header-actions .tab-settings svg {
+    width: 24px;
+    height: 24px;
+}
+
 /* The button sets its own display, which outranks the UA's [hidden] rule — so
    spell it out, or syncSplitAvailability() hides nothing. */
 #layoutBtn[hidden] {

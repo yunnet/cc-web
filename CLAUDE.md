@@ -116,6 +116,7 @@ Before changing a file: `node scripts/feature-surfaces.js --file <path>` and sea
 ## Conventions
 
 - **Style**: 2-space indent, semicolons, single quotes. kebab-case filenames, PascalCase classes, camelCase functions/vars. No linter/formatter configured — match surrounding code and keep diffs minimal.
+- **New UI must match its neighbours first** (user 2026-11-11: 「增加图标，首要条件就要保持样式一致」). A new icon, button or control takes the size, colour, hover and spacing of the ones already beside it — reuse their class/rule rather than adding its own. Header icons: `.tab-settings` inside `.header-actions` (44px target, 24px glyph, one rule in `style.css`, pinned by "header icons are one size" in `test/feature-guards.test.js`). Before finishing, screenshot the new control next to its neighbours and compare.
 - **Tests**: Mocha with `node:assert` in `test/*.test.js`. Keep them fast and isolated — mock process spawns, use temp dirs (see `session-store.test.js`), no network or real CLI calls.
 - **Commits/releases**: Conventional Commits (`feat:`, `fix:`, `chore(release): vX.Y.Z`). Releases bump the version in `package.json` + `CHANGELOG.md`, tag, and open a PR — see `scripts/release-pr.sh` (`npm run release:pr`) and `.cursor/commands/commit-push.md`.
 - **Docs**: `DESIGN.md` (design rationale), `CHANGELOG.md`, `docs/` (terminal-parity upgrade notes). Update README/docs when flags, routes, or defaults change.
