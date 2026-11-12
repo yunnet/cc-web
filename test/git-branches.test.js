@@ -458,6 +458,43 @@ describe('git pull', function () {
     assert.strictEqual((await gitb.pullRepo(root)).reason, 'not-a-repo');
   });
 
+  it('fetch updates the remote branch and the behind count, and moves nothing local', async function () {
+    advanceUpstream('v2\n');
+    git(theirs, 'push', '-q', 'origin', 'HEAD:refs/heads/feature-x');
+    const headBefore = execFileSync('git', ['-C', mine, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+    fs.writeFileSync(path.join(mine, 'f.txt'), 'local edit\n');
+
+    const result = await gitb.fetchRepo(mine);
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    assert.strictEqual(result.reason, 'fetched');
+    assert.strictEqual(execFileSync('git', ['-C', mine, 'rev-parse', 'HEAD'], { encoding: 'utf8' }), headBefore);
+    assert.strictEqual(fs.readFileSync(path.join(mine, 'f.txt'), 'utf8'), 'local edit\n');
+    assert.strictEqual((await gitb.readStatus(mine)).behind, 1);
+    assert.ok((await gitb.listRefs(mine)).remote.includes('feature-x'));
+
+    assert.strictEqual((await gitb.fetchRepo(mine)).reason, 'up-to-date');
+  });
+
+  it('fetch prunes a remote branch deleted upstream', async function () {
+    git(theirs, 'push', '-q', 'origin', 'HEAD:refs/heads/gone');
+    await gitb.fetchRepo(mine);
+    assert.ok((await gitb.listRefs(mine)).remote.includes('gone'));
+    git(theirs, 'push', '-q', 'origin', '--delete', 'gone');
+    await gitb.fetchRepo(mine);
+    assert.ok(!(await gitb.listRefs(mine)).remote.includes('gone'));
+  });
+
+  it('fetch says so when there is no origin, and refuses a non-repository', async function () {
+    git(mine, 'remote', 'rename', 'origin', 'upstream');
+    assert.strictEqual((await gitb.fetchRepo(mine)).reason, 'no-remote');
+    assert.strictEqual((await gitb.fetchRepo(root)).reason, 'not-a-repo');
+  });
+
+  it('fetchRepos keeps input order', async function () {
+    const results = await gitb.fetchRepos([root, mine, root], 2);
+    assert.deepStrictEqual(results.map((r) => r.reason), ['not-a-repo', 'up-to-date', 'not-a-repo']);
+  });
+
   it('scrubs credentials out of anything it hands back', async function () {
     // Two of the real repos had `http://user:pass@host/...` in .git/config, and
     // git echoes the remote URL back in its errors.
@@ -758,5 +795,16 @@ describe('server routes: branch operations', function () {
     assert.ok(res.body.repos.b.local.includes('taken'));
     assert.strictEqual(res.body.repos.plain.error, 'not-a-repo');
     assert.ok(!JSON.stringify(res.body).includes(path.basename(root)));
+  });
+
+  it('fetches per repo: a bad names list is 400, a non-repository is its own result', async function () {
+    let res = mockRes();
+    await server.fetchRepos({ body: { path: root, names: ['../a'] } }, res);
+    assert.strictEqual(res.statusCode, 400);
+
+    res = mockRes();
+    await server.fetchRepos({ body: { path: root, names: ['plain', 'a'] } }, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(res.body.results.map((r) => [r.name, r.reason]), [['plain', 'not-a-repo'], ['a', 'no-remote']]);
   });
 });

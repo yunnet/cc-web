@@ -255,6 +255,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | GIT-19 | 批量新建：基于各仓库当前分支，在勾选的仓库里新建同名分支；「创建后切换过去」默认勾上，取消则只建不切；已存在的仓库报「分支已存在」，其他照常 | `control:branchCheckout` `route:POST /api/git/create` | `test/git-branches.test.js` |
 | GIT-20 | 改名：把勾选仓库各自的当前分支改成新名字（`git branch -m`），只改本地、远程不动；所选仓库都在同一分支时预填该名；游离 HEAD 报「游离 HEAD 无法改名」，重名报「分支已存在」 | `route:POST /api/git/rename` | `test/git-branches.test.js` |
 | GIT-21 | 分支操作的安全约束：分支名先在服务端校验（git 引用规则、不能以 `-` 开头、不能是 HEAD/@），不合法直接 400、表单提示「分支名不合法」且不执行 git；仓库名必须是单段路径；逐仓库执行并在该行显示结果，一个失败不影响其他，失败原因停 6 秒（刷新后仍保留）；全部只动本地，不推送（普通用户只限自己的可浏览目录，越界该行报「无权访问」，见 ACC-07） | `route:POST /api/git/switch` `route:POST /api/git/create` `route:POST /api/git/rename` | `test/git-branches.test.js` |
+| GIT-22 | 面板底部「Fetch」按钮：对勾选的仓库（没勾选时为全部仓库）执行 `git fetch origin --recurse-submodules=no --progress --prune`，最多 4 个并发、每仓库 60 秒超时并按进程树杀掉；只更新远程分支引用，不动本地分支和文件；进行中按钮变「Fetching...」、各行显示 fetching...，完成后自动「Check changes」刷新领先/落后；失败行显示原因（无 origin、超时、失败）停 6 秒（用户 2026-11-11：「当前git图标，是同步当前分支吗？如果不是……做一下」；普通用户只限自己的可浏览目录，见 ACC-07） | `control:branchFetchBtn` `route:POST /api/git/fetch` | `test/git-branches.test.js` |
 ## 分屏
 
 | ID | 功能 | 入口 | 守卫 |

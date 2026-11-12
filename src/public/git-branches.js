@@ -82,6 +82,7 @@
       const closeBtn = this.el('branchCloseBtn');
       if (closeBtn) closeBtn.addEventListener('click', () => this.hide());
       this.el('branchStatusBtn').addEventListener('click', () => this.load(true));
+      this.el('branchFetchBtn').addEventListener('click', () => this.fetchAll());
       // Clicking anywhere else, or Escape, dismisses it — a glance panel should
       // never need a deliberate close.
       document.addEventListener('click', (e) => {
@@ -600,6 +601,39 @@
       return true;
     }
 
+    // Fetch the ticked repos, or every repo when none is ticked, then re-read
+    // with status so the ↓ counts compare against what the remote has now.
+    // Fetch moves no branch and no file, so it needs no confirmation.
+    async fetchAll() {
+      const btn = this.el('branchFetchBtn');
+      const names = this.selected.size ? [...this.selected] : this.repos.map((r) => r.name);
+      if (!names.length || btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = 'Fetching...';
+      for (const name of names) {
+        const ref = this.refFor(name);
+        if (ref) { ref.textContent = 'fetching...'; ref.className = 'branch-ref'; }
+      }
+      let data;
+      try {
+        ({ data } = await this.post('/api/git/fetch', { names }));
+      } catch (error) {
+        data = { error: error.message };
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Fetch';
+      }
+      const until = Date.now() + 6000;
+      const results = data.results || names.map((name) => ({ name, ok: false, reason: 'failed', message: data.error }));
+      for (const r of results) {
+        if (r.ok) continue;
+        const why = BranchPanel.REASONS[r.reason] || 'Fetch failed';
+        this.notes.set(r.name, { text: why, title: r.message || why, until });
+      }
+      // The fresh rows pick the failure notes up again (applyNote in render).
+      this.load(true);
+    }
+
     refFor(name) {
       const row = [...this.el('branchList').querySelectorAll('.branch-row')].find((r) => r.dataset.repo === name);
       return row ? row.querySelector('.branch-ref') : null;
@@ -645,6 +679,8 @@
     detached: 'Cannot rename a detached HEAD',
     'not-a-repo': 'Not a repository',
     forbidden: 'Access denied',
+    'no-remote': 'No origin remote',
+    timeout: 'Timed out',
     failed: 'Failed',
   };
 

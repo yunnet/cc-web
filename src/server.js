@@ -1473,6 +1473,7 @@ class ClaudeCodeWebServer {
     // the target must actually be a git repository — validatePath alone would
     // otherwise amount to "run git in any directory you can name".
     this.app.post('/api/git/pull', ClaudeCodeWebServer.asyncRoute((req, res) => this.pullRepo(req, res)));
+    this.app.post('/api/git/fetch', ClaudeCodeWebServer.asyncRoute((req, res) => this.fetchRepos(req, res)));
 
     // Switch, create and rename branches across the repos ticked in the panel.
     // Local only — nothing is pushed and no remote branch is touched. Same
@@ -3048,6 +3049,33 @@ class ClaudeCodeWebServer {
       res.json(result);
     } catch (error) {
       res.status(500).json({ ok: false, reason: 'failed', message: gitBranches.redactCredentials(error.message) });
+    }
+  }
+
+  // POST /api/git/fetch { path, names[] }
+  //
+  // `git fetch origin --prune` in each named repo: refreshes the remote-tracking
+  // refs so the behind counts and the remote branch list are current. It moves
+  // no branch and touches no working tree. One queued job, a few repos at a
+  // time inside it, one result per repo.
+  async fetchRepos(req, res) {
+    const body = req.body || {};
+    if (typeof body.path !== 'string' || !body.path) return res.status(400).json({ error: 'path is required' });
+    const names = ClaudeCodeWebServer.repoNames(body);
+    if (!names) return res.status(400).json({ error: `names must be 1-${gitBranches.MAX_REPOS} single path segments` });
+    try {
+      const results = await this.queueGitJob(async () => {
+        const targets = names.map((name) => ({ name, target: this.resolveRepoTarget(body.path, name, req.user) }));
+        const ok = targets.filter((t) => t.target.repoPath);
+        const fetched = await gitBranches.fetchRepos(ok.map((t) => t.target.repoPath));
+        const byName = new Map(ok.map((t, i) => [t.name, fetched[i]]));
+        return targets.map(({ name, target }) => (target.repoPath
+          ? { name, ...byName.get(name) }
+          : { name, ok: false, reason: target.body.reason || 'failed', message: target.body.error }));
+      });
+      res.json({ results });
+    } catch (error) {
+      res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
     }
   }
 

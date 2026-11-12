@@ -3466,6 +3466,12 @@ pre, code {
 }
 
 
+.branch-foot-btns {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+}
+
 .branch-status-btn:disabled {
     opacity: 0.6;
     cursor: default;

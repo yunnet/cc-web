@@ -268,6 +268,65 @@ function overwrittenFiles(out) {
   return files;
 }
 
+// One network git call (pull, fetch), timed out by hand and killed as a TREE.
+//
+// Not execFile's own `timeout`: `git pull` / `git fetch` are wrappers that
+// fork `git fetch` / `git remote-http`, and execFile's timeout signals only
+// the wrapper, so the children survive — measured against an unreachable
+// remote.
+//
+// Process groups are not the way out here, and the experiment that proved
+// it is worth recording. `detached: true` did NOT make the child a group
+// leader: its pid was 2524895 while its pgid was 2524887, so
+// `process.kill(-child.pid)` raised ESRCH — killing a group that does not
+// exist. Reaching for the *real* pgid instead killed the test runner
+// itself, because without detach the child sits in its parent's group.
+// In the server that would mean a pull timeout taking cc-web down with it.
+//
+// So: walk the tree and kill exactly its members. No assumptions about
+// groups, and no way to reach anything outside this one process.
+//
+// Resolves { error, out, timedOut }; never rejects.
+function runNetworkGit(repoPath, args, timeoutMs = PULL_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let child;
+    let timedOut = false;
+    let timer = null;
+    child = execFile(
+      'git',
+      // quotePath off so a Chinese filename in a refusal reads as itself, not as octal escapes.
+      ['-c', 'core.quotePath=false', '-C', repoPath, ...args],
+      {
+        maxBuffer: STATUS_MAX_BUFFER,
+        windowsHide: true,
+        // No terminal here, so a credential prompt would hang rather than ask.
+        // LC_ALL=C: refusals are matched by their English text, and a
+        // localized git would otherwise answer in Chinese.
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+      },
+      (error, stdout, stderr) => {
+        if (timer) clearTimeout(timer);
+        // Already settled by the timer below; a late callback has nothing to say.
+        if (timedOut) return;
+        const out = redactCredentials(`${stdout || ''}${stderr || ''}`).trim();
+        resolve({ error, out, timedOut: !!(error && (error.killed || error.signal)) });
+      },
+    );
+    timer = setTimeout(() => {
+      timedOut = true;
+      const killed = killTree(child.pid);
+      if (killed.length > 1) {
+        logKilledTree(killed);
+      }
+      // Resolve here rather than waiting for the exec callback. Killing the
+      // group can leave that callback un-fired — the caller would then wait
+      // forever on a promise that never settles, which is a worse failure than
+      // the timeout it was meant to report.
+      resolve({ error: new Error('timeout'), out: '', timedOut: true });
+    }, timeoutMs);
+  });
+}
+
 /**
  * Fast-forward one repository from its upstream.
  *
@@ -289,85 +348,80 @@ async function pullRepo(repoPath) {
   // or untracked) aborts before touching anything, and one that would not just
   // carries the change along. So git decides, and a refusal names the files.
   const before = readHead(repoPath);
-  return new Promise((resolve) => {
-    // Time it out by hand rather than with execFile's own `timeout`, and kill
-    // the process TREE rather than the process.
-    //
-    // `git pull` is a wrapper: it forks `git fetch`, which forks
-    // `git remote-http`. execFile's timeout signals only the wrapper, so both
-    // children survive — measured against an unreachable remote.
-    //
-    // Process groups are not the way out here, and the experiment that proved
-    // it is worth recording. `detached: true` did NOT make the child a group
-    // leader: its pid was 2524895 while its pgid was 2524887, so
-    // `process.kill(-child.pid)` raised ESRCH — killing a group that does not
-    // exist. Reaching for the *real* pgid instead killed the test runner
-    // itself, because without detach the child sits in its parent's group.
-    // In the server that would mean a pull timeout taking cc-web down with it.
-    //
-    // So: walk the tree and kill exactly its members. No assumptions about
-    // groups, and no way to reach anything outside this one process.
-    let child;
-    let timedOut = false;
-    let timer = null;
-    child = execFile(
-      'git',
-      // quotePath off so a Chinese filename in a refusal reads as itself, not as octal escapes.
-      ['-c', 'core.quotePath=false', '-C', repoPath, 'pull', '--ff-only'],
-      {
-        maxBuffer: STATUS_MAX_BUFFER,
-        windowsHide: true,
-        // No terminal here, so a credential prompt would hang rather than ask.
-        // LC_ALL=C: the refusals below are matched by their English text, and a
-        // localized git would otherwise answer in Chinese.
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-      },
-      (error, stdout, stderr) => {
-        if (timer) clearTimeout(timer);
-        const out = redactCredentials(`${stdout || ''}${stderr || ''}`).trim();
-        // Already settled by the timer above; a late callback has nothing to say.
-        if (timedOut) return;
-        if (error) {
-          if (error.killed || error.signal) {
-            return resolve({ ok: false, reason: 'timeout', message: `no response after ${PULL_TIMEOUT_MS / 1000}s` });
-          }
-          if (/no tracking information|no upstream/i.test(out)) {
-            return resolve({ ok: false, reason: 'no-upstream', message: 'this branch tracks nothing' });
-          }
-          if (/would be overwritten/i.test(out)) {
-            const files = overwrittenFiles(out);
-            return resolve({ ok: false, reason: 'would-overwrite', files, message: files.join(', ') || out.split('\n')[0] });
-          }
-          if (/not possible to fast-forward|diverge/i.test(out)) {
-            return resolve({ ok: false, reason: 'not-fast-forward', message: 'local commits would need a merge' });
-          }
-          return resolve({ ok: false, reason: 'failed', message: out.split('\n')[0] || error.message });
-        }
-        const after = readHead(repoPath);
-        const updated = !!(before && after && before.branch !== after.branch) || !/Already up to date/i.test(out);
-        resolve({
-          ok: true,
-          reason: updated ? 'updated' : 'up-to-date',
-          updated,
-          from: before ? before.branch : null,
-          to: after ? after.branch : null,
-          message: out.split('\n')[0] || '',
-        });
-      },
-    );
-    timer = setTimeout(() => {
-      timedOut = true;
-      const killed = killTree(child.pid);
-      if (killed.length > 1) {
-        logKilledTree(killed);
-      }
-      // Resolve here rather than waiting for the exec callback. Killing the
-      // group can leave that callback un-fired — the caller would then wait
-      // forever on a promise that never settles, which is a worse failure than
-      // the timeout it was meant to report.
-      resolve({ ok: false, reason: 'timeout', message: `no response after ${PULL_TIMEOUT_MS / 1000}s` });
-    }, PULL_TIMEOUT_MS);
+  const { error, out, timedOut } = await runNetworkGit(repoPath, ['pull', '--ff-only']);
+  if (timedOut) {
+    return { ok: false, reason: 'timeout', message: `no response after ${PULL_TIMEOUT_MS / 1000}s` };
+  }
+  if (error) {
+    if (/no tracking information|no upstream/i.test(out)) {
+      return { ok: false, reason: 'no-upstream', message: 'this branch tracks nothing' };
+    }
+    if (/would be overwritten/i.test(out)) {
+      const files = overwrittenFiles(out);
+      return { ok: false, reason: 'would-overwrite', files, message: files.join(', ') || out.split('\n')[0] };
+    }
+    if (/not possible to fast-forward|diverge/i.test(out)) {
+      return { ok: false, reason: 'not-fast-forward', message: 'local commits would need a merge' };
+    }
+    return { ok: false, reason: 'failed', message: out.split('\n')[0] || error.message };
+  }
+  const after = readHead(repoPath);
+  const updated = !!(before && after && before.branch !== after.branch) || !/Already up to date/i.test(out);
+  return {
+    ok: true,
+    reason: updated ? 'updated' : 'up-to-date',
+    updated,
+    from: before ? before.branch : null,
+    to: after ? after.branch : null,
+    message: out.split('\n')[0] || '',
+  };
+}
+
+// The last line git printed that says something. `--progress` output is
+// carriage-return redraws, so each line's useful part is after its last \r.
+function lastLine(out) {
+  const lines = String(out).split(/\r?\n/).map((l) => l.split('\r').pop().trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : '';
+}
+
+/**
+ * Bring origin's refs up to date: the panel's "Fetch", the same command an IDE
+ * runs for its Fetch. It moves only refs/remotes/origin/*, never a branch or
+ * the working tree, so it is safe on any repo whatever its state. --prune drops
+ * remote branches deleted upstream; submodules are left alone.
+ *
+ * @returns {Promise<{ok: boolean, reason: string, message?: string}>}
+ */
+async function fetchRepo(repoPath) {
+  if (!readHead(repoPath)) return { ok: false, reason: 'not-a-repo' };
+  const { error, out, timedOut } = await runNetworkGit(repoPath,
+    ['-c', 'log.showSignature=false', 'fetch', 'origin', '--recurse-submodules=no', '--progress', '--prune']);
+  if (timedOut) return { ok: false, reason: 'timeout', message: `no response after ${PULL_TIMEOUT_MS / 1000}s` };
+  if (error) {
+    if (/does not appear to be a git repository|No such remote/i.test(out)) {
+      return { ok: false, reason: 'no-remote', message: 'no remote named origin' };
+    }
+    return { ok: false, reason: 'failed', message: lastLine(out) || error.message };
+  }
+  // A fetch that changed nothing prints nothing but progress; one that did
+  // prints a "From <url>" header followed by the updated refs.
+  return { ok: true, reason: /^From /m.test(out) ? 'fetched' : 'up-to-date', message: lastLine(out) };
+}
+
+// Fetch several repos a few at a time: each is a network round trip and some
+// remotes are slow, so serial would wait on the sum, and unbounded would open
+// fifty connections at once. Results come back in input order.
+async function fetchRepos(paths, concurrency = STATUS_CONCURRENCY) {
+  const results = new Array(paths.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, paths.length) }, async () => {
+    while (next < paths.length) {
+      const i = next++;
+      results[i] = await fetchRepo(paths[i]);
+    }
   });
+  await Promise.all(workers);
+  return results;
 }
 
 // Switching, creating and renaming are local ref moves — no network — so they
@@ -504,4 +558,4 @@ async function attachStatus(repos) {
 }
 
 module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, overwrittenFiles, redactCredentials,
-  isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };
+  fetchRepo, fetchRepos, isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };
