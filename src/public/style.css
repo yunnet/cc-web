@@ -4394,7 +4394,18 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 .new-tab-modal .nt-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.new-tab-modal .nt-row { flex-direction: row; flex-wrap: wrap; gap: 12px; }
+/* Model / Permission mode / Effort: three rows, label left and the select
+   filling the rest, labels in one column (user 2026-11-11). They used to sit
+   side by side and wrap unevenly as the drawer narrowed. */
+.new-tab-modal .nt-row { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
+.new-tab-modal .nt-row .start-option {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+}
+.new-tab-modal .nt-row .start-option select { width: 100%; min-width: 0; }
 /* The name field's own row: full width, not one flex item among the selects. */
 .new-tab-modal .nt-name { display: flex; flex-direction: column; gap: 4px; width: 100%; box-sizing: border-box; }
 .new-tab-modal .start-option input {
@@ -4425,7 +4436,6 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 @media (max-width: 768px) {
     .new-tab-modal .modal-content { width: 100%; max-height: 100%; height: 100%; border-radius: 0; }
     .new-tab-modal .folder-list-container { max-height: 36vh; }
-    .new-tab-modal .nt-row .start-option { flex: 1 1 140px; }
     .new-tab-modal .nt-footer { flex-wrap: wrap; }
     .new-tab-modal .nt-footer .btn { flex: 1 1 auto; }
     .new-tab-modal .nt-spacer { display: none; }

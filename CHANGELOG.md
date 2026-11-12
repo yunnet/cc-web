@@ -109,6 +109,10 @@
   applies from the next start.
 
 ### Changed
+- **New tab launch options in three rows.** Model, Permission mode and Effort
+  each take one row, label on the left and the select filling the rest, the
+  labels in one column; they used to sit side by side and wrap unevenly
+  (user 2026-11-11).
 - **The shared terminal follows the device you are using.** A session open on
   several devices runs at the smallest of their sizes, but a phone put in a
   pocket kept its vote, so the desktop stayed at phone width. A page now
