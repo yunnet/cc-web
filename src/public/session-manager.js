@@ -288,7 +288,7 @@ class SessionTabManager {
     // tooltip.
     static relativeTime(from) {
         const ms = Date.now() - (from || 0);
-        if (ms < 60000) return 'just now';
+        if (ms < 60000) return 'now';
         const minutes = Math.floor(ms / 60000);
         if (minutes < 60) return `${minutes}m`;
         const hours = Math.floor(minutes / 60);
@@ -297,6 +297,43 @@ class SessionTabManager {
         if (days < 7) return `${days}d`;
         const t = new Date(from);
         return `${t.getMonth() + 1}/${t.getDate()}`;
+    }
+
+    // Hover marquee for a task name that does not fit (see .tab-name-run in
+    // style.css). The text moves inside a span made for the hover and undone
+    // on leave, so everything else that reads or writes the name's
+    // textContent keeps working; a write mid-hover simply drops the span.
+    // Measured one frame after the pointer arrives, when the hover layout
+    // (time hidden, room kept for the row buttons) is in place. Reduced
+    // motion: no marquee, the tooltip has the whole name.
+    startNameMarquee(tab) {
+        const name = tab.querySelector('.tab-name');
+        if (!name || name.querySelector('.tab-name-run')) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        requestAnimationFrame(() => {
+            if (!tab.matches(':hover') || !name.isConnected) return;
+            const overflow = name.scrollWidth - name.clientWidth;
+            if (overflow <= 2) return;
+            const run = document.createElement('span');
+            run.className = 'tab-name-run';
+            run.textContent = name.textContent;
+            // ~30px a second, never faster than 1.2s for the trip; the trip
+            // is 80% of one cycle, the rest is the hold at each end.
+            const trip = Math.max(1.2, overflow / 30);
+            run.style.setProperty('--marquee-shift', `-${overflow}px`);
+            run.style.animationDuration = `${(trip / 0.8).toFixed(2)}s`;
+            name.textContent = '';
+            name.appendChild(run);
+            name.classList.add('marquee');
+        });
+    }
+
+    stopNameMarquee(tab) {
+        const name = tab.querySelector('.tab-name');
+        if (!name) return;
+        const run = name.querySelector('.tab-name-run');
+        if (run) name.textContent = run.textContent;
+        name.classList.remove('marquee');
     }
 
     updateRowTime(tabEl, session) {
@@ -647,7 +684,7 @@ class SessionTabManager {
             <div class="tab-content">
                 <span class="tab-status ${status}"></span>
                 <span class="tab-ctx" hidden></span>
-                <span class="tab-name" title="${workingDir || sessionName}">${displayName}</span>
+                <span class="tab-name" title="${workingDir ? `${displayName} · ${workingDir}` : displayName}">${displayName}</span>
             </div>
             <span class="tab-time" title=""></span>
             <button class="tab-pin" type="button" title="Pin / unpin" aria-label="Pin / unpin">
@@ -700,18 +737,11 @@ class SessionTabManager {
             this.openTabContextMenu(sessionId, Math.min(r.left, window.innerWidth - 240), r.bottom);
         });
 
-        // A title wider than its row reveals on hover: the name scrolls to its
-        // far edge and back to the ellipsis (DSH's row behaviour).
-        tab.addEventListener('mouseenter', () => {
-            const name = tab.querySelector('.tab-name');
-            if (name && name.scrollWidth > name.clientWidth) {
-                name.scrollTo({ left: name.scrollWidth, behavior: 'smooth' });
-            }
-        });
-        tab.addEventListener('mouseleave', () => {
-            const name = tab.querySelector('.tab-name');
-            if (name) name.scrollTo({ left: 0 });
-        });
+        // A name wider than its row runs as a marquee while the pointer is on
+        // it (user 2026-11-12): only the part that does not fit scrolls, right
+        // to left, holds at the end, and comes back.
+        tab.addEventListener('mouseenter', () => this.startNameMarquee(tab));
+        tab.addEventListener('mouseleave', () => this.stopNameMarquee(tab));
         
         // Close button handler
         const closeBtn = tab.querySelector('.tab-close');
@@ -950,6 +980,8 @@ class SessionTabManager {
             const newNameSpan = document.createElement('span');
             newNameSpan.className = 'tab-name';
             newNameSpan.textContent = newName;
+            const dir = this.activeSessions.get(sessionId)?.workingDir;
+            newNameSpan.title = dir ? `${newName} · ${dir}` : newName;
             input.replaceWith(newNameSpan);
             
             // Update session data

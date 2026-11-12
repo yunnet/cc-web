@@ -124,6 +124,12 @@
   applies from the next start.
 
 ### Changed
+- **Long task names in the sidebar.** The row's pin / menu / × no longer
+  hold their room at opacity 0: they float at the right end and take space
+  only while they show, so at rest a name gets ~14 characters instead of ~9.
+  On hover a name that still does not fit runs as a marquee — only the
+  overflow scrolls, right to left, ~30px/s, holding at each end — and the
+  tooltip reads "full name · folder". "just now" is "now" (user 2026-11-12).
 - **New tab launch options in three rows.** Model, Permission mode and Effort
   each take one row, label on the left and the select filling the rest, the
   labels in one column; they used to sit side by side and wrap unevenly

@@ -5757,3 +5757,66 @@ button.usage-acct { cursor: pointer; }
 :is(.session-modal, .settings-modal).drawer {
     padding: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Sidebar task names (user 2026-11-12: long names showed only ~9 characters).
+   1. The row's pin / menu / × used to sit in the flow at opacity 0, holding
+      ~60px the name could not use. They now float at the row's right end and
+      take room only while they show (hover, touch, or a pinned task's pin),
+      so at rest the name runs up to the time.
+   2. A name that still does not fit runs as a marquee on hover
+      (session-manager.js startNameMarquee): only the overflow scrolls, right
+      to left, holding briefly at each end.
+   --------------------------------------------------------------------------- */
+.spaces-sidebar .session-tab :is(.tab-pin, .tab-menu, .tab-close) {
+    position: absolute;
+    top: 50%;
+    margin-top: -8px;
+}
+.spaces-sidebar .session-tab .tab-close { right: 8px; }
+.spaces-sidebar .session-tab .tab-menu { right: 28px; }
+.spaces-sidebar .session-tab .tab-pin { right: 48px; }
+
+/* Room for the three while they show; the time steps aside. */
+.spaces-sidebar .session-tab:hover {
+    padding-right: 72px;
+}
+.spaces-sidebar .session-tab:hover .tab-time {
+    display: none;
+}
+
+/* At rest a pinned task shows only its pin, at the far right. */
+.spaces-sidebar .session-tab.pinned:not(:hover) {
+    padding-right: 28px;
+}
+.spaces-sidebar .session-tab.pinned:not(:hover) .tab-pin {
+    right: 8px;
+}
+
+/* Touch has no hover: the buttons are always there, so is their room. */
+@media (hover: none) and (pointer: coarse) {
+    .spaces-sidebar .session-tab,
+    .spaces-sidebar .session-tab.pinned:not(:hover) {
+        padding-right: 72px;
+    }
+    .spaces-sidebar .session-tab.pinned:not(:hover) .tab-pin { right: 48px; }
+}
+
+.tab-name.marquee {
+    text-overflow: clip;
+}
+.tab-name-run {
+    display: inline-block;
+    animation-name: tab-name-marquee;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+    animation-delay: 0.4s;
+}
+@keyframes tab-name-marquee {
+    0%, 10% { transform: translateX(0); }
+    90%, 100% { transform: translateX(var(--marquee-shift)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .tab-name-run { animation: none; }
+}
