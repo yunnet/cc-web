@@ -187,6 +187,14 @@
                 <!-- Sessions + the folder's Claude conversations. Drawn to the
                      same 3..21 box as the branch and folder icons beside it, so
                      the three read as one row. -->
+                <!-- Hand-offs between tasks (SendMessage), with a count of the
+                     ones that changed since last looked at. -->
+                <button class="tab-settings peer-threads-btn" id="peerThreadsBtn" title="Hand-offs between tasks" aria-label="Show hand-offs between tasks">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M7 7h11l-3-3"/><path d="M17 17H6l3 3"/>
+                    </svg>
+                    <span class="peer-badge" id="peerThreadsBadge" hidden>0</span>
+                </button>
                 <button class="tab-settings" id="historyBtn" title="Sessions and conversations" aria-label="Show sessions and conversations">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>
@@ -308,6 +316,7 @@
                 <button id="accountBtnMenu" class="mobile-menu-btn menu-narrow-only" hidden>Account</button>
                 <button id="explorerBtnMenu" class="mobile-menu-btn menu-narrow-only">Files</button>
                 <button id="branchBtnMenu" class="mobile-menu-btn menu-narrow-only">Branch</button>
+                <button id="peerThreadsBtnMenu" class="mobile-menu-btn menu-narrow-only">Hand-offs</button>
                 <button id="sessionsBtnMobile" class="mobile-menu-btn">Sessions</button>
                 <button id="closeSessionBtnMobile" class="mobile-menu-btn btn-danger" style="display: none;">Close Session</button>
                 <button id="reconnectBtnMobile" class="mobile-menu-btn" disabled>Reconnect</button>
@@ -639,6 +648,51 @@
                     </div>
 
                     <div class="account-status" id="usersStatus" role="status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hand-offs between tasks (src/public/peer-threads.js). -->
+        <div class="session-modal drawer drawer-mid" id="peerThreadsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Hand-offs</h2>
+                    <button class="close-btn" id="closePeerThreadsBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="skills-tabs" role="tablist">
+                        <button class="skills-tab active" id="peerScopeTask" type="button">This task</button>
+                        <button class="skills-tab" id="peerScopeAll" type="button">All tasks</button>
+                    </div>
+                    <div id="peerThreadsBody"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hand off to… (tab menu): the text goes to THIS task's Claude, which
+             sends it with SendMessage. -->
+        <div class="session-modal drawer" id="handoffModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Hand off to another task</h2>
+                    <button class="close-btn" id="closeHandoffBtn">&times;</button>
+                </div>
+                <div class="modal-body handoff-body">
+                    <label class="start-option">
+                        <span>Task</span>
+                        <select id="handoffTarget"></select>
+                    </label>
+                    <p class="peer-hint" id="handoffHint" hidden></p>
+                    <label class="start-option">
+                        <span>What should it do?</span>
+                        <textarea id="handoffText" rows="12" placeholder="Goal, background, what to change (file:line), how to verify, what to reply with"></textarea>
+                    </label>
+                    <label class="handoff-check"><input type="checkbox" id="handoffNotify" checked> Notify me when it is idle</label>
+                    <p class="nt-error" id="handoffError" hidden></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="cancelHandoffBtn" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="sendHandoffBtn" type="button">Send</button>
                 </div>
             </div>
         </div>
@@ -1000,6 +1054,7 @@
     <script src="conversations.js"></script>
     <script src="skills.js"></script>
     <script src="usage-panel.js"></script>
+    <script src="peer-threads.js"></script>
     <script src="git-branches.js"></script>
     <script src="account.js"></script>
     <script src="icons.js"></script>

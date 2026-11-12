@@ -123,6 +123,10 @@ class ClaudeBridge {
       // The statusLine relay (bin/cc-statusline.js): the tab's context ring.
       // Rides the same port and token as the hook relay.
       statusLineScript = '',
+      // The ccweb-companion mod's folder, passed as --plugin-dir. Rides the same
+      // port and token; skipped when the folder is missing, so a broken install
+      // never stops Claude from starting.
+      companionModDir = '',
       // Which Claude conversation `--resume` re-attaches to. Defaults to the
       // cc-web session id because that is what `--session-id` bound on the first
       // start — but Claude can move itself to a new transcript (`/clear`), and
@@ -148,6 +152,7 @@ class ClaudeBridge {
     baseArgs.push('--settings', JSON.stringify(
       this.buildInjectedSettings(sessionId, { hookScript, hookPort, hookToken, uiTheme, claudeConfigDir, statusLineScript, userStatusLine })
     ));
+    baseArgs.push(...ClaudeBridge.companionArgs(companionModDir, { hookPort, hookToken }));
 
 
     // Spawn Claude bound to our stable session id. `--session-id <uuid>` starts a
@@ -213,6 +218,9 @@ class ClaudeBridge {
       // Read by the ccweb-companion mod ($.env.get) to reach the relay: the port
       // is not secret but env beats another argv surface.
       if (hookToken && hookPort) childEnv.CCWEB_HOOK_PORT = String(hookPort);
+      // The cc-web session id the mod posts under (/api/hooks/:sessionId). Not
+      // $.session.id(): a /clear moves Claude to a new id, cc-web's stays.
+      if (hookToken && hookPort) childEnv.CCWEB_SESSION_ID = String(sessionId);
       // Run by cc-statusline.js so the user keeps the status line they had.
       if (userStatusLine) childEnv.CCWEB_USER_STATUSLINE = userStatusLine.command;
       delete childEnv.CLAUDE_CODE_CHILD_SESSION;
@@ -618,6 +626,15 @@ class ClaudeBridge {
       return { command: line.command, padding: Number.isFinite(line.padding) ? line.padding : undefined };
     }
     return null;
+  }
+
+  // `--plugin-dir <mod>` for the ccweb-companion mod, or nothing: it needs the
+  // relay (port + token) to report to, and a folder without its manifest
+  // (a broken checkout) is left out rather than handed to Claude.
+  static companionArgs(dir, { hookPort = 0, hookToken = '' } = {}) {
+    if (!dir || !hookPort || !hookToken) return [];
+    if (!fs.existsSync(path.join(dir, '.claude-plugin', 'plugin.json'))) return [];
+    return ['--plugin-dir', dir];
   }
 
   buildInjectedSettings(sessionId, { hookScript = '', hookPort = 0, hookToken = '', uiTheme = '', claudeConfigDir = null, statusLineScript = '', userStatusLine = null } = {}) {

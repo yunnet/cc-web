@@ -407,7 +407,18 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | CLA-15 | 从一个 Claude 会话里启动 cc-web 时会清掉继承来的子会话标记，否则转录不保存、`--resume` 找不到对话 | 手工 | `test/claude-bridge.test.js` |
 | CLA-16 | cc-web 自带的两套 Claude 主题写入 `~/.claude/themes/`，平台用户的写入各自 Claude 目录的 `themes/`（第一次为这个用户启动 Claude 时写，原子写）；写不进去就退回内置主题 | 手工 | `test/claude-theme.test.js` |
 | CLA-17 | Hook 中继的自保上限：stdin 4 秒不来就放弃、请求 3 秒超时、事件超过 2MB 立即发出，任何情况都以 0 退出，绝不阻塞 Claude | `bin:cc-hook.js` | `test/hook-endpoint.test.js` |
+| CLA-23 | 每个 cc-web 启动的 Claude 默认加载仓库自带的 ccweb-companion mod（`mods/ccweb-companion`，`--plugin-dir` 传入；mod 目录不在时不加，Claude 照常启动）。mod 只观察会话间消息（SendMessage）并给正文加/剥线程标记 `[ccw:t=…]`，经 hook 端点上报；不批准、不拒绝、不扣住任何消息；上报失败时消息照常收发（用户 2026-11-11：选「同意，默认开启」）。cc-web 会话 id 经环境变量告知 mod | `env:CCWEB_SESSION_ID` | `test/claude-bridge.test.js` |
 | CLA-22 | 共享 Playwright MCP：cc-web 启动时（之后每分钟检查一次）若本机 8931 端口没人监听，就脱离自身起一个 `npx @playwright/mcp --port 8931 --isolated`，所有 Claude 通过用户级 HTTP MCP（`http://localhost:8931/mcp`）共用这一个进程，每个连接各自独立的浏览器上下文；cc-web 重启不影响它，32352/32353 谁先起谁负责；端口可用 `CCW_SHARED_PLAYWRIGHT_PORT` 改（0 关闭）。Claude 一侧的配置（关掉 playwright 插件、加用户级 http 条目）不在 cc-web 代码里（用户 2026-11-07） | `file:src/shared-mcp.js` | `test/shared-mcp.test.js` |
+
+## 会话间派活
+
+| ID | 用户能看到的 | 入口 | 守护测试 |
+|---|---|---|---|
+| PEER-01 | 派活线程：一个任务用 SendMessage 交给另一个任务的活，按 owner 存成一条线程（`<数据目录>/<uid>/peer-threads.json`，最多 200 条），状态链 已发送 → 已送达 → 等待批准 → 处理中 → 空闲 → 已回复，只进不退；被拒、过期、送不到为终态；对方用 SendMessage 回给发送方（按会话、名字或消息带来的 from 地址认）挂在原线程下；"等待批准 / 空闲"由 Claude 自己发给发送方的 delivery / idle 通知识别；只看得到自己的线程 | `route:GET /api/peer-threads` `file:src/peer-messages.js` | `test/peer-messages.test.js` |
+| PEER-02 | 页头「Hand-offs」按钮（带未读数；≤480px 移进 ⚙ 菜单）打开右侧抽屉，"This task / All tasks" 两档；发送方和接收方看到同一张卡片：全文（长的折叠可展开）、状态链、回复挂在下面、文件:行号可点（相对路径按接收任务的工作目录解析，用文件浏览器打开）；按钮只有「Go to recipient / Show terminal / Go to sender / Copy as prompt」——批准只在接收方自己的终端里做，网页不提供任何批准/拒绝入口（用户 2026-11-11：选「留在接收方终端」） | `control:peerThreadsBtn` `control:peerThreadsBtnMenu` `control:closePeerThreadsBtn` `control:peerScopeTask` `control:peerScopeAll` `file:src/public/peer-threads.js` | `test/feature-guards.test.js` |
+| PEER-03 | 派活有进展（等待批准、对方空闲、已回复、被拒、过期、送不到）时提醒发送方：页面在前台弹 toast，在后台发浏览器通知，发送方任务行上出现「Hand-off」标记，抽屉打开看过后消失 | `state:peer` | `test/feature-guards.test.js` |
+| PEER-04 | 任务菜单「Hand off to…」：选目标任务（显示空间、空闲/忙/已停、权限模式；两边模式不同会提示"对方会扣住等批准"），写要做的事，勾「Notify me when it is idle」；发送时把内容交给**本任务自己的 Claude** 用 SendMessage 发出（用户 2026-11-11：选「交给发送方自己的 Claude 发」），网页自己不向对方发任何东西；菜单里还有「Hand-offs」直接打开本任务的线程 | `control:handoffTarget` `control:handoffText` `control:handoffNotify` `control:sendHandoffBtn` `control:cancelHandoffBtn` `control:closeHandoffBtn` | `test/feature-guards.test.js` |
+
 ## 上下文与用量
 
 | ID | 功能 | 入口 | 守卫 |

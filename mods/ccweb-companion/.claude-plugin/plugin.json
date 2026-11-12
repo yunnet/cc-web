@@ -1,0 +1,5 @@
+{
+  "name": "ccweb-companion",
+  "version": "0.1.0",
+  "description": "Reports cross-session messages (sent, received, held, answered) to the cc-web page that started this Claude. Observes only; never approves anything."
+}

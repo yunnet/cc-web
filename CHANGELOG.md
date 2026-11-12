@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Added
+- **Hand-offs between tasks.** When one task hands work to another through
+  Claude Code's own cross-session messages (SendMessage), the page now shows
+  it: a Hand-offs drawer (header button, or the task menu) with one card per
+  hand-off, the same on both ends — the full text, file:line links, the
+  status chain sent → delivered → waiting for approval → working → idle →
+  replied, and the reply under the original. The sender gets a toast, a
+  browser notification or a mark on its task when the hand-off moves. A new
+  "Hand off to…" in the task menu picks a target (space, idle/busy,
+  permission mode) and gives the text to this task's own Claude to send.
+  Approval stays in the recipient's own terminal; the page offers no way
+  round it. It rests on a small mod shipped in `mods/ccweb-companion` and
+  loaded into every Claude cc-web starts (`--plugin-dir`), which reports
+  sends, receipts, Claude's held/idle notices and the start of work, and tags
+  each message with a thread id it strips again on arrival
+  (user 2026-11-11).
 - **Theme toggle in the header.** A moon (Dark) / sun (Light) button left of
   the gear switches the theme in one click — the same setting as Settings →
   Theme, written to the global default and the active session, the Settings

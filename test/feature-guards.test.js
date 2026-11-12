@@ -408,7 +408,7 @@ describe('MOB-25 the phone header fits and names the task', function () {
   })();
 
   it('files, branches and account leave the header, but not the branch panel', function () {
-    assert.ok(/#explorerBtn,\s*#branchBtn,\s*#accountHeaderBtn\s*\{\s*display:\s*none/.test(phone));
+    assert.ok(/#explorerBtn,\s*#branchBtn,\s*(#peerThreadsBtn,\s*)?#accountHeaderBtn\s*\{\s*display:\s*none/.test(phone));
     assert.ok(!/#branchWrapper[^{]*\{\s*display:\s*none/.test(phone), 'the wrapper holds the panel');
   });
 
@@ -425,5 +425,43 @@ describe('MOB-25 the phone header fits and names the task', function () {
     assert.ok(/\.app-logo \{ display: none; \}/.test(phone));
     assert.ok(/\.header-new-task span \{ display: none; \}/.test(phone));
     assert.ok(/\.header-breadcrumb \.crumb-task \{\s*grid-row: 1/.test(phone));
+  });
+});
+
+describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
+  const src = read('peer-threads.js');
+
+  it('PEER-02: a card offers navigation and copy only — never an approval', function () {
+    const acts = [...src.matchAll(/add\('[^']+', '([a-z-]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual([...new Set(acts)].sort(), ['copy', 'goto-from', 'goto-self', 'goto-to']);
+    assert.ok(!/approve|allow|reject/i.test(acts.join(' ')));
+    // Message text is another model's words: text nodes, never innerHTML.
+    assert.ok(!/innerHTML/.test(src));
+  });
+
+  it('PEER-02: thread updates reach the drawer from any socket', function () {
+    assert.match(read('app.js'), /message\.event === 'ccweb_peer_thread'[\s\S]{0,120}window\.peerThreads\.onThread\(message\.thread\)/);
+    // An older copy of a thread (several sockets get each update) is ignored.
+    assert.match(src, /known\.updatedAt \|\| ''\) >= \(t\.updatedAt/);
+  });
+
+  it('PEER-03: news marks the sender\'s task and the header count', function () {
+    assert.match(src, /tab\.dataset\.peer = ''/);
+    assert.match(read('style.css'), /\.session-tab\[data-peer\]:not\(\[data-awaiting\]\) \.tab-content::after/);
+    assert.match(read('index.html'), /id="peerThreadsBadge" hidden/);
+  });
+
+  it('PEER-04: a hand-off is typed into this task\'s own Claude, not sent by the page', function () {
+    const send = src.slice(src.indexOf('PeerThreads.prototype.sendHandoff'), src.indexOf('window.PeerThreads = '));
+    // Bracketed paste (ESC[200~ … ESC[201~) keeps the text one prompt.
+    assert.ok(send.includes(String.raw`app.sendInput('\x1b[200~' + prompt + '\x1b[201~', sid)`));
+    assert.ok(send.includes(String.raw`app.sendInput('\r', sid)`));
+    assert.ok(!/fetch\(/.test(send), 'no request to another session from the page');
+    assert.match(read('session-manager.js'), /addItem\('Hand off to…', \(\) => window\.peerThreads && window\.peerThreads\.openHandoff\(sessionId\)\)/);
+  });
+
+  it('PEER-02: on a phone the header button lives in the ⚙ menu', function () {
+    assert.match(read('style.css'), /#peerThreadsBtn,\s*#accountHeaderBtn \{ display: none; \}/);
+    assert.match(read('app.js'), /\['peerThreadsBtnMenu', 'peerThreadsBtn'\]/);
   });
 });

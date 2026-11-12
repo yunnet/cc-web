@@ -1006,6 +1006,12 @@ class SessionTabManager {
         };
         menu.appendChild(addItem('Close Others', () => this.closeOthers(sessionId)));
         menu.appendChild(addItem('Context and usage', () => window.usagePanel && window.usagePanel.open(sessionId)));
+        menu.appendChild(addItem('Hand off to…', () => window.peerThreads && window.peerThreads.openHandoff(sessionId)));
+        menu.appendChild(addItem('Hand-offs', () => {
+            if (!window.peerThreads) return;
+            if (this.activeTabId !== sessionId) this.switchToTab(sessionId);
+            window.peerThreads.open('task');
+        }));
         // Pin/unpin — leads the task to the front of its group (either sort
         // mode), per-device.
         if (this.sidebar) {

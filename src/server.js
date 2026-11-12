@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 const ClaudeBridge = require('./claude-bridge');
 const SessionStore = require('./utils/session-store');
 const SpaceStore = require('./utils/space-store');
+const { PeerThreads } = require('./peer-messages');
 const UserStore = require('./utils/user-store');
 const { ConversationOwners } = require('./utils/conversation-owners');
 const { registerAccountRoutes, registerAdminRoutes } = require('./account-routes');
@@ -187,6 +188,9 @@ class ClaudeCodeWebServer {
       t.sessionStore.maxOutputChunks = this.loadScrollbackChunks(ownerId);
       this.tenants.set(key, t);
     }
+    // Cross-session message threads (src/peer-messages.js): made on first use,
+    // for the unowned tenant too (built in the constructor, before this).
+    if (!t.peerThreads) t.peerThreads = new PeerThreads(path.join(this.sessionStore.storageDir, ownerId || ''));
     return t;
   }
 
@@ -1079,7 +1083,8 @@ class ClaudeCodeWebServer {
         workingDir: session.workingDir,
         spaceId: session.spaceId || null,
         connectedClients: session.connections.size,
-        lastActivity: session.lastActivity
+        lastActivity: session.lastActivity,
+        permissionMode: session.permissionMode || null
       }));
       res.json({ sessions: sessionList });
     });
@@ -1582,6 +1587,9 @@ class ClaudeCodeWebServer {
     // The browser's answer to a ccweb_permission_request card: resolves the
     // companion mod's held POST (registered in handleHookEvent). Normal header
     // auth — the browser knows the global token, not the per-session hook token.
+    // Cross-session message threads the ccweb-companion mod reported.
+    this.app.get('/api/peer-threads', (req, res) => this.listPeerThreads(req, res));
+
     this.app.post('/api/hooks/:sessionId/answer', ClaudeCodeWebServer.asyncRoute((req, res) => this.answerPermissionRequest(req, res)));
 
     this.app.post('/api/set-working-dir', (req, res) => {
@@ -2318,6 +2326,9 @@ class ClaudeCodeWebServer {
       // (a file node would run as the hook). Values are whitelisted by the
       // bridge (ClaudeBridge.launchArgs); this only decides which keys exist.
       const { model, permissionMode, effort, dangerouslySkipPermissions } = options || {};
+      // Shown next to the task in the hand-off picker: two sessions in
+      // different modes hold each other's messages for approval.
+      session.permissionMode = dangerouslySkipPermissions === true ? 'bypass' : (typeof permissionMode === 'string' && permissionMode ? permissionMode.slice(0, 40) : 'default');
       const claudeEnv = this.prepareClaudeFor(session.ownerId || null);
       // A session that last ran on its owner's M3 directory resumes on
       // ~/.claude now; bring its conversation along so --resume still finds it.
@@ -2344,6 +2355,11 @@ class ClaudeCodeWebServer {
         // Claude's statusLine snapshot (context window, cost) for the tab's
         // context ring; relayed by bin/cc-statusline.js to the same endpoint.
         statusLineScript: path.join(__dirname, '..', 'bin', 'cc-statusline.js'),
+        // The ccweb-companion mod: reports cross-session messages (SendMessage
+        // sent / received / held / answered) to the same endpoint, which is
+        // what the peer threads drawer shows. Loaded for every session (user
+        // 2026-11-11); it only observes and tags threads, never approves.
+        companionModDir: path.join(__dirname, '..', 'mods', 'ccweb-companion'),
         // Resume the Claude conversation if this cc-web session has started Claude
         // before (bound to this session id via --session-id). Survives server
         // restarts / dead PTYs instead of starting a brand-new conversation.
@@ -2720,6 +2736,17 @@ class ClaudeCodeWebServer {
       });
     }
 
+    // The ccweb-companion mod's cross-session message reports. ccweb_peer_send
+    // is answered with the thread id the mod tags the message with.
+    if (typeof event.hook_event_name === 'string' && event.hook_event_name.startsWith('ccweb_peer_')) {
+      try {
+        return res.json(this.handlePeerEvent(session, event));
+      } catch (error) {
+        console.error('Peer thread report failed:', error.message);
+        return res.json({ ok: false });
+      }
+    }
+
     // Claude's statusLine snapshot, relayed by bin/cc-statusline.js. Kept on the
     // session (and persisted) for the context ring; broadcast only when it
     // changed, since Claude also calls it on start with nothing new.
@@ -2747,7 +2774,11 @@ class ClaudeCodeWebServer {
       // A Claude waiting for a person to answer is never hibernated.
       if (event.notification_type === 'permission_prompt') session.awaitingPermission = true;
     }
-    if (event.hook_event_name === 'Stop') session.awaitingPermission = false;
+    if (event.hook_event_name === 'Stop') {
+      session.awaitingPermission = false;
+      // A peer task this session was working on is done for now.
+      for (const t of this.tenant(session.ownerId || null).peerThreads.stopped(session.id)) this.broadcastPeerThread(session.ownerId || null, t);
+    }
     if (event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string') {
       // Every turn ends with one; only the opening is needed (a notification
       // body), so a long answer is not broadcast whole.
@@ -2762,6 +2793,82 @@ class ClaudeCodeWebServer {
     }
     this.broadcastToSession(sessionId, message);
     res.json({ ok: true });
+  }
+
+  // --- Peer threads (cross-session messages) ---------------------------------
+  // Reports from the ccweb-companion mod, one per step of a SendMessage hand-off.
+  // Only the reporting session's owner's threads are touched, and a target is
+  // looked up among that owner's sessions only.
+  handlePeerEvent(session, event) {
+    const ownerId = session.ownerId || null;
+    const store = this.tenant(ownerId).peerThreads;
+    const name = event.hook_event_name;
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+    const threadId = str(event.threadId, 40);
+    if (this.dev) {
+      console.log(`[peer] ${session.id} ${name} ${JSON.stringify({ ...event, text: undefined, head: str(event.text, 400) })}`);
+    }
+    let touched = [];
+    let answer = { ok: true };
+    if (name === 'ccweb_peer_send') {
+      const toName = str(event.to, 300);
+      const target = this.peerTargetByName(ownerId, toName, session.id);
+      const { thread, isReply } = store.beginSend({
+        fromSessionId: session.id, fromName: session.name || null,
+        toName, toSessionId: target ? target.id : null, text: str(event.text, 20000),
+      });
+      touched = [thread];
+      answer = { ok: true, threadId: thread.id, isReply };
+    } else if (name === 'ccweb_peer_sent') {
+      touched = [store.sent(threadId, { isDelivered: event.isDelivered === true, reason: str(event.reason, 500) })];
+    } else if (name === 'ccweb_peer_msgid') {
+      const msgId = str(event.msgId, 36).toLowerCase();
+      if (/^[0-9a-f-]{36}$/.test(msgId)) touched = [store.pairMsgId(threadId, msgId, event.notifyWhenIdle === true)];
+    } else if (name === 'ccweb_peer_notice') {
+      const msgId = str(event.msgId, 36).toLowerCase();
+      touched = [store.notice(session.id, { msgId: /^[0-9a-f-]{36}$/.test(msgId) ? msgId : null, text: str(event.text, 2000) })];
+    } else if (name === 'ccweb_peer_receive') {
+      const text = str(event.text, 20000);
+      // The engine's wrapper, when the mod sees it: who sent it, and the
+      // address a reply goes to.
+      const fromAddress = (text.match(/<cross-session-message[^>]*\sfrom="([^"]{1,300})"/) || [])[1] || null;
+      const fromName = (text.match(/<cross-session-message[^>]*\sfrom-name="([^"]{1,300})"/) || [])[1] || null;
+      const body = text.replace(/^\s*<cross-session-message[^>]*>\s*/, '').replace(/\s*<\/cross-session-message>\s*$/, '');
+      touched = [store.received(session.id, { threadId: threadId || null, text: body, toName: session.name || null, fromAddress, fromName })];
+    } else if (name === 'ccweb_peer_processing') {
+      touched = [store.processing(session.id)];
+    }
+    for (const t of touched) if (t) this.broadcastPeerThread(ownerId, t);
+    return answer;
+  }
+
+  // The owner's one session carrying exactly this name, else null (none or
+  // several: the thread then waits for the receiver to report itself).
+  peerTargetByName(ownerId, name, exceptId) {
+    if (!name) return null;
+    const hits = this.ownedSessions(ownerId).filter((s) => s.id !== exceptId && s.name === name);
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  // Every socket the owner has open, whichever task it shows: a hand-off's
+  // status matters on the sender's tab even when the page sits on another one.
+  broadcastPeerThread(ownerId, thread) {
+    const data = { type: 'hook_event', event: 'ccweb_peer_thread', thread };
+    for (const info of this.webSocketConnections.values()) {
+      if ((info.userId || null) === (ownerId || null) && info.ws && info.ws.readyState === WebSocket.OPEN) {
+        this.sendToWebSocket(info.ws, { ...data, sessionId: info.claudeSessionId || null });
+      }
+    }
+  }
+
+  // GET /api/peer-threads[?sessionId=] — the caller's own threads, newest first.
+  listPeerThreads(req, res) {
+    const ownerId = this.actorOf(req.user);
+    const q = ClaudeCodeWebServer.singleQueryValue(req.query.sessionId);
+    if (!q.ok) return res.status(400).json({ error: 'sessionId must be a single value' });
+    const sessionId = q.value || null;
+    if (sessionId && !this.getOwnedSession(ownerId, sessionId)) return res.status(404).json({ error: 'Session not found' });
+    res.json({ threads: this.tenant(ownerId).peerThreads.list(sessionId || null).slice(0, 100) });
   }
 
   // The browser pressed a button on a ccweb_permission_request card. Resolve the

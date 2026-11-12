@@ -91,6 +91,12 @@ class ClaudeCodeWebInterface {
         this.sessionTabManager.sidebar = this.spacesSidebar;
         await this.spacesSidebar.load();
         const reconcile = await this.sessionTabManager.init();
+        // Hand-offs between tasks: loaded after the tabs exist, so the marks
+        // on senders' tabs have somewhere to go.
+        if (window.PeerThreads) {
+            window.peerThreads = new window.PeerThreads(this);
+            window.peerThreads.load();
+        }
         // Turn rails: each view's rail rescans its buffer on a slow cadence
         // and repositions ticks between scans.
         this._railTimer = setInterval(() => this.refreshTurnRails(null, true), 5000);
@@ -1496,7 +1502,7 @@ class ClaudeCodeWebInterface {
         // the hidden header buttons (user 2026-11-07: 「同意」). Deferred one
         // tick: the branch panel closes on any click outside it, and this very
         // click is still on its way up to the document.
-        [['accountBtnMenu', 'accountHeaderBtn'], ['explorerBtnMenu', 'explorerBtn'], ['branchBtnMenu', 'branchBtn']]
+        [['accountBtnMenu', 'accountHeaderBtn'], ['explorerBtnMenu', 'explorerBtn'], ['branchBtnMenu', 'branchBtn'], ['peerThreadsBtnMenu', 'peerThreadsBtn']]
             .forEach(([menuId, headerId]) => {
                 const item = document.getElementById(menuId);
                 if (!item) return;
@@ -4048,6 +4054,11 @@ class ClaudeCodeWebInterface {
         // answer. The mod's request is held server-side until a button.
         if (message.event === 'ccweb_permission_request') {
             this.showPermissionRequestCard(message);
+        }
+        // ccweb-companion mod: a hand-off between tasks moved a step.
+        if (message.event === 'ccweb_peer_thread') {
+            if (window.peerThreads) window.peerThreads.onThread(message.thread);
+            return;
         }
         if (this.sessionTabManager) this.sessionTabManager.hookEvent(sessionId, message);
         // A finished turn is when a new question lands in the

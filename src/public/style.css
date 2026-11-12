@@ -4692,6 +4692,97 @@ body.overlay-open .settings-modal       { z-index: 5004; }
 }
 
 /* ---------------------------------------------------------------------------
+   Hand-offs between tasks (peer-threads.js). A sender's task carries a small
+   accent "Hand-off" mark while a hand-off it sent has news; the header button
+   carries the count. Cards are the same on both ends of a hand-off.
+   --------------------------------------------------------------------------- */
+.session-tab[data-peer]:not([data-awaiting]) .tab-content::after {
+    content: 'Hand-off';
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    background-color: var(--accent);
+    color: #fff;
+}
+.peer-threads-btn { position: relative; }
+.peer-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+}
+.peer-badge[hidden] { display: none; }
+#peerThreadsBody { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.peer-empty { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.peer-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.peer-card.peer-final { border-color: var(--error); }
+.peer-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.peer-dir { font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-time { color: var(--text-secondary); flex-shrink: 0; }
+.peer-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.peer-text.folded { max-height: 9em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.peer-more { background: none; border: none; color: var(--accent); cursor: pointer; padding: 2px 0; font-size: 12px; }
+.peer-file { color: var(--accent); font-family: var(--font-mono); text-decoration: underline dotted; }
+.peer-chain { display: flex; flex-wrap: wrap; gap: 6px; }
+.peer-step {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+.peer-step.done { border-color: var(--success); color: var(--success); }
+.peer-step.now { border-color: var(--accent); background: var(--accent); color: #fff; }
+.peer-step.bad { border-color: var(--error); color: var(--error); }
+.peer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.peer-hint { flex-basis: 100%; font-size: 12px; color: var(--warning); margin: 0; }
+.peer-reply { border-left: 2px solid var(--border); padding-left: 10px; display: flex; flex-direction: column; gap: 6px; }
+.handoff-body { display: flex; flex-direction: column; gap: 12px; }
+.handoff-body .start-option select,
+.handoff-body textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+}
+.handoff-body textarea { font-family: var(--font-mono); resize: vertical; }
+.handoff-check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); }
+@media (max-width: 768px) {
+    .peer-actions .btn { flex: 1 1 auto; min-height: 44px; }
+}
+
+/* ---------------------------------------------------------------------------
    Back to the newest screen. While the terminal is scrolled up in its history
    a round button sits in the bottom-right corner of the terminal area; one
    press returns to the bottom and gives the terminal the keyboard back
@@ -5487,6 +5578,7 @@ button.usage-acct { cursor: pointer; }
        panel lives in the wrapper and must still open. */
     #explorerBtn,
     #branchBtn,
+    #peerThreadsBtn,
     #accountHeaderBtn { display: none; }
 
     .hamburger-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }

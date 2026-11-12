@@ -189,7 +189,8 @@ describe('page title and bell, next to the ✓', function () {
 
   it('puts ✓ in front of the browser tab title only while the page is hidden', function () {
     assert.ok(/document\.hidden && document\.querySelector\('\.session-tab\[data-done\]'\)/.test(body('updatePageTitle')));
-    assert.ok(/addEventListener\('visibilitychange', \(\) => \{[\s\S]*?this\.updatePageTitle\(\);\s*\}\)/.test(APP), 'coming back takes it off');
+    // Other work may follow in the same handler (syncSizeVotes, 4.12.4).
+    assert.ok(/addEventListener\('visibilitychange', \(\) => \{[^}]*?this\.updatePageTitle\(\);[^}]*\}\)/.test(APP), 'coming back takes it off');
     // One writer: the title handler goes through it rather than setting document.title itself.
     assert.ok(!/document\.title = topic/.test(APP));
   });

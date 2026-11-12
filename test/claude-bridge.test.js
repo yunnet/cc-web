@@ -53,6 +53,29 @@ describe('ClaudeBridge', function() {
     });
   });
 
+  describe('companionArgs (ccweb-companion mod)', function() {
+    const path = require('path');
+    const MOD = path.join(__dirname, '..', 'mods', 'ccweb-companion');
+
+    it('loads the shipped mod when the relay is wired', function() {
+      assert.deepStrictEqual(ClaudeBridge.companionArgs(MOD, { hookPort: 32353, hookToken: 't' }), ['--plugin-dir', MOD]);
+    });
+
+    it('leaves it out without a relay or without its manifest, so Claude still starts', function() {
+      assert.deepStrictEqual(ClaudeBridge.companionArgs(MOD, { hookPort: 0, hookToken: 't' }), []);
+      assert.deepStrictEqual(ClaudeBridge.companionArgs(MOD, { hookPort: 1, hookToken: '' }), []);
+      assert.deepStrictEqual(ClaudeBridge.companionArgs(path.join(MOD, 'nope'), { hookPort: 1, hookToken: 't' }), []);
+      assert.deepStrictEqual(ClaudeBridge.companionArgs('', { hookPort: 1, hookToken: 't' }), []);
+    });
+
+    it('the mod only observes: no approve / deny / hold in its hooks', function() {
+      const src = require('fs').readFileSync(path.join(MOD, 'hooks', 'register.ts'), 'utf8');
+      assert.ok(!/consumed\s*:/.test(src), 'never swallows a delivery');
+      assert.ok(!/isDelivered:\s*false/.test(src), 'never refuses a send');
+      assert.ok(!/deny\s*:/.test(src), 'never denies a tool call');
+    });
+  });
+
   describe('launchArgs', function() {
     const args = (o) => ClaudeBridge.launchArgs(o);
 
