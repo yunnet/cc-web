@@ -8,6 +8,26 @@ describe('ClaudeBridge', function() {
     bridge = new ClaudeBridge();
   });
 
+  describe('PTY close error', function() {
+    // Hibernating or stopping a task ends the PTY read with "read EIO" on
+    // Linux; the browser used to pop "Connection Error" for it.
+    it('treats read EIO as the PTY closing, not an error', function() {
+      assert.strictEqual(ClaudeBridge.isPtyCloseError(Object.assign(new Error('read EIO'), { code: 'EIO', errno: -5 })), true);
+      assert.strictEqual(ClaudeBridge.isPtyCloseError(Object.assign(new Error('x'), { code: 'errno 5' })), true);
+    });
+
+    it('still reports anything else', function() {
+      assert.strictEqual(ClaudeBridge.isPtyCloseError(Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' })), false);
+      assert.strictEqual(ClaudeBridge.isPtyCloseError(new Error('boom')), false);
+      assert.strictEqual(ClaudeBridge.isPtyCloseError(null), false);
+    });
+
+    it('the pty error handler returns early for it', function() {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'claude-bridge.js'), 'utf8');
+      assert.match(src, /if \(ClaudeBridge\.isPtyCloseError\(error\)\) return;\s*console\.error\(`Claude session/);
+    });
+  });
+
   describe('constructor', function() {
     it('should initialize with a Map for sessions', function() {
       assert(bridge.sessions instanceof Map);

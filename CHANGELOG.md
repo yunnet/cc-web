@@ -200,6 +200,11 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **No more "Connection Error: read EIO" pop-up.** When a task's Claude ended
+  under an open tab (idle hibernation, Stop, Claude quitting), Linux closed
+  the PTY with `read EIO`, which node-pty ignores but cc-web sent to the
+  browser as an error. The bridge now treats EIO as the PTY closing; the exit
+  that follows does the cleanup, and any other error still shows.
 - **Header icons are one size.** The Hand-offs button was drawn at 28px with
   a 16px glyph beside 44px / 24px neighbours. One rule now sizes every icon
   button in the header row, so a new one matches without a rule of its own,

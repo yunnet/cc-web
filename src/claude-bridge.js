@@ -373,6 +373,11 @@ class ClaudeBridge {
 
         proc.on('error', (error) => {
           if (proc !== session.process) return; // stale process — ignore
+          // node-pty's proc.on('error') is the PTY's read stream. When the child
+          // goes away (hibernation, stop, Claude quitting) Linux ends that read
+          // with EIO — "read EIO" — which node-pty itself ignores. onExit follows
+          // and does the cleanup, so this is not an error to show anyone.
+          if (ClaudeBridge.isPtyCloseError(error)) return;
           console.error(`Claude session ${sessionId} error:`, error);
           if (session.killTimeout) {
             clearTimeout(session.killTimeout);
@@ -485,6 +490,13 @@ class ClaudeBridge {
   // fragments that survive that — including the accept option itself. Missing
   // this leaves a new session parked on the prompt until someone presses Enter
   // by hand.
+  static isPtyCloseError(error) {
+    // "read EIO" (errno -5) / the older "errno 5": the PTY's reader ending
+    // because the child went away. node-pty swallows it too.
+    const code = String((error && error.code) || '');
+    return code === 'EIO' || code.includes('errno 5') || !!(error && error.errno === -5);
+  }
+
   static looksLikeTrustPrompt(text) {
     const dense = String(text || '')
       .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
