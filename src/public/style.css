@@ -701,37 +701,22 @@ body.sidebar-hidden .sidebar-rail {
 /* The task row's trailing bits: relative time (tertiary, tooltip carries the
    absolute moment), the ⋯ menu and the × — hover-revealed on desktop,
    always visible where there is no hover (touch). */
-/* Pin: the slot is always laid out (zero-jitter discipline); hover fades the
-   time out and the pin in — same slots, no reflow. A pinned task's pin is
-   always lit in the accent colour. */
-.tab-pin {
+/* The row has one button, the ⋯ (user 2026-11-14: pin and × moved into its
+   menu). A pinned task keeps a small accent pin as a mark, not a button; it
+   gives the ⋯'s slot back on hover. */
+.tab-pin-mark {
     width: 16px;
     height: 16px;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
-    border: none;
-    background: transparent;
-    border-radius: 3px;
-    color: var(--text-secondary);
-    opacity: 0;
-    transition: opacity 0.15s;
-    cursor: pointer;
-    flex-shrink: 0;
-    padding: 0;
-}
-
-.session-tab:hover .tab-pin {
-    opacity: .6;
-}
-
-.session-tab.pinned .tab-pin {
-    opacity: 1;
     color: var(--accent);
+    flex-shrink: 0;
+    pointer-events: none;
 }
 
-.tab-pin:hover {
-    opacity: 1 !important;
+.session-tab.pinned .tab-pin-mark {
+    display: flex;
 }
 
 .tab-time {
@@ -743,7 +728,7 @@ body.sidebar-hidden .sidebar-rail {
     transition: opacity 0.15s;
 }
 
-/* The pin takes over the time's slot on hover — both stay in the layout, so
+/* The ⋯ takes over the time's slot on hover — both stay in the layout, so
    nothing moves. */
 .session-tab:hover .tab-time {
     opacity: 0;
@@ -780,8 +765,7 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 @media (hover: none) and (pointer: coarse) {
-    .tab-menu,
-    .tab-close {
+    .tab-menu {
         opacity: .6;
     }
 }
@@ -883,10 +867,6 @@ body.sidebar-hidden .sidebar-rail {
     font-weight: 500;
 }
 
-.session-tab.active .tab-close {
-    color: var(--text-secondary);
-}
-
 
 .session-tab.dragging {
     opacity: 0.5;
@@ -978,27 +958,6 @@ body.sidebar-hidden .sidebar-rail {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.tab-close {
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    opacity: 0;
-    transition: opacity 0.2s;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.session-tab:hover .tab-close {
-    opacity: 0.6;
-}
-
-.tab-close:hover {
-    opacity: 1;
 }
 
 .tab-name-input {
@@ -5621,7 +5580,7 @@ button.usage-acct { cursor: pointer; }
 }
 
 :is(.header-icon-btn, .tab-settings, .hamburger-btn, .header-account, .sidebar-icon-btn, .space-action,
-    .close-btn, .modal-close, .session-mode-btn, .usage-acct, .tab-pin, .tab-close):not(.active, :disabled):hover {
+    .close-btn, .modal-close, .session-mode-btn, .usage-acct):not(.active, :disabled):hover {
     color: var(--accent);
     outline: 1px solid var(--accent);
     outline-offset: -1px;
@@ -5639,7 +5598,7 @@ button.usage-acct { cursor: pointer; }
 }
 
 /* Square icon buttons ring as a circle (user 2026-11-09: 方形框改为圆形). */
-:is(.sidebar-icon-btn, .space-action, .close-btn, .modal-close, .tab-pin, .tab-close):not(.active, :disabled):hover {
+:is(.sidebar-icon-btn, .space-action, .close-btn, .modal-close):not(.active, :disabled):hover {
     border-radius: 50%;
 }
 
@@ -5782,20 +5741,23 @@ button.usage-acct { cursor: pointer; }
       (session-manager.js startNameMarquee): only the overflow scrolls, right
       to left, holding briefly at each end.
    --------------------------------------------------------------------------- */
-.spaces-sidebar .session-tab :is(.tab-pin, .tab-menu, .tab-close) {
+.spaces-sidebar .session-tab :is(.tab-pin-mark, .tab-menu) {
     position: absolute;
     top: 50%;
     margin-top: -8px;
 }
-.spaces-sidebar .session-tab .tab-close { right: 8px; }
-.spaces-sidebar .session-tab .tab-menu { right: 28px; }
-.spaces-sidebar .session-tab .tab-pin { right: 48px; }
+.spaces-sidebar .session-tab .tab-menu { right: 8px; }
+.spaces-sidebar .session-tab .tab-pin-mark { right: 8px; }
 
-/* Room for the three while they show; the time steps aside. */
+/* Room for the ⋯ while it shows; the time steps aside. */
 .spaces-sidebar .session-tab:hover {
-    padding-right: 72px;
+    padding-right: 28px;
 }
 .spaces-sidebar .session-tab:hover .tab-time {
+    display: none;
+}
+/* A pinned task's mark gives the slot to the ⋯ on hover. */
+.spaces-sidebar .session-tab:hover .tab-pin-mark {
     display: none;
 }
 
@@ -5803,17 +5765,20 @@ button.usage-acct { cursor: pointer; }
 .spaces-sidebar .session-tab.pinned:not(:hover) {
     padding-right: 28px;
 }
-.spaces-sidebar .session-tab.pinned:not(:hover) .tab-pin {
-    right: 8px;
-}
 
-/* Touch has no hover: the buttons are always there, so is their room. */
+/* Touch has no hover: the ⋯ is always there, so is its room; the pin mark
+   sits beside it. */
 @media (hover: none) and (pointer: coarse) {
-    .spaces-sidebar .session-tab,
-    .spaces-sidebar .session-tab.pinned:not(:hover) {
-        padding-right: 72px;
+    .spaces-sidebar .session-tab {
+        padding-right: 28px;
     }
-    .spaces-sidebar .session-tab.pinned:not(:hover) .tab-pin { right: 48px; }
+    .spaces-sidebar .session-tab.pinned,
+    .spaces-sidebar .session-tab.pinned:hover,
+    .spaces-sidebar .session-tab.pinned:not(:hover) {
+        padding-right: 48px;
+    }
+    .spaces-sidebar .session-tab.pinned .tab-pin-mark,
+    .spaces-sidebar .session-tab.pinned:hover .tab-pin-mark { display: flex; right: 28px; }
 }
 
 .tab-name.marquee {

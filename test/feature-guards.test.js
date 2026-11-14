@@ -454,6 +454,28 @@ describe('header icons are one size (user 2026-11-11)', function () {
   });
 });
 
+describe('TAB-03 / SPACE-15 a task row has one button: ⋯ (user 2026-11-14)', function () {
+  const js = read('session-manager.js');
+  const row = js.slice(js.indexOf("tab.className = 'session-tab'"), js.indexOf('tabsContainer.appendChild(tab)'));
+
+  it('the row markup holds the ⋯ and no other button', function () {
+    assert.deepStrictEqual([...row.matchAll(/<button\b[^>]*class="([^"]+)"/g)].map((m) => m[1]), ['tab-menu']);
+    assert.ok(!row.includes('tab-close') && !row.includes('class="tab-pin"'));
+  });
+
+  it('pin and delete are items of the ⋯ menu, and delete still confirms', function () {
+    const menu = js.slice(js.indexOf('openTabContextMenu(sessionId, clientX, clientY) {'), js.indexOf('createNewSession() {'));
+    assert.ok(menu.includes("pinned ? 'Unpin' : 'Pin'"));
+    assert.ok(menu.includes("addItem('Delete task', () => this.closeSession(sessionId))"));
+    assert.ok(!/closeSession\(sessionId, \{ skipConfirm/.test(menu), 'the menu item must not skip the confirmation');
+  });
+
+  it('a pinned row keeps a passive mark, not a button', function () {
+    assert.match(row, /<span class="tab-pin-mark"/);
+    assert.match(read('style.css'), /\.tab-pin-mark \{[^}]*pointer-events: none/);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 

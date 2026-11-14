@@ -124,6 +124,10 @@
   applies from the next start.
 
 ### Changed
+- **A task row has one button, ⋯.** Pin and the × moved into its menu (Pin /
+  Unpin, and a new Delete task item that still asks first); a pinned task keeps
+  a small accent pin as a mark. The row's right end is no longer crowded, so
+  names get more room (user 2026-11-14).
 - **Long task names in the sidebar.** The row's pin / menu / × no longer
   hold their room at opacity 0: they float at the right end and take space
   only while they show, so at rest a name gets ~14 characters instead of ~9.

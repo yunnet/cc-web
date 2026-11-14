@@ -687,12 +687,12 @@ class SessionTabManager {
                 <span class="tab-name" title="${workingDir ? `${displayName} · ${workingDir}` : displayName}">${displayName}</span>
             </div>
             <span class="tab-time" title=""></span>
-            <button class="tab-pin" type="button" title="Pin / unpin" aria-label="Pin / unpin">
+            <span class="tab-pin-mark" aria-hidden="true">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 17v5"/>
                     <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>
                 </svg>
-            </button>
+            </span>
             <button class="tab-menu" type="button" title="Task menu">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="5" cy="12" r="1.6"/>
@@ -700,12 +700,6 @@ class SessionTabManager {
                     <circle cx="19" cy="12" r="1.6"/>
                 </svg>
             </button>
-            <span class="tab-close" title="Delete task">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-            </span>
         `;
 
         // The context ring opens the usage panel for this tab, without
@@ -717,16 +711,9 @@ class SessionTabManager {
 
         // Tab click handler
         tab.addEventListener('click', async (e) => {
-            if (!e.target.closest('.tab-close') && !e.target.closest('.tab-menu') && !e.target.closest('.tab-pin')) {
+            if (!e.target.closest('.tab-menu')) {
                 await this.switchToTab(sessionId);
             }
-        });
-
-        // Pin: the row keeps its place in the group's order — the sidebar's
-        // ordering (pinned lead) does that — so this only flips the flag.
-        tab.querySelector('.tab-pin').addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.sidebar) this.sidebar.togglePin(sessionId);
         });
 
         // ⋯ — the context menu, reachable without a right button (touch; on
@@ -743,16 +730,9 @@ class SessionTabManager {
         tab.addEventListener('mouseenter', () => this.startNameMarquee(tab));
         tab.addEventListener('mouseleave', () => this.stopNameMarquee(tab));
         
-        // Close button handler
-        const closeBtn = tab.querySelector('.tab-close');
-        closeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.closeSession(sessionId);
-        });
-        
         // Double-click to rename
         tab.addEventListener('dblclick', (e) => {
-            if (!e.target.closest('.tab-close')) {
+            if (!e.target.closest('.tab-menu')) {
                 this.renameTab(sessionId);
             }
         });
@@ -1071,6 +1051,8 @@ class SessionTabManager {
                 menu.appendChild(move);
             }
         }
+        // The row has one button, ⋯; deleting lives here (it still confirms).
+        menu.appendChild(addItem('Delete task', () => this.closeSession(sessionId)));
         document.body.appendChild(menu);
         menu.style.top = `${clientY + 4}px`;
         menu.style.left = `${clientX + 4}px`;
