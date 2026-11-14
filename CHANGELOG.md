@@ -206,6 +206,9 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **Show more folds away with its space.** Folding a space hid its tasks but
+  left the "Show more (N more)" row hanging under the header; it now goes with
+  the tasks (user 2026-11-14).
 - **No more "Connection Error: read EIO" pop-up.** When a task's Claude ended
   under an open tab (idle hibernation, Stop, Claude quitting), Linux closed
   the PTY with `read EIO`, which node-pty ignores but cc-web sent to the

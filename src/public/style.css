@@ -467,7 +467,10 @@ body.sidebar-hidden .sidebar-rail {
     padding: 2px 0 4px 14px;
 }
 
-.space-group.collapsed .space-tasks { display: none; }
+/* Show more / Show less belongs to the space's task block: it goes with the
+   tasks when the space is folded (user 2026-11-14). */
+.space-group.collapsed .space-tasks,
+.space-group.collapsed .space-more { display: none; }
 
 .sidebar-foot {
     padding: 8px;

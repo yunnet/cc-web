@@ -484,6 +484,12 @@ describe('the active task\'s name is blue (user 2026-11-14)', function () {
   });
 });
 
+describe('SPACE Show more folds away with its space (user 2026-11-14)', function () {
+  it('a collapsed space hides its Show more / Show less row with the tasks', function () {
+    assert.match(read('style.css'), /\.space-group\.collapsed \.space-tasks,\s*\.space-group\.collapsed \.space-more \{ display: none; \}/);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 
