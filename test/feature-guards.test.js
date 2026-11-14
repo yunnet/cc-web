@@ -497,6 +497,15 @@ describe('SPACE-20 spaces can be ordered from their ⋯ menu (user 2026-11-14)',
     assert.match(js, /head\.addEventListener\('contextmenu'/);
     for (const label of ['Move to top', 'Move up', 'Move down', 'Move to bottom']) assert.ok(js.includes(`'${label}'`), label);
   });
+  it('the head holds the ⋯ and no other button; New task and Delete are menu items (user 2026-11-14)', function () {
+    const head = js.slice(js.indexOf('fillGroupHead(head, space) {'), js.indexOf('head.innerHTML = `') + 1800);
+    const markup = head.slice(head.indexOf('head.innerHTML = `'), head.indexOf('`;', head.indexOf('head.innerHTML = `') + 20));
+    assert.deepStrictEqual([...markup.matchAll(/<button\b[^>]*class="([^"]+)"/g)].map((m) => m[1]), ['space-action space-menu']);
+    const menu = js.slice(js.indexOf('openSpaceMenu(space, clientX, clientY) {'), js.indexOf('async moveSpace('));
+    assert.ok(menu.includes("addItem('New task in this space'"));
+    assert.ok(menu.includes("addItem('Delete space', () => this.deleteSpace(space))"));
+    assert.ok(js.slice(js.indexOf('async deleteSpace('), js.indexOf('countTasks(spaceId)')).includes('confirmDialog'), 'delete still asks first');
+  });
   it('the sidebar moves at once, saves through the server, and restores its order on a refusal', function () {
     const body = js.slice(js.indexOf('async moveSpace('), js.indexOf('async deleteSpace('));
     assert.ok(body.includes("'/api/spaces/reorder'"));

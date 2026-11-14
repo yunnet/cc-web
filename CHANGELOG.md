@@ -128,6 +128,9 @@
   applies from the next start.
 
 ### Changed
+- **A space row has one button, ⋯.** New task and Delete space moved into its
+  menu next to the ordering items; Ungrouped's ⋯ offers New task. Delete still
+  asks first (user 2026-11-14).
 - **The active task's name is blue** in the sidebar (the accent colour; the
   darker accent-hover on the light theme, for contrast) (user 2026-11-14).
 - **A task row has one button, ⋯.** Pin and the × moved into its menu (Pin /

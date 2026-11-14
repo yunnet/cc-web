@@ -966,27 +966,13 @@ class SpacesSidebar {
             <span class="space-name" title="${space ? escapeHtml(space.dir) : 'Tasks not in any space'}">${space ? escapeHtml(space.name) : 'Ungrouped'}</span>
             <span class="space-dir" title="${space ? escapeHtml(space.dir) : ''}">${space ? escapeHtml(space.dir) : ''}</span>
             <span class="space-actions">
-                ${space ? `
                 <button class="space-action space-menu" title="Space menu" aria-label="Space menu">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="5" cy="12" r="1.6"/>
                         <circle cx="12" cy="12" r="1.6"/>
                         <circle cx="19" cy="12" r="1.6"/>
                     </svg>
-                </button>` : ''}
-                <button class="space-action space-add-task" title="New task in this space">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
                 </button>
-                ${space ? `
-                <button class="space-action space-delete" title="Delete space (tasks are kept and move to Ungrouped)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>` : ''}
             </span>
         `;
 
@@ -1003,27 +989,17 @@ class SpacesSidebar {
             this.renameSpace(space, head);
         });
 
-        head.querySelector('.space-add-task')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.closeDrawer();
-            if (this.app.openNewTabDialog) this.app.openNewTabDialog({ space: space || null });
-        });
-        // ⋯ and right-click: the same menu (order the spaces). Touch has no
-        // right button, so the ⋯ is always there.
+        // The head's one button is ⋯ (user 2026-11-14: New task and Delete moved
+        // into it). Right-click opens the same menu; touch has no right button,
+        // so the ⋯ is always there.
         head.querySelector('.space-menu')?.addEventListener('click', (e) => {
             e.stopPropagation();
             const r = e.currentTarget.getBoundingClientRect();
             this.openSpaceMenu(space, Math.min(r.left, window.innerWidth - 240), r.bottom);
         });
-        if (space) {
-            head.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                this.openSpaceMenu(space, e.clientX, e.clientY);
-            });
-        }
-        head.querySelector('.space-delete')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.deleteSpace(space);
+        head.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.openSpaceMenu(space, e.clientX, e.clientY);
         });
     }
 
@@ -1093,25 +1069,34 @@ class SpacesSidebar {
         });
     }
 
-    // The space's menu: where it sits in the sidebar. Order is the server's
-    // (one list per account, every device sees it).
+    // The space's menu (null = Ungrouped, which only offers New task): start a
+    // task in it, where it sits in the sidebar (order is the server's — one list
+    // per account, every device sees it), and delete it.
     openSpaceMenu(space, clientX, clientY) {
         document.querySelectorAll('.pane-session-menu').forEach(m => m.remove());
         const menu = document.createElement('div');
         menu.className = 'pane-session-menu';
-        const at = this.spaces.findIndex(s => s.id === space.id);
-        const last = this.spaces.length - 1;
-        const addItem = (label, to, disabled) => {
+        const addItem = (label, fn, disabled = false) => {
             const el = document.createElement('div');
             el.className = 'pane-session-item' + (disabled ? ' used' : '');
             el.textContent = label;
-            if (!disabled) el.onclick = () => { try { this.moveSpace(space.id, to); } finally { menu.remove(); } };
+            if (!disabled) el.onclick = () => { try { fn(); } finally { menu.remove(); } };
             menu.appendChild(el);
         };
-        addItem('Move to top', 0, at <= 0);
-        addItem('Move up', at - 1, at <= 0);
-        addItem('Move down', at + 1, at >= last);
-        addItem('Move to bottom', last, at >= last);
+        addItem('New task in this space', () => {
+            this.closeDrawer();
+            if (this.app.openNewTabDialog) this.app.openNewTabDialog({ space: space || null });
+        });
+        if (space) {
+            const at = this.spaces.findIndex(s => s.id === space.id);
+            const last = this.spaces.length - 1;
+            addItem('Move to top', () => this.moveSpace(space.id, 0), at <= 0);
+            addItem('Move up', () => this.moveSpace(space.id, at - 1), at <= 0);
+            addItem('Move down', () => this.moveSpace(space.id, at + 1), at >= last);
+            addItem('Move to bottom', () => this.moveSpace(space.id, last), at >= last);
+            // Tasks are kept (they move to Ungrouped); deleteSpace still asks first.
+            addItem('Delete space', () => this.deleteSpace(space));
+        }
         document.body.appendChild(menu);
         menu.style.top = `${clientY + 4}px`;
         menu.style.left = `${clientX + 4}px`;
