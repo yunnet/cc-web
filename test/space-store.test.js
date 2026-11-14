@@ -330,3 +330,24 @@ describe('spaces on the server', function () {
     });
   });
 });
+
+describe('SpaceStore.reorder (SPACE-20)', function () {
+  const mk = (n) => ({ id: UUID(n), name: 's' + n });
+  const ids = (list) => list.map((s) => s.id);
+
+  it('puts the named ids first, in order', function () {
+    const out = SpaceStore.reorder([mk(1), mk(2), mk(3)], [UUID(3), UUID(1)]);
+    assert.deepStrictEqual(ids(out), [UUID(3), UUID(1), UUID(2)]);
+  });
+
+  it('never drops or duplicates a space: unknown and repeated ids are ignored, unnamed ones follow', function () {
+    const out = SpaceStore.reorder([mk(1), mk(2), mk(3)], [UUID(2), UUID(2), 'gone', UUID(2)]);
+    assert.deepStrictEqual(ids(out), [UUID(2), UUID(1), UUID(3)]);
+    assert.deepStrictEqual(ids(SpaceStore.reorder([mk(1), mk(2)], null)), [UUID(1), UUID(2)]);
+  });
+
+  it('POST /api/spaces/reorder keeps the order on the server', function () {
+    const src = fsSync.readFileSync(path.join(__dirname, '..', 'src', 'server.js'), 'utf8');
+    assert.match(src, /this\.app\.post\('\/api\/spaces\/reorder'[\s\S]{0,500}SpaceStore\.reorder\(mine\.spaces, ids\)[\s\S]{0,200}saveSpaces/);
+  });
+});

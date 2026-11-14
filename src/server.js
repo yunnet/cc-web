@@ -1521,6 +1521,17 @@ class ClaudeCodeWebServer {
       mine.spaceStore.saveSpaces(mine.spaces);
       res.json({ success: true, space });
     });
+    // Arrange the sidebar: the body's ids lead, in order; spaces it leaves out
+    // keep their relative order after them.
+    this.app.post('/api/spaces/reorder', (req, res) => {
+      const mine = this.tenant(this.actorOf(req.user));
+      const ids = req.body && req.body.ids;
+      if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids must be a list' });
+      const ordered = SpaceStore.reorder(mine.spaces, ids);
+      mine.spaces.splice(0, mine.spaces.length, ...ordered);
+      mine.spaceStore.saveSpaces(mine.spaces);
+      res.json({ success: true, ids: mine.spaces.map((x) => x.id) });
+    });
     this.app.patch('/api/spaces/:id', (req, res) => {
       const mine = this.tenant(this.actorOf(req.user));
       const space = mine.spaces.find((s) => s.id === req.params.id);

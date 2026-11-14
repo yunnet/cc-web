@@ -966,6 +966,14 @@ class SpacesSidebar {
             <span class="space-name" title="${space ? escapeHtml(space.dir) : 'Tasks not in any space'}">${space ? escapeHtml(space.name) : 'Ungrouped'}</span>
             <span class="space-dir" title="${space ? escapeHtml(space.dir) : ''}">${space ? escapeHtml(space.dir) : ''}</span>
             <span class="space-actions">
+                ${space ? `
+                <button class="space-action space-menu" title="Space menu" aria-label="Space menu">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="5" cy="12" r="1.6"/>
+                        <circle cx="12" cy="12" r="1.6"/>
+                        <circle cx="19" cy="12" r="1.6"/>
+                    </svg>
+                </button>` : ''}
                 <button class="space-action space-add-task" title="New task in this space">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <line x1="12" y1="5" x2="12" y2="19"/>
@@ -1000,6 +1008,19 @@ class SpacesSidebar {
             this.closeDrawer();
             if (this.app.openNewTabDialog) this.app.openNewTabDialog({ space: space || null });
         });
+        // ⋯ and right-click: the same menu (order the spaces). Touch has no
+        // right button, so the ⋯ is always there.
+        head.querySelector('.space-menu')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            this.openSpaceMenu(space, Math.min(r.left, window.innerWidth - 240), r.bottom);
+        });
+        if (space) {
+            head.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this.openSpaceMenu(space, e.clientX, e.clientY);
+            });
+        }
         head.querySelector('.space-delete')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.deleteSpace(space);
@@ -1070,6 +1091,55 @@ class SpacesSidebar {
             if (e.key === 'Enter') save();
             else if (e.key === 'Escape') { input.value = currentName; save(); }
         });
+    }
+
+    // The space's menu: where it sits in the sidebar. Order is the server's
+    // (one list per account, every device sees it).
+    openSpaceMenu(space, clientX, clientY) {
+        document.querySelectorAll('.pane-session-menu').forEach(m => m.remove());
+        const menu = document.createElement('div');
+        menu.className = 'pane-session-menu';
+        const at = this.spaces.findIndex(s => s.id === space.id);
+        const last = this.spaces.length - 1;
+        const addItem = (label, to, disabled) => {
+            const el = document.createElement('div');
+            el.className = 'pane-session-item' + (disabled ? ' used' : '');
+            el.textContent = label;
+            if (!disabled) el.onclick = () => { try { this.moveSpace(space.id, to); } finally { menu.remove(); } };
+            menu.appendChild(el);
+        };
+        addItem('Move to top', 0, at <= 0);
+        addItem('Move up', at - 1, at <= 0);
+        addItem('Move down', at + 1, at >= last);
+        addItem('Move to bottom', last, at >= last);
+        document.body.appendChild(menu);
+        menu.style.top = `${clientY + 4}px`;
+        menu.style.left = `${clientX + 4}px`;
+        const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); } };
+        setTimeout(() => document.addEventListener('mousedown', close, true), 0);
+    }
+
+    // Put a space at index `to`. The sidebar moves at once; the server keeps it,
+    // and a refusal puts the server's order back.
+    async moveSpace(spaceId, to) {
+        const from = this.spaces.findIndex(s => s.id === spaceId);
+        if (from < 0 || to < 0 || to >= this.spaces.length || to === from) return;
+        const [moved] = this.spaces.splice(from, 1);
+        this.spaces.splice(to, 0, moved);
+        this.render();
+        let ok = false;
+        try {
+            const res = await this.app.authFetch('/api/spaces/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: this.spaces.map(s => s.id) })
+            });
+            ok = !!(res && res.ok);
+        } catch (e) { ok = false; }
+        if (!ok) {
+            if (this.app.showToast) this.app.showToast('Could not save the space order', true);
+            await this.reloadSpaces();
+        }
     }
 
     async deleteSpace(space) {

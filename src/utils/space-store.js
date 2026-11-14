@@ -84,7 +84,21 @@ class SpaceStore {
 
     // Shared by POST and PATCH /api/spaces: trim + length check, returning
     // either the cleaned name or the error the route answers with.
-    static cleanName(raw) {
+    // The order a list of spaces takes when a person arranges them: the ids named
+  // first, in that order (unknown and repeated ids ignored), then every space
+  // not named in its current order — a stale list from another device can
+  // never drop or duplicate a space.
+  static reorder(spaces, ids) {
+    const byId = new Map(spaces.map((s) => [s.id, s]));
+    const out = [];
+    for (const id of Array.isArray(ids) ? ids : []) {
+      if (byId.has(id)) { out.push(byId.get(id)); byId.delete(id); }
+    }
+    for (const s of spaces) if (byId.has(s.id)) out.push(s);
+    return out;
+  }
+
+  static cleanName(raw) {
         if (typeof raw !== 'string') return { error: 'name must be a string' };
         const name = raw.trim();
         if (!name) return { error: 'name must not be empty' };

@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- **Order the spaces.** Each space row has a ⋯ (and a right-click menu) with
+  Move to top / up / down / bottom. The sidebar moves at once and the order is
+  kept on the server, so every device and the collapsed rail show the same
+  order (user 2026-11-14).
 - **Hand-offs between tasks.** When one task hands work to another through
   Claude Code's own cross-session messages (SendMessage), the page now shows
   it: a Hand-offs drawer (header button, or the task menu) with one card per

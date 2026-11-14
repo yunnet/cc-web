@@ -490,6 +490,21 @@ describe('SPACE Show more folds away with its space (user 2026-11-14)', function
   });
 });
 
+describe('SPACE-20 spaces can be ordered from their ⋯ menu (user 2026-11-14)', function () {
+  const js = read('spaces.js');
+  it('a real space has a ⋯ and a right-click menu with the four moves', function () {
+    assert.match(js, /class="space-action space-menu" title="Space menu"/);
+    assert.match(js, /head\.addEventListener\('contextmenu'/);
+    for (const label of ['Move to top', 'Move up', 'Move down', 'Move to bottom']) assert.ok(js.includes(`'${label}'`), label);
+  });
+  it('the sidebar moves at once, saves through the server, and restores its order on a refusal', function () {
+    const body = js.slice(js.indexOf('async moveSpace('), js.indexOf('async deleteSpace('));
+    assert.ok(body.includes("'/api/spaces/reorder'"));
+    assert.ok(body.indexOf('this.render()') < body.indexOf('authFetch'));
+    assert.ok(body.includes('await this.reloadSpaces()'));
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 
