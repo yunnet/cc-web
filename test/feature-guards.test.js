@@ -514,6 +514,20 @@ describe('SPACE-20 spaces can be ordered from their ⋯ menu (user 2026-11-14)',
   });
 });
 
+describe('CTX-04 the Context and usage drawer opens from the left (user 2026-11-14)', function () {
+  const css = read('style.css');
+  it('the panel carries drawer-left, and drawer-left flips side, edge, shadow and slide', function () {
+    assert.match(read('index.html'), /class="session-modal drawer drawer-left" id="usageModal"/);
+    assert.match(css, /\.drawer\.drawer-left \{\s*justify-content: flex-start;/);
+    assert.match(css, /\.drawer\.drawer-left > \.modal-content \{[^}]*border-right[^}]*box-shadow: 12px 0[^}]*animation-name: drawer-in-left;/);
+    assert.match(css, /@keyframes drawer-in-left \{\s*from \{ transform: translateX\(-100%\); \}/);
+  });
+  it('the other drawers stay on the right', function () {
+    const html = read('index.html');
+    assert.strictEqual((html.match(/drawer-left/g) || []).length, 1);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 

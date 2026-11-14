@@ -5669,6 +5669,22 @@ button.usage-acct { cursor: pointer; }
     to { transform: translateX(0); }
 }
 
+/* A drawer from the LEFT edge: add `drawer-left` next to `drawer`. The Context
+   and usage panel uses it (user 2026-11-14), beside the task list it is about. */
+:is(.session-modal, .settings-modal).drawer.drawer-left {
+    justify-content: flex-start;
+}
+:is(.session-modal, .settings-modal).drawer.drawer-left > .modal-content {
+    border-left: none;
+    border-right: 1px solid var(--border);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.5);
+    animation-name: drawer-in-left;
+}
+@keyframes drawer-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+}
+
 /* Branches: the dropdown becomes the same drawer. It stays inside its header
    wrapper (git-branches.js closes it on an outside click), so it is pinned to
    the viewport with position: fixed and draws its own scrim with a spread
@@ -5699,6 +5715,7 @@ button.usage-acct { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
     :is(.session-modal, .settings-modal).drawer > .modal-content,
+    :is(.session-modal, .settings-modal).drawer.drawer-left > .modal-content,
     .branch-panel.active { animation: none; }
 }
 

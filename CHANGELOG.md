@@ -128,6 +128,9 @@
   applies from the next start.
 
 ### Changed
+- **Context and usage opens from the left.** The panel is a left-edge drawer
+  now (slide, shadow and border mirrored), beside the task list it describes;
+  the other drawers stay on the right (user 2026-11-14).
 - **A space row has one button, ⋯.** New task and Delete space moved into its
   menu next to the ordering items; Ungrouped's ⋯ offers New task. Delete still
   asks first (user 2026-11-14).
