@@ -862,9 +862,14 @@ body.sidebar-hidden .sidebar-rail {
     z-index: 2;
 }
 
+/* The active task's name is blue (user 2026-11-14). The light theme's accent
+   (#0a84ff) is only ~3.4:1 on the row, so it uses the darker accent-hover. */
 .session-tab.active .tab-name {
-    color: var(--text-primary);
+    color: var(--accent);
     font-weight: 500;
+}
+[data-theme="light"] .session-tab.active .tab-name {
+    color: var(--accent-hover);
 }
 
 

@@ -124,6 +124,8 @@
   applies from the next start.
 
 ### Changed
+- **The active task's name is blue** in the sidebar (the accent colour; the
+  darker accent-hover on the light theme, for contrast) (user 2026-11-14).
 - **A task row has one button, ⋯.** Pin and the × moved into its menu (Pin /
   Unpin, and a new Delete task item that still asks first); a pinned task keeps
   a small accent pin as a mark. The row's right end is no longer crowded, so

@@ -476,6 +476,14 @@ describe('TAB-03 / SPACE-15 a task row has one button: ⋯ (user 2026-11-14)', f
   });
 });
 
+describe('the active task\'s name is blue (user 2026-11-14)', function () {
+  const css = read('style.css');
+  it('dark uses the accent, light the darker accent-hover', function () {
+    assert.match(css, /\.session-tab\.active \.tab-name \{\s*color: var\(--accent\);/);
+    assert.match(css, /\[data-theme="light"\] \.session-tab\.active \.tab-name \{\s*color: var\(--accent-hover\);/);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 
