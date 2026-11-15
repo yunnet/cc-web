@@ -216,6 +216,11 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **Switching tasks no longer changes the theme.** The theme was saved per task
+  and re-applied on every switch, so opening a task that had been saved while
+  Light turned a Dark page Light. It is one global setting now: tasks keep only
+  their font size and scroll animation, and an old per-task theme is ignored
+  (user 2026-11-15).
 - **Show more folds away with its space.** Folding a space hid its tasks but
   left the "Show more (N more)" row hanging under the header; it now goes with
   the tasks (user 2026-11-14).

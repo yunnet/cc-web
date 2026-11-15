@@ -528,6 +528,44 @@ describe('CTX-04 the Context and usage drawer opens from the left (user 2026-11-
   });
 });
 
+describe('SET-04 / SET-18 the theme is global — switching tasks never changes it (user 2026-11-15)', function () {
+  // The theme was stored per task (cc-web-session-settings[id].theme) and
+  // re-applied on every switch, so a task saved while Light flipped a Dark page.
+  function app(store) {
+    const ls = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+    const src = ['loadSettings', 'toggleTheme'].map((n) => lift(read('app.js'), n, { method: true })).join(',\n');
+    const obj = vm.runInNewContext(`({ ${src} })`, { localStorage: ls, JSON, console, document: { getElementById: () => null } });
+    obj.currentClaudeSessionId = 's1';
+    obj.applied = [];
+    obj.applyTheme = (t) => obj.applied.push(t);
+    obj.currentUiTheme = () => JSON.parse(store['cc-web-settings'] || '{}').theme === 'light' ? 'light' : 'dark';
+    return obj;
+  }
+
+  it('a task\'s stale saved theme is ignored: the global one wins, both ways', function () {
+    const dark = app({ 'cc-web-settings': '{"theme":"dark"}', 'cc-web-session-settings': '{"s1":{"fontSize":16,"theme":"light"}}' });
+    assert.strictEqual(dark.loadSettings('s1').theme, 'dark');
+    assert.strictEqual(dark.loadSettings('s1').fontSize, 16, 'font size is still the task\'s own');
+    const light = app({ 'cc-web-settings': '{"theme":"light"}', 'cc-web-session-settings': '{"s1":{"theme":"dark"}}' });
+    assert.strictEqual(light.loadSettings('s1').theme, 'light');
+    assert.strictEqual(app({}).loadSettings('nobody').theme, 'dark', 'no setting at all: Dark');
+  });
+
+  it('the header toggle writes the global theme only, never a task\'s entry', function () {
+    const store = { 'cc-web-settings': '{"theme":"dark","fontSize":14}' };
+    const a = app(store);
+    a.toggleTheme();
+    assert.strictEqual(JSON.parse(store['cc-web-settings']).theme, 'light');
+    assert.strictEqual(JSON.parse(store['cc-web-settings']).fontSize, 14);
+    assert.ok(!('cc-web-session-settings' in store), 'no per-task entry was made');
+    assert.deepStrictEqual(a.applied, ['light']);
+  });
+
+  it('Settings → Save keeps the theme out of the task\'s own entry', function () {
+    assert.match(read('app.js'), /const \{ theme: _theme, \.\.\.own \} = settings;[\s\S]{0,80}map\[sid\] = own;/);
+  });
+});
+
 describe('PEER-02..04 hand-offs between tasks (peer-threads.js)', function () {
   const src = read('peer-threads.js');
 

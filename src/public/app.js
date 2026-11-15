@@ -2887,10 +2887,12 @@ class ClaudeCodeWebInterface {
         if (data) this.renderPlanDirs(data);
     }
 
-    // Visual settings are PER-SESSION: keyed by sessionId in localStorage. A new
-    // session (no stored entry) inherits the global default (`cc-web-settings`),
-    // which tracks the most recently saved settings — so your latest preferences
-    // become the default for new sessions while each existing session keeps its own.
+    // Font size and scroll animation are PER-SESSION: keyed by sessionId in
+    // localStorage. A new session (no stored entry) inherits the global default
+    // (`cc-web-settings`), which tracks the most recently saved settings. The
+    // THEME is not per-session (user 2026-11-15: 「切换任意会话，不能改变全局
+    // 主题」): it is the page's one theme, always the global value, whatever an
+    // older per-session entry still holds.
     loadSettings(sessionId) {
         const defaults = {
             fontSize: 14,
@@ -2901,12 +2903,13 @@ class ClaudeCodeWebInterface {
             smoothScrollDuration: 100
         };
         try {
+            const global = JSON.parse(localStorage.getItem('cc-web-settings') || '{}');
+            const theme = global && global.theme === 'light' ? 'light' : 'dark';
             if (sessionId) {
                 const map = JSON.parse(localStorage.getItem('cc-web-session-settings') || '{}');
-                if (map && map[sessionId]) return { ...defaults, ...map[sessionId] };
+                if (map && map[sessionId]) return { ...defaults, ...map[sessionId], theme };
             }
-            const global = JSON.parse(localStorage.getItem('cc-web-settings') || '{}');
-            return { ...defaults, ...global };
+            return { ...defaults, ...global, theme };
         } catch (error) {
             console.error('Failed to load settings:', error);
             return defaults;
@@ -2937,7 +2940,8 @@ class ClaudeCodeWebInterface {
             const sid = this.currentClaudeSessionId;
             if (sid) {
                 const map = JSON.parse(localStorage.getItem('cc-web-session-settings') || '{}');
-                map[sid] = settings;
+                const { theme: _theme, ...own } = settings; // the theme is global, not the session's
+                map[sid] = own;
                 localStorage.setItem('cc-web-session-settings', JSON.stringify(map));
             }
             this.applySettings(settings);
@@ -3033,22 +3037,16 @@ class ClaudeCodeWebInterface {
         }
     }
 
-    // Header theme toggle (#themeToggleBtn). Writes the theme exactly where
-    // Settings → Save does — the global default (new sessions inherit it) and
-    // the active session's own entry — and leaves font size and scroll as they
-    // are. A Claude already running keeps its theme until it restarts, as with
-    // a theme changed in Settings.
+    // Header theme toggle (#themeToggleBtn). The theme is ONE global setting
+    // (`cc-web-settings`), the same one Settings → Theme saves; no session
+    // keeps its own, so switching tasks never changes it. A Claude already
+    // running keeps its theme until it restarts, as with a theme changed in
+    // Settings.
     toggleTheme() {
         const theme = this.currentUiTheme() === 'light' ? 'dark' : 'light';
         try {
             const global = JSON.parse(localStorage.getItem('cc-web-settings') || '{}');
             localStorage.setItem('cc-web-settings', JSON.stringify({ ...global, theme }));
-            const sid = this.currentClaudeSessionId;
-            if (sid) {
-                const map = JSON.parse(localStorage.getItem('cc-web-session-settings') || '{}');
-                map[sid] = { ...this.loadSettings(sid), theme };
-                localStorage.setItem('cc-web-session-settings', JSON.stringify(map));
-            }
         } catch (_) { /* no storage: still switch for this page */ }
         this.applyTheme(theme);
         const themeSelect = document.getElementById('themeSelect');

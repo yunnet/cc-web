@@ -288,7 +288,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-01 | 页头右端（账号按钮左边）的齿轮按钮打开从右侧滑出的菜单（打开时齿轮高亮）；点菜单外任意处关闭，那一下点击照常生效；× 关闭 | `control:hamburgerBtn` `control:closeMenuBtn` | — |
 | SET-02 | 菜单里「Settings」打开设置（唯一入口），「Sessions」打开会话弹窗 | `control:settingsBtnMobile` | — |
 | SET-03 | 菜单底部显示「v版本 · :端口 · 构建号」，区分 dev 和 stable | `route:GET /api/config` | — |
-| SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms，按会话分别保存，新会话继承最近保存的设置；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` `test/feature-guards.test.js` |
+| SET-04 | 设置标题显示「Settings — 会话名」；字号 10–24、主题 Dark/Light、滚动动画 0–200ms；字号与滚动动画按会话分别保存、新会话继承最近保存的设置，**主题是全局的**（用户 2026-11-15：「切换任意会话，不能改变全局主题」——原先主题也按会话存，切到某个存过浅色的会话就把全局主题改了）；切主题不刷新页面 | `control:fontSize` `control:themeSelect` `control:smoothScroll` `control:saveSettingsBtn` `setting:theme` | `test/light-contrast.test.js` `test/feature-guards.test.js` |
 | SET-05 | 显示 Claude Code 已安装版本、最新版、稳定版，以及是否有更新 | `route:GET /api/version` | `test/version-info.test.js` |
 | SET-06 | 历史保留量（MB，0.25–16，默认 2），服务器端按用户保存的设置，对自己的所有会话生效、不影响别的用户；超出范围时提示实际生效值 | `control:scrollbackChunks` `route:GET /api/settings/scrollback` `route:POST /api/settings/scrollback` | `test/scrollback-setting.test.js` |
 | SET-07 | 计划目录：列出本会话的额外目录（可 × 删除，只能改自己的会话）和全局目录（实例级，只读）；输入后 Add 或回车提交，被拒绝的目录弹出原因 | `control:planDirInput` `control:planDirAddBtn` `js-control:app.js:Remove` `route:GET /api/plan-dirs` `route:POST /api/plan-dirs` | `test/plan-dirs.test.js` |
@@ -302,7 +302,7 @@ cc-web 里**每一项用户能感知到的功能**都登记在这里。规则：
 | SET-15 | 拖动字号、滚动动画滑块时旁边数字实时变化，但要按「Save Settings」才真正生效 | `control:fontSize` `control:smoothScroll` | — |
 | SET-16 | 菜单底部的版本行可以选中复制，悬停提示解释「build id 相同 = 两个实例代码相同」 | 手工 | — |
 | SET-17 | 设置面板「任务默认启动选项」：模型/权限/强度三个下拉，读写与「上次启动的选择」同一份记录（localStorage `cc-web-last-start-options`）；点未运行任务自动启动（START-06）与新建对话框预填（NEW-04）都用它；跳过权限不出现在默认里 | `control:settingsDefaultModel` `control:settingsDefaultPermission` `control:settingsDefaultEffort` | — |
-| SET-18 | 页头齿轮左边的主题按钮：一键切换 Dark/Light（深色显示月亮，浅色显示太阳），和设置里的 Theme 是同一个设置——写入全局默认和当前会话，设置弹窗的下拉同步，不刷新页面 | `control:themeToggleBtn` | — |
+| SET-18 | 页头齿轮左边的主题按钮：一键切换 Dark/Light（深色显示月亮，浅色显示太阳），和设置里的 Theme 是同一个设置——只写全局主题（不再写当前会话），切换会话不会改变它，设置弹窗的下拉同步，不刷新页面 | `control:themeToggleBtn` | — |
 ## 技能管理
 
 > 技能有三种来源，只有插件有目录、安装器和开关，所以**安装的单位是插件**，面板把每个插件带的技能名列出来。
