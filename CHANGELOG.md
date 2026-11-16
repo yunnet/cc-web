@@ -135,10 +135,10 @@
   orphaned cc-hook relays; start is confirmed against /api/health with the
   token, not just the port. A non-numeric argument is refused on the spot —
   ccweb.sh passed it to the server as the port and mis-reported "not
-  responding" 15s later. The dev/32353 named instance is gone: bare
-  `ccw start/stop/restart` touches only stable, and testing means a manual
-  port (user 2026-11-16: 「对于一个项目来说，只需要启动一个，至于要测试，
-  可以手工指定端口」).
+  responding" 15s later. Ports only, no named instances at all: a bare
+  `ccw start/stop/restart` means port 32352 — on data-32352, where its real
+  sessions were — and testing means a manual port (user 2026-11-16:
+  「对于一个项目来说，只需要启动一个，至于要测试，可以手工指定端口」).
 - **Context and usage opens from the left.** The panel is a left-edge drawer
   now (slide, shadow and border mirrored), beside the task list it describes;
   the other drawers stay on the right (user 2026-11-14).
@@ -227,6 +227,11 @@
   plan-dirs alike — the two copies of that ternary had drifted apart before.
 
 ### Fixed
+- **A failed start no longer poisons the session.** When the PTY spawn itself
+  failed (a broken node-pty made every posix_spawnp throw, 2026-11-16), the
+  id stayed registered in the bridge, so every retry answered "Session …
+  already exists" instead of the real error until the server was restarted.
+  The registration is now undone when the start fails.
 - **Switching tasks no longer changes the theme.** The theme was saved per task
   and re-applied on every switch, so opening a task that had been saved while
   Light turned a Dark page Light. It is one global setting now: tasks keep only

@@ -65,6 +65,61 @@ describe('ClaudeBridge', function() {
     });
   });
 
+  describe('startSession spawn failure', function() {
+    // Seen live 2026-11-16: a broken node-pty prebuild made every spawn throw
+    // synchronously (posix_spawnp), and because startSession registers the id
+    // before the spawn, the FIRST failure left the entry behind — every retry
+    // then died with "Session ... already exists" instead of the real error,
+    // until the server was restarted. The entry must not survive a failed
+    // start. claude-pty's spawn is destructured at module load, so the check
+    // runs against a private copy of the class bound to a throwing stub; the
+    // shared caches are restored afterwards so later tests (the node-pty
+    // contract suite) keep the real module.
+    const id = '11111111-2222-3333-4444-555555555555';
+    let StubBridge, savedBridge, savedPty;
+
+    before(function() {
+      const bridgePath = require.resolve('../src/claude-bridge');
+      const ptyPath = require.resolve('node-pty');
+      savedBridge = require.cache[bridgePath];
+      savedPty = require.cache[ptyPath];
+      delete require.cache[bridgePath];
+      delete require.cache[ptyPath];
+      require.cache[ptyPath] = {
+        id: ptyPath, filename: ptyPath, loaded: true,
+        exports: { spawn: () => { throw new Error('posix_spawnp failed.'); } }
+      };
+      StubBridge = require(bridgePath);
+    });
+
+    after(function() {
+      const bridgePath = require.resolve('../src/claude-bridge');
+      const ptyPath = require.resolve('node-pty');
+      delete require.cache[ptyPath];
+      delete require.cache[bridgePath];
+      if (savedPty) require.cache[savedPty.id] = savedPty;
+      if (savedBridge) require.cache[savedBridge.id] = savedBridge;
+    });
+
+    it('does not leave the session registered after a failed spawn', async function() {
+      const b = new StubBridge();
+      await assert.rejects(
+        () => b.startSession(id, { workingDir: __dirname }),
+        /Failed to start Claude Code/
+      );
+      assert.strictEqual(b.sessions.has(id), false, 'entry must be cleaned up');
+    });
+
+    it('a retry reports the spawn error again, not "already exists"', async function() {
+      const b = new StubBridge();
+      await assert.rejects(() => b.startSession(id, { workingDir: __dirname }), /Failed to start Claude Code/);
+      await assert.rejects(
+        () => b.startSession(id, { workingDir: __dirname }),
+        (err) => !/already exists/.test(err.message)
+      );
+    });
+  });
+
   describe('getAllSessions', function() {
     it('should return empty array when no sessions exist', function() {
       const result = bridge.getAllSessions();

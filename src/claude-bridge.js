@@ -429,6 +429,12 @@ class ClaudeBridge {
       return session;
 
     } catch (error) {
+      // Undo the registration from before the spawn. Without this, a failed
+      // start (e.g. a broken node-pty making every posix_spawnp throw, seen
+      // 2026-11-16) leaves the id behind, and every retry answers
+      // "Session ... already exists" instead of the real error until the
+      // server is restarted.
+      this.sessions.delete(sessionId);
       console.error(`Failed to start Claude session ${sessionId}:`, error);
       throw new Error(`Failed to start Claude Code: ${error.message}`);
     }
