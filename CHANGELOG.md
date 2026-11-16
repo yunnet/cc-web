@@ -128,6 +128,17 @@
   applies from the next start.
 
 ### Changed
+- **One instance manager: `scripts/ccw`.** `scripts/ccweb.sh` is folded into
+  `ccw` and deleted. A bare port (`ccw start 32354`) runs this checkout with
+  token-<port>/data-<port>/<port>.log; CCWEB_REMOTE ssh hand-off and
+  CCWEB_AUTH token rotation still work; stopping an instance reaps the
+  orphaned cc-hook relays; start is confirmed against /api/health with the
+  token, not just the port. A non-numeric argument is refused on the spot —
+  ccweb.sh passed it to the server as the port and mis-reported "not
+  responding" 15s later. The dev/32353 named instance is gone: bare
+  `ccw start/stop/restart` touches only stable, and testing means a manual
+  port (user 2026-11-16: 「对于一个项目来说，只需要启动一个，至于要测试，
+  可以手工指定端口」).
 - **Context and usage opens from the left.** The panel is a left-edge drawer
   now (slide, shadow and border mirrored), beside the task list it describes;
   the other drawers stay on the right (user 2026-11-14).

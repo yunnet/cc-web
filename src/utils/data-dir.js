@@ -5,11 +5,11 @@
 // disagree, which is how a dev instance adopted stable's directory on
 // 2026-09-03 and both rewrote it. One module, one answer.
 //
-// The layout (tokens and logs are placed here by restart-ccweb.sh, which owns
+// The layout (tokens and logs are placed here by scripts/ccw, which owns
 // those files; this module owns only the data directory):
 //
 //   ~/.cc-web/data           the default (a bare `node bin/cc-web.js`)
-//   ~/.cc-web/data-<port>/   instances started by restart-ccweb.sh (CCW_DATA_DIR)
+//   ~/.cc-web/data-<port>/   instances started by scripts/ccw (CCW_DATA_DIR)
 //
 // CCW_DATA_DIR still wins absolutely — explicit is explicit. What changes is
 // the default: ~/.claude-code-web at the home root is adopted (renamed) into

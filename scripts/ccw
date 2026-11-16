@@ -1,37 +1,63 @@
 #!/usr/bin/env bash
 #
 # ccw — start / stop / restart / status for the cc-web instances on this box.
+# One script: the named stable/dev instances, and any bare port (the old
+# scripts/ccweb.sh, folded in here).
 #
-#   ccw status              both instances: pid, uptime, version, data dir, health
-#   ccw start   [stable|dev|all]
-#   ccw stop    [stable|dev|all]
-#   ccw restart [stable|dev|all]
-#   ccw logs    [stable|dev]     tail the instance's log
-#   ccw token   [stable|dev]     print the instance's token (made if missing)
+#   ccw status  [stable|all|<port>]   pid, uptime, version, data dir, health
+#   ccw start   [stable|all|<port>]
+#   ccw stop    [stable|all|<port>]
+#   ccw restart [stable|all|<port>]
+#   ccw logs    [stable|<port>]     tail the instance's log
+#   ccw token   [stable|<port>]     print the instance's token (made if missing)
+#
+# A bare port (e.g. `ccw start 32354`) runs THIS checkout on that port with
+# token-<port>, data-<port> and <port>.log under ~/.cc-web. The port is a
+# number; anything else (`-d`, `dev.js`…) is refused here, not passed to the
+# server to die on.
+#
+# Env, settable on the command line or in ~/.cc-web/ccw.conf (also sourced:
+# ccweb.env, the old script's conf, read first so ccw.conf wins):
+#   CCWEB_REMOTE=1         run the remote host's copy of this script over ssh
+#   CCWEB_SSH              user@host for CCWEB_REMOTE=1
+#   CCWEB_REMOTE_SCRIPT    path of this script on that host
+#   CCWEB_AUTH=xxx         write/rotate the token before starting
+#   CCWEB_AUTH_FILE        token path for bare ports only (local, never remote)
+#   CCWEB_PLANS_DIR        --plans-dir for bare ports (stable sets its own)
+#   CCW_LOG_DIR            where the logs go (default ~/.cc-web)
 #
 # Linux and macOS. Under Git Bash / MSYS on Windows it hands over to ccw.ps1,
 # which takes the same commands and instance names.
 #
-# "stable" and "dev" are named, not typed as ports, because the two differ in
-# more than a number — different source trees, different tokens, different data
-# directories — and getting one of those wrong is how you end up with two
-# servers writing each other's sessions.
+# One named instance — stable, port 32352, no target needed — because its
+# tree, token, plans and data directory are the project's own, and mixing
+# them up is how you end up with two servers writing each other's sessions.
+# 32352 is accepted as an alias; every other port is a bare-port instance.
+# There is no second named instance: one project, one server — testing means
+# a manual port (user 2026-11-16: 「对于一个项目来说，只需要启动一个，至于
+# 要测试，可以手工指定端口」). The old `dev`/32353 named instance is gone;
+# its data-dev held no sessions when it was removed.
 #
-# Three traps this exists to keep you out of:
+# Four traps this exists to keep you out of:
 #
 #   1. `pkill -f "port 32352"` matches the shell that ran it. Killing an
 #      instance that way takes your own terminal with it (seen: exit 144). This
 #      finds the LISTENER on the port (`ss` on Linux, `lsof` on macOS) and
 #      signals that pid, nothing else.
-#   2. The dev instance must be started with CCW_DATA_DIR. Without it both
-#      servers share ~/.cc-web/data and the second one refuses to start:
-#      "Two servers sharing a data directory read and write each other's
-#      sessions."
+#   2. Two instances must never share a data directory ("Two servers sharing a
+#      data directory read/write each other's sessions"). stable uses the
+#      server's default; a bare port gets data-<port> — derived, never
+#      inherited: a Claude running inside an instance exports CCW_DATA_DIR,
+#      and a port started from there must not silently adopt it.
 #   3. Restarting the stable instance from a Claude session that RUNS inside it
 #      kills the shell doing the restarting, half way through. When that is
 #      detected the work is handed to a detached session (setsid; perl's
 #      POSIX::setsid on macOS, which has no setsid(1)) so it finishes after
 #      this process is gone.
+#   4. A non-numeric argument is refused up front. The old ccweb.sh took any
+#      $1 as the port, so `ccweb.sh -d` reached the server as `--port -d`,
+#      died instantly, and the script still waited 15s to report "not
+#      responding" (seen twice on this box: token--d, -d.log).
 
 set -uo pipefail
 
@@ -39,7 +65,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 SELF_DIR=$(cd "$SCRIPT_DIR/.." && pwd)    # the checkout this script came from
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*)
+  MINGW*|MSYS|CYGWIN*)
     exec powershell.exe -NoProfile -ExecutionPolicy Bypass \
       -File "$(cygpath -w "$SCRIPT_DIR/ccw.ps1")" "$@" ;;
 esac
@@ -50,8 +76,8 @@ esac
 # that does not exist on this machine falls back to this script's checkout.
 #
 # Tokens, logs and data all live under ~/.cc-web, the layout
-# src/utils/data-dir.js resolves. Files from the old layout (~/.ccweb-token-*,
-# ~/.claude-code-web-dev) are moved in once, on a start, while the instance is
+# src/utils/data-dir.js resolves. A token file from the old layout
+# (~/.ccweb-token-32352) is moved in once, on a start, while the instance is
 # down; the stable data directory is the server's own default and the server
 # migrates it itself.
 
@@ -65,22 +91,29 @@ STABLE_PLANS=/data/work/gongxinyun/ts/.claude/plans,/data/work/gongxinyun/work/c
 STABLE_DATA=          # empty = the server's default ~/.cc-web/data
 STABLE_DATA_OLD=
 
-DEV_PORT=32353
-DEV_DIR=/data/work/gongxinyun/ts/cc-web
-DEV_AUTH=$CCW_HOME/token-32353
-DEV_AUTH_OLD=$HOME/.ccweb-token-32353
-DEV_PLANS=/data/work/gongxinyun/ts/.claude/plans
-DEV_DATA=$CCW_HOME/data-dev
-DEV_DATA_OLD=$HOME/.claude-code-web-dev
-
 LOG_DIR=${CCW_LOG_DIR:-$CCW_HOME}
 STOP_TIMEOUT=15       # seconds to wait for a clean exit before SIGKILL
 START_TIMEOUT=25      # seconds to wait for the port to answer
 
 # shellcheck source=/dev/null
+[ -f "${CCWEB_CONF:-$CCW_HOME/ccweb.env}" ] && . "${CCWEB_CONF:-$CCW_HOME/ccweb.env}"
 [ -f "$CCW_HOME/ccw.conf" ] && . "$CCW_HOME/ccw.conf"
 [ -d "$STABLE_DIR" ] || STABLE_DIR=$SELF_DIR
-[ -d "$DEV_DIR" ]    || DEV_DIR=$SELF_DIR
+
+# node is a mise shim, which only an interactive shell has on PATH; without
+# this the nohup start dies with "node: No such file or directory" (launchd,
+# another tool's shell).
+command -v node >/dev/null 2>&1 || PATH="$HOME/.local/share/mise/shims:$PATH"
+
+# Run the remote host's copy instead (CCWEB_REMOTE=1). Everything after this
+# line is local-only. CCWEB_AUTH_FILE writes a local file — never send it over
+# ssh. (Plain echo+exit: die() is defined later, this block runs before it.)
+if [ "${CCWEB_REMOTE:-}" = "1" ]; then
+  { [ -n "${CCWEB_SSH:-}" ] && [ -n "${CCWEB_REMOTE_SCRIPT:-}" ]; } || {
+    echo "CCWEB_REMOTE=1 needs CCWEB_SSH and CCWEB_REMOTE_SCRIPT (set them in $CCW_HOME/ccw.conf)" >&2; exit 1; }
+  [ -z "${CCWEB_AUTH_FILE:-}" ] || { echo "CCWEB_AUTH_FILE is local-only; use CCWEB_AUTH=..." >&2; exit 1; }
+  exec ssh "$CCWEB_SSH" "CCWEB_AUTH='${CCWEB_AUTH:-}' '$CCWEB_REMOTE_SCRIPT' $*"
+fi
 
 # --- plumbing -----------------------------------------------------------------
 
@@ -95,13 +128,20 @@ load() {
   case "$1" in
     stable|32352) cfg_name=stable; cfg_port=$STABLE_PORT; cfg_dir=$STABLE_DIR
                   cfg_auth=$STABLE_AUTH; cfg_plans=$STABLE_PLANS; cfg_data=$STABLE_DATA
-                  cfg_auth_old=$STABLE_AUTH_OLD; cfg_data_old=$STABLE_DATA_OLD ;;
-    dev|32353)    cfg_name=dev;    cfg_port=$DEV_PORT;    cfg_dir=$DEV_DIR
-                  cfg_auth=$DEV_AUTH;    cfg_plans=$DEV_PLANS;    cfg_data=$DEV_DATA
-                  cfg_auth_old=$DEV_AUTH_OLD;    cfg_data_old=$DEV_DATA_OLD ;;
-    *) die "unknown instance '$1' (use: stable | dev | all)" ;;
+                  cfg_auth_old=$STABLE_AUTH_OLD; cfg_data_old=$STABLE_DATA_OLD
+                  cfg_log="$LOG_DIR/ccw-$cfg_name.log" ;;
+    *[!0-9]*|'')  die "unknown instance '$1'（可用: stable | all | 端口号，如 32354）" ;;
+    *)            # A bare port: this checkout, token-<port>, data-<port>,
+                  # <port>.log — one-off instances, the old ccweb.sh behaviour.
+                  # data-<port> is derived, never read from the inherited
+                  # CCW_DATA_DIR (trap 2 above).
+                  cfg_name=$1; cfg_port=$1; cfg_dir=$SELF_DIR
+                  cfg_auth=${CCWEB_AUTH_FILE:-$CCW_HOME/token-$1}
+                  cfg_plans=${CCWEB_PLANS_DIR:-$(dirname "$SELF_DIR")/.claude/plans}
+                  cfg_data=$CCW_HOME/data-$1
+                  cfg_auth_old=; cfg_data_old=
+                  cfg_log="$LOG_DIR/$1.log" ;;
   esac
-  cfg_log="$LOG_DIR/ccw-$cfg_name.log"
 }
 
 # The pid LISTENING on a port — never a pattern match against a command line,
@@ -163,6 +203,18 @@ detach() {
 
 port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
+# /api/health with the instance's own token: proves the server is up AND
+# serving with the auth we just wrote, not merely that the port is bound.
+health_ok() {
+  [ -n "$(curl -s -m 2 -H "Authorization: Bearer $(head -n1 "$cfg_auth" 2>/dev/null)" \
+    "http://127.0.0.1:$cfg_port/api/health" 2>/dev/null)" ]
+}
+
+# Reap the claude hook relays a dead server leaves behind. The pattern carries
+# the closing quote of claude-bridge's injected command ('<…>/bin/cc-hook.js'
+# --port N), so it cannot match this script's own command line.
+reap_hooks() { pkill -f "cc-hook.js' --port $cfg_port" 2>/dev/null || true; }
+
 # --- commands -----------------------------------------------------------------
 
 do_status() {
@@ -218,8 +270,8 @@ start_cmd() {
   # `CCW_DATA_DIR=x cd dir && node …` applies the variable to `cd` and the
   # server starts without it — which is exactly the "two servers sharing a data
   # directory" refusal this script exists to prevent. Caught by testing it.
-  # Always assigned, empty for stable: a Claude running inside the dev instance
-  # inherits dev's CCW_DATA_DIR, and a stable started from there must not.
+  # Always assigned, empty for stable: a Claude running inside an instance
+  # inherits its CCW_DATA_DIR, and another one started from there must not.
   local data_env
   data_env="CCW_DATA_DIR=$(printf '%q' "$cfg_data") "
   printf 'cd %q && %snohup node bin/cc-web.js --no-open --port %s --auth-file %q --plans-dir %q >> %q 2>&1 &' \
@@ -233,17 +285,23 @@ do_start() {
   [ -d "$cfg_dir" ] || die "$cfg_name 的目录不存在: $cfg_dir"
   mkdir -p "$LOG_DIR"
 
+  # CCWEB_AUTH=xxx rotates the token before this start; without it an existing
+  # token file is adopted as is (adopt_cmd never overwrites).
+  if [ -n "${CCWEB_AUTH:-}" ]; then
+    ( umask 077; printf '%s\n' "$CCWEB_AUTH" > "$cfg_auth" )
+  fi
+
   eval "$(adopt_cmd)"
   eval "$(start_cmd)"
   local waited=0
   while [ "$waited" -lt "$START_TIMEOUT" ]; do
-    if port_open "$cfg_port"; then
+    if port_open "$cfg_port" && health_ok; then
       ok "$cfg_name 已启动 (pid=$(pid_on_port "$cfg_port"))  端口 $cfg_port"
       return 0
     fi
     sleep 1; waited=$((waited + 1))
   done
-  warn "$cfg_name 起了但 ${START_TIMEOUT}s 内没监听端口，看日志: $cfg_log"
+  warn "$cfg_name 起了但 ${START_TIMEOUT}s 内没就绪，看日志: $cfg_log"
   tail -5 "$cfg_log" 2>/dev/null
   return 1
 }
@@ -256,7 +314,7 @@ do_stop() {
   if is_ancestor "$pid"; then
     warn "$cfg_name (pid=$pid) 是当前进程的祖先——停掉它会一并杀掉你正在用的会话"
     warn "这一步交给脱离出去的 shell 执行，本进程随后会被终止"
-    detach "kill $pid" >/dev/null 2>&1 < /dev/null
+    detach "kill $pid; sleep 2; pkill -f \"cc-hook.js' --port $cfg_port\" 2>/dev/null" >/dev/null 2>&1 < /dev/null
     return 0
   fi
 
@@ -269,6 +327,7 @@ do_stop() {
     warn "$cfg_name ${STOP_TIMEOUT}s 内没退出，改用 SIGKILL"
     kill -9 "$pid" 2>/dev/null; sleep 1
   fi
+  reap_hooks
   ok "$cfg_name 已停止"
 }
 
@@ -288,6 +347,7 @@ do_restart() {
       for i in \$(seq 1 $STOP_TIMEOUT); do kill -0 $pid 2>/dev/null || break; sleep 1; done
       kill -0 $pid 2>/dev/null && kill -9 $pid 2>/dev/null
       sleep 2
+      pkill -f \"cc-hook.js' --port $cfg_port\" 2>/dev/null
       $(adopt_cmd)
       $(start_cmd)
     " >> "$cfg_log" 2>&1 < /dev/null
@@ -314,11 +374,9 @@ do_token() {
 # --- dispatch -----------------------------------------------------------------
 
 cmd=${1:-status}
-target=${2:-all}
-[ "$cmd" = "logs" ] && [ "$target" = "all" ] && target=dev   # tail needs one file
-[ "$cmd" = "token" ] && [ "$target" = "all" ] && target=stable
+target=${2:-stable}
 
-expand() { [ "$1" = "all" ] && echo "stable dev" || echo "$1"; }
+expand() { [ "$1" = "all" ] && echo "stable" || echo "$1"; }
 
 case "$cmd" in
   status)  for i in $(expand "$target"); do do_status  "$i"; echo; done ;;
@@ -328,6 +386,6 @@ case "$cmd" in
   logs)    do_logs "$target" ;;
   token)   do_token "$target" ;;
   -h|--help|help)
-    sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+    awk 'NR>2 && /^#/{sub(/^# ?/,""); print; next} NR>2{exit}' "$0" ;;
   *) die "未知命令 '$cmd'（可用: status | start | stop | restart | logs | token）" ;;
 esac

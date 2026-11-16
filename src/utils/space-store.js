@@ -12,7 +12,7 @@ const { dataDir } = require('./data-dir');
 // data dir once erased each other via whole-file rewrites, hence one file per
 // session), a single atomically-replaced file is the honest shape. Instances
 // get separate data dirs anyway (CCW_DATA_DIR / data-<port>, see
-// ts/ccweb.sh), so there is no second writer to race.
+// scripts/ccw), so there is no second writer to race.
 //
 // Corrupt JSON degrades to an empty list rather than throwing: the sidebar
 // shows every session under 未分组 and the one-time migration (server.js
