@@ -259,14 +259,15 @@ body.sidebar-hidden .sidebar-rail {
 }
 
 /* Right-edge grab handle to drag the sidebar wider/narrower (see spaces.js).
-   Same shape as the explorer's left-edge handle; hidden on the folded rail
-   and in the ≤768px drawer, whose widths are fixed. */
+   Same shape as the explorer's left-edge handle, thinner (3px, user
+   2026-11-19: 6px looked too wide); hidden on the folded rail and in the
+   ≤768px drawer, whose widths are fixed. */
 .sidebar-resize-handle {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
-    width: 6px;
+    width: 3px;
     cursor: col-resize;
     z-index: 10;
     background: transparent;
