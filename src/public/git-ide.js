@@ -135,6 +135,180 @@
       this.setupResize();
       this.observeLayout();
       this.bindHistory();
+      this.bindContextMenu();
+    }
+
+    // ── right-click references + send-to-conversation (phase B) ───────────
+
+    bindContextMenu() {
+      const panel = this.el('gitIdePanel');
+      panel.addEventListener('contextmenu', (e) => {
+        if (!e.target.closest) return;
+        const items = this.menuItemsFor(e);
+        if (!items) return;                 // no target row → browser default
+        e.preventDefault();
+        this.openMenu(e.clientX, e.clientY, items);
+      });
+      // Any click or panel scroll dismisses the menu; the shell's Escape
+      // peels the menu before closing the panel.
+      panel.addEventListener('click', () => this.closeMenu(), true);
+      panel.addEventListener('scroll', () => this.closeMenu(), true);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && this.menu) {
+          e.stopPropagation();
+          this.closeMenu();
+        }
+      }, true);
+    }
+
+    // What the menu offers, by what was under the pointer. Every entry is one
+    // short, self-describing reference (plan §3.6) — the point is that the
+    // conversation (Claude) can act on it without more context.
+    menuItemsFor(e) {
+      const repo = this.repoName;
+      const diffRow = e.target.closest('.git-ide-dl');
+      const diffBody = e.target.closest('.git-ide-diff-body');
+      const file = e.target.closest('.git-ide-file');
+      const ref = e.target.closest('.git-ide-ref');
+      const commit = e.target.closest('.git-ide-row');
+
+      if (diffBody) {
+        const sel = this.diffSelection(diffBody);
+        const path = diffRow && diffRow.closest('.git-ide-diff');
+        const fileRow = path && path.previousElementSibling;
+        const fileName = fileRow && fileRow.dataset.path;
+        if (sel && fileName) {
+          const items = [];
+          if (sel.from) {
+            const where = this.selectedCommit ? `（提交 ${this.selectedCommit.short}「${this.selectedCommit.subject}」@ ${this.summary && this.summary.branch || ''}）` : '';
+            const text = `@${fileName} 第 ${sel.from}–${sel.to} 行${sel.oldLines ? '（旧行号）' : ''}${where}`;
+            items.push({ label: '发送选中行到对话', act: () => this.sendToConversation(text) });
+            items.push({ label: '复制选中引用', act: () => this.copyText(text, '引用已复制') });
+          } else {
+            const frag = String(sel.text || '').slice(0, 600);
+            items.push({ label: '发送选中片段到对话', act: () => this.sendToConversation(frag) });
+            items.push({ label: '复制选中片段', act: () => this.copyText(frag, '片段已复制') });
+          }
+          return items;
+        }
+        return null;
+      }
+      if (file) {
+        const p = file.dataset.path;
+        return [
+          { label: '发送到对话（@文件）', act: () => this.sendToConversation(this.atPath(p)) },
+          { label: '发送到对话（路径）', act: () => this.sendToConversation(p) },
+          { label: '复制路径', act: () => this.copyText(p, '路径已复制') }
+        ];
+      }
+      if (ref) {
+        const name = ref.dataset.ref === 'current' ? (this.summary && this.summary.branch) : ref.dataset.ref;
+        if (!name) return null;
+        return [
+          { label: '发送到对话', act: () => this.sendToConversation(`git 分支 ${name}（仓库 ${repo}）`) },
+          { label: '复制分支名', act: () => this.copyText(name, '分支名已复制') }
+        ];
+      }
+      if (commit) {
+        const sha = commit.dataset.sha;
+        const c = this.commits.find((x) => x.sha === sha);
+        const short = sha.slice(0, 7);
+        const subject = c ? c.subject : '';
+        const quote = subject ? `「${subject}」` : '';
+        return [
+          { label: '发送到对话', act: () => this.sendToConversation(`git 提交 ${short}${quote}（仓库 ${repo}）`) },
+          { label: '复制修订号', act: () => this.copyText(short, '修订号已复制') },
+          { label: '复制引用', act: () => this.copyText(`git 提交 ${short}${quote}（仓库 ${repo}）`), }
+        ];
+      }
+      return null;
+    }
+
+    // `@路径` with quoting when the path has spaces (Claude's own @ syntax).
+    atPath(p) {
+      return /\s/.test(p) ? `@"${p}"` : `@${p}`;
+    }
+
+    // The selected diff rows → a line range. New-file numbers unless every
+    // selected row is a deletion (then old numbers, marked). Returns null
+    // when the selection cannot be tied to rows; the caller then degrades
+    // to the raw fragment — a fabricated range would be worse than none.
+    diffSelection(diffBody) {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+      const text = sel.toString();
+      if (!text.trim()) return null;
+      const rows = diffBody.querySelectorAll('.git-ide-dl:not(.hunk)');
+      let touched = [];
+      for (const row of rows) {
+        if (sel.containsNode(row, true)) touched.push(row);
+      }
+      if (!touched.length) return { text };
+      const num = (row, idx) => {
+        const spans = row.querySelectorAll('.git-ide-dl-num');
+        return spans[idx] && spans[idx].textContent.trim();
+      };
+      const isNew = (row) => !row.classList.contains('del');
+      let from = Infinity, to = -Infinity, olds = [], allDel = touched.every((r) => r.classList.contains('del'));
+      for (const row of touched) {
+        const v = allDel ? num(row, 0) : num(row, isNew(row) ? 1 : 0);
+        const n = Number(v);
+        if (!v || !Number.isFinite(n)) continue;
+        from = Math.min(from, n); to = Math.max(to, n); olds.push(v);
+      }
+      if (to < 0) return { text };
+      return { from, to, oldLines: allDel, text };
+    }
+
+    get selectedCommit() {
+      return this.commits.find((c) => c.sha === this.selectedSha) || null;
+    }
+
+    openMenu(x, y, items) {
+      this.closeMenu();
+      const menu = document.createElement('div');
+      menu.className = 'git-ide-menu';
+      for (const item of items) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = item.label;
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.closeMenu();
+          item.act();
+        });
+        menu.appendChild(btn);
+      }
+      document.body.appendChild(menu);
+      const rect = menu.getBoundingClientRect();
+      // Keep the menu inside the window (an IDE menu never opens off-screen).
+      menu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + 'px';
+      menu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + 'px';
+      this.menu = menu;
+    }
+
+    closeMenu() {
+      if (this.menu) { this.menu.remove(); this.menu = null; }
+    }
+
+    // Insert a reference into the ACTIVE task's Claude — bracketed paste, no
+    // trailing Enter: the user reviews and submits (plan §3.4.8 — the panel
+    // never pulls the trigger). No connected task → clipboard + a toast that
+    // says so. A busy Claude is NOT a degrade case: queued PTY input is fine.
+    sendToConversation(text) {
+      const app = window.app;
+      const sid = app && app.currentClaudeSessionId;
+      const paste = '\x1b[200~' + text + '\x1b[201~';
+      if (app && typeof app.sendInput === 'function' && sid && app.sendInput(paste, sid)) {
+        let name = '';
+        try {
+          const tab = app.sessionTabManager && app.sessionTabManager.tabs.get(sid);
+          name = (tab && tab.name) || sid.slice(0, 8);
+        } catch (_) { name = sid.slice(0, 8); }
+        app.showToast(`已插入「${name}」的输入框，检查后回车发送`);
+      } else {
+        this.copyText(text, '没有连接中的任务——已复制，请在终端粘贴');
+      }
     }
 
     // ── branch tree (task 4) ──────────────────────────────────────────────

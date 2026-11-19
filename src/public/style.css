@@ -6368,3 +6368,29 @@ button.usage-acct { cursor: pointer; }
 .git-ide-dl.meta { color: var(--text-secondary); }
 [data-theme="light"] .git-ide-dl.add { background: rgba(46, 160, 67, 0.12); }
 [data-theme="light"] .git-ide-dl.del { background: rgba(248, 81, 73, 0.10); }
+
+/* Git IDE: right-click reference menu. Above the drawer, below the app's
+   modal stack; positioned by JS to stay on screen. */
+.git-ide-menu {
+    position: fixed;
+    z-index: 1600;
+    min-width: 180px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+}
+.git-ide-menu button {
+    background: none;
+    border: none;
+    border-radius: 5px;
+    color: var(--text-primary);
+    font-size: calc(11.5px * var(--ui-scale, 1));
+    text-align: left;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+.git-ide-menu button:hover { background: var(--bg-tertiary); color: var(--accent); }
