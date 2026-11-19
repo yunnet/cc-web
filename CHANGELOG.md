@@ -3,6 +3,33 @@
 ## [Unreleased]
 
 ### Added
+- **Git IDE: a single-repository work window** (dsh-ide-git port, phases
+  A–E; user 2026-11-19: 「期望在我的cc-web上，还有这个工具」). A right
+  drawer over the terminal (never reflowing it), opened per-repo from a
+  branch-panel row's deep-dive button — click outside deliberately does NOT
+  close it, it stays open while you type. Branch tree (HEAD first,
+  local/remote/tags groups, browse a branch's history without checking it
+  out), commit graph with pixel-aligned lanes (bends, hollow HEAD dot, six
+  cycling colours per theme), IDEA-ordered history with infinite scroll,
+  filters and keyboard navigation; commit detail with per-file stats and an
+  inline line-numbered diff (accordion, wrap toggle, copy). Right-click any
+  commit/branch/file/diff-selection to send a self-describing reference into
+  the active task's Claude — bracketed paste, no Enter: the user reviews and
+  submits. Phase C adds the change list (conflict/staged/changed/untracked)
+  and a commit box (Ctrl+Enter, amend); phase D adds checkout/branch/tag/
+  cherry-pick/revert/reset/merge/rebase with a confirm-first danger style,
+  typed-name protection for main/master/trunk, an abort entry whenever a
+  merge/rebase owns the repo, and a one-shot 30-minute undo net (per-user
+  ledger) for branch deletes and hard resets; phase E gates `git push`
+  behind a default-off, admin-only, persisted switch — the push runs on the
+  server's credentials and says so in its confirm dialog. Everything rides
+  the existing git job queue, the branch panel's path policy and per-shape
+  server-side validation (no ref/path can be read as a git option); no
+  polling anywhere — hover prewarms, cache paints, refresh follows writes.
+- **The spaces sidebar's text follows the Font Size setting** like the
+  terminal does (user 2026-11-19): one `--ui-scale` factor anchored to the
+  UI's 14px base, applied by the same `applySettings` entry point, so 14 is
+  exactly the shipped sizes and every other value scales proportionally.
 - **Drag the spaces sidebar wider or narrower.** The sidebar's right edge is
   a grab handle: drag it to resize (180px to min(720px, 40vw) — the cap came
   down from 70% at review), double-click to put the 264px default back. The
