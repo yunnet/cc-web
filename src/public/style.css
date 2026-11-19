@@ -6486,3 +6486,48 @@ button.usage-acct { cursor: pointer; }
     cursor: pointer;
 }
 .git-ide-commit-row .btn { margin-left: auto; }
+
+/* Git IDE: menu separators, danger items, and the undo net (phase D). */
+.git-ide-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+.git-ide-menu button.danger { color: #e5534b; }
+.git-ide-menu button.danger:hover { color: #f85149; }
+[data-theme="light"] .git-ide-menu button.danger { color: #cf222e; }
+[data-theme="light"] .git-ide-menu button.danger:hover { color: #a40e26; }
+
+/* The undo bar: bottom-left of the drawer, one live entry at a time. */
+.git-ide-undo {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    padding: 6px 8px 6px 12px;
+    font-size: calc(11px * var(--ui-scale, 1));
+    z-index: 20;
+    max-width: calc(100% - 24px);
+}
+.git-ide-undo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.git-ide-undo button {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--accent);
+    font-size: calc(10.5px * var(--ui-scale, 1));
+    padding: 2px 10px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+.git-ide-undo button:hover { background: var(--bg-secondary); }
+.git-ide-undo-x {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0 2px;
+    flex: 0 0 auto;
+}

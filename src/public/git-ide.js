@@ -156,6 +156,14 @@
         const items = this.menuItemsFor(e);
         if (!items) return;                 // no target row → browser default
         e.preventDefault();
+        // While a merge/rebase owns the repo, every menu leads with the way
+        // out — the state that blocks all writes must be reachable to clear.
+        if (this.summary && this.summary.inProgress) {
+          items.unshift(
+            { sep: true },
+            { label: `中止进行中的 ${this.summary.inProgress}`, danger: true, act: () => this.runOp('abort', {}, `已中止 ${this.summary.inProgress}`) }
+          );
+        }
         this.openMenu(e.clientX, e.clientY, items);
       });
       // Any click or panel scroll dismisses the menu; the shell's Escape
@@ -213,10 +221,21 @@
       if (ref) {
         const name = ref.dataset.ref === 'current' ? (this.summary && this.summary.branch) : ref.dataset.ref;
         if (!name) return null;
-        return [
+        const items = [
           { label: '发送到对话', act: () => this.sendToConversation(`git 分支 ${name}（仓库 ${repo}）`) },
           { label: '复制分支名', act: () => this.copyText(name, '分支名已复制') }
         ];
+        // Phase D: the tree's branch actions. The current branch leads with
+        // merge/rebase; every other branch offers checkout and delete.
+        if (ref.dataset.ref !== 'current') {
+          items.unshift(
+            { label: `签出 ${name}`, act: () => this.runOp('checkout', { ref: name }, `已签出 ${name}`) },
+            { label: `合并 ${name} 到当前分支`, act: () => this.runOp('merge', { name, mode: 'default' }, `已合并 ${name}`) },
+            { label: `变基当前分支到 ${name}`, act: () => this.confirmRun(`把当前分支变基到 ${name}？`, { label: '变基' }, 'rebase', { onto: name }, `已变基到 ${name}`) },
+            { label: `删除分支 ${name}`, act: () => this.deleteBranchFlow(name) }
+          );
+        }
+        return items;
       }
       if (commit) {
         const sha = commit.dataset.sha;
@@ -227,7 +246,16 @@
         return [
           { label: '发送到对话', act: () => this.sendToConversation(`git 提交 ${short}${quote}（仓库 ${repo}）`) },
           { label: '复制修订号', act: () => this.copyText(short, '修订号已复制') },
-          { label: '复制引用', act: () => this.copyText(`git 提交 ${short}${quote}（仓库 ${repo}）`), }
+          { label: '复制引用', act: () => this.copyText(`git 提交 ${short}${quote}（仓库 ${repo}）`), },
+          { sep: true },
+          { label: '在此新建分支…', act: () => this.promptName('新分支名', 'branch', sha) },
+          { label: '新建标签…', act: () => this.promptName('新标签名', 'tag', sha) },
+          { sep: true },
+          { label: `优选（cherry-pick）${short}`, act: () => this.runOp('cherry-pick', { sha }, `已优选 ${short}`) },
+          { label: `还原提交 ${short}`, act: () => this.runOp('revert', { sha }, `已还原 ${short}`) },
+          { sep: true },
+          { label: '重置到此（保留更改）', act: () => this.confirmRun(`把当前分支重置到 ${short}？工作区更改保留（变为未暂存）。`, { label: '重置', danger: true }, 'reset', { sha, mode: 'keep' }, `已重置到 ${short}`) },
+          { label: '重置到此（丢弃更改）', act: () => this.confirmRun(`把当前分支重置到 ${short}，并丢弃之后的提交与未提交更改？`, { label: '丢弃并重置', danger: true }, 'reset', { sha, mode: 'discard' }, `已重置到 ${short}`) }
         ];
       }
       return null;
@@ -278,9 +306,16 @@
       const menu = document.createElement('div');
       menu.className = 'git-ide-menu';
       for (const item of items) {
+        if (item.sep) {
+          const sep = document.createElement('div');
+          sep.className = 'git-ide-menu-sep';
+          menu.appendChild(sep);
+          continue;
+        }
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = item.label;
+        if (item.danger) btn.classList.add('danger');
         btn.addEventListener('click', (ev) => {
           ev.stopPropagation();
           this.closeMenu();
@@ -298,6 +333,110 @@
 
     closeMenu() {
       if (this.menu) { this.menu.remove(); this.menu = null; }
+    }
+
+    // ── phase D flows: run / confirm / prompt / delete / undo ─────────────
+
+    // Every history operation ends the same way: POST, toast the outcome in
+    // git's own words on failure, refresh whatever could have moved, and if
+    // the answer carries an undo id, put the net up.
+    async runOp(op, body, okMessage) {
+      this.beginLoad();
+      const { status, data } = await fetch(`/api/git/ide/${op}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.auth() },
+        body: JSON.stringify({ path: this.repoPath, ...body })
+      }).then((r) => r.json().then((d) => ({ status: r.status, data: d }))).catch(() => ({ status: 0, data: {} }));
+      this.endLoad();
+      if (status !== 200) {
+        window.app.showToast((data && data.error) || '操作失败', true);
+        return null;
+      }
+      window.app.showToast(okMessage || '完成');
+      this.reload();
+      return data;
+    }
+
+    confirmRun(body, opts, op, reqBody, okMessage) {
+      const app = window.app;
+      // go() awaits runOp so the undo id (delete/reset) can raise the net.
+      const go = async () => {
+        const r = await this.runOp(op, reqBody, okMessage);
+        if (r && r.undoId) this.offerUndo(okMessage || '操作完成', r.undoId);
+      };
+      if (app && app.confirmDialog) {
+        return app.confirmDialog({
+          title: opts.label, body,
+          confirmText: opts.label, cancelText: '取消', danger: !!opts.danger
+        }).then((yes) => { if (yes) go(); });
+      }
+      if (window.confirm(`${opts.label}\n\n${body}`)) go();
+      return Promise.resolve();
+    }
+
+    promptName(title, kind, sha) {
+      const name = window.prompt(`${title}（基于 ${sha.slice(0, 7)}）：`, '');
+      if (!name || !name.trim()) return;
+      const clean = name.trim();
+      if (kind === 'branch') {
+        this.runOp('branch', { name: clean, from: sha, checkout: true }, `已创建并切换到 ${clean}`);
+      } else {
+        this.runOp('tag', { name: clean, sha }, `已打标签 ${clean}`);
+      }
+    }
+
+    // Deleting main/master/trunk takes a typed name; an unmerged branch takes
+    // a second, sterner confirmation (the undo net still catches it).
+    async deleteBranchFlow(name) {
+      const protectedNames = ['main', 'master', 'trunk'];
+      if (protectedNames.includes(name)) {
+        const typed = window.prompt(`删除受保护分支 ${name} 需要输入分支名确认：`, '');
+        if (typed !== name) {
+          window.app.showToast('输入的分支名不一致，未删除', true);
+          return;
+        }
+      }
+      const app = window.app;
+      const go = async () => {
+        const r = await this.runOp('delete-branch', { name }, `已删除 ${name}`);
+        if (r && r.undoId) this.offerUndo(`已删除分支 ${name}`, r.undoId);
+      };
+      const okFn = app && app.confirmDialog
+        ? app.confirmDialog({ title: '删除分支', body: `删除分支 ${name}？30 分钟内可撤回。`, confirmText: '删除', danger: true }).then((y) => { if (y) go(); })
+        : (window.confirm(`删除分支 ${name}？`) ? go() : null);
+      await okFn;
+    }
+
+    // The undo net: a small fixed toast inside the panel with one button.
+    // One-shot by design — the server consumes the ledger entry.
+    offerUndo(text, undoId) {
+      this.dismissUndo();
+      const bar = document.createElement('div');
+      bar.className = 'git-ide-undo';
+      const label = document.createElement('span');
+      label.textContent = text;
+      bar.appendChild(label);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '撤回';
+      btn.addEventListener('click', async () => {
+        const r = await this.runOp('undo', { id: undoId }, '已撤回');
+        if (r) this.dismissUndo();
+      });
+      bar.appendChild(btn);
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'git-ide-undo-x';
+      close.setAttribute('aria-label', 'Dismiss');
+      close.textContent = '×';
+      close.addEventListener('click', () => this.dismissUndo());
+      bar.appendChild(close);
+      this.el('gitIdePanel').appendChild(bar);
+      this.undoBar = bar;
+    }
+
+    dismissUndo() {
+      if (this.undoBar) { this.undoBar.remove(); this.undoBar = null; }
     }
 
     // Insert a reference into the ACTIVE task's Claude — bracketed paste, no
