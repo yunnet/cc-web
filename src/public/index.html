@@ -551,6 +551,35 @@
             </div>
         </div>
 
+        <!-- Git IDE: single-repository work window (branch tree · commit
+             graph · detail/diff). A right drawer that overlays the terminal
+             without reflowing it, opened per-repo from a branch-panel row.
+             Deliberately NOT dismissed by clicking outside (unlike the glance
+             panels): it is a work panel kept open while typing in the
+             terminal — close with ×, Esc, or the back arrow. -->
+        <aside class="git-ide-panel" id="gitIdePanel" aria-label="Git IDE">
+            <div class="git-ide-head">
+                <button class="git-ide-back" id="gitIdeBackBtn" type="button" title="Back to branches" aria-label="Back to branches">&#9666;</button>
+                <span class="git-ide-repo" id="gitIdeRepoName">Git</span>
+                <span class="git-ide-pill" id="gitIdeBranchPill" hidden></span>
+                <span class="git-ide-counts" id="gitIdeCounts" hidden></span>
+                <button class="git-ide-refresh" id="gitIdeRefreshBtn" type="button" title="Refresh" aria-label="Refresh">&#10227;</button>
+                <button class="modal-close" id="gitIdeCloseBtn" type="button" aria-label="Close Git IDE">&times;</button>
+            </div>
+            <!-- Loading feedback is tiered (plan §3.4): nothing under 300ms,
+                 skeletons to 2s, then this line carries the staged progress. -->
+            <div class="git-ide-progress" id="gitIdeProgress" hidden></div>
+            <div class="git-ide-body" id="gitIdeBody">
+                <nav class="git-ide-tree" id="gitIdeTree" aria-label="Branch tree"></nav>
+                <section class="git-ide-history">
+                    <div class="git-ide-filter" id="gitIdeFilter"></div>
+                    <div class="git-ide-list" id="gitIdeList" role="list"></div>
+                </section>
+                <section class="git-ide-detail" id="gitIdeDetail"></section>
+            </div>
+        </aside>
+        <div class="git-ide-mask" id="gitIdeMask" hidden></div>
+
         <!-- Toolbar history button (#historyBtn): every Claude conversation
              recorded for the active session's folder. Clicking one opens it in a
              new tab, resumed. -->
@@ -1056,6 +1085,8 @@
     <script src="usage-panel.js"></script>
     <script src="peer-threads.js"></script>
     <script src="git-branches.js"></script>
+    <script src="git-ide-graph.js"></script>
+    <script src="git-ide.js"></script>
     <script src="account.js"></script>
     <script src="icons.js"></script>
     <!-- Pure geometry for the draggable mobile buttons; app.js calls into it,

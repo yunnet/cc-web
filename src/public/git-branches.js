@@ -39,6 +39,15 @@
     return t.content.firstElementChild;
   })();
 
+  // Deep-dive button: opens this one repository in the Git IDE drawer
+  // (git-ide.js). A "graph" glyph — commit history is what the panel is for.
+  const IDE_ICON = '<svg class="pull-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h6a4 4 0 0 1 4 4"/><path d="M7 18h6a4 4 0 0 0 4-4" stroke-dasharray="0"/><path d="M5 8v8"/></svg>';
+  const ideIconNode = (() => {
+    const t = document.createElement('template');
+    t.innerHTML = IDE_ICON;
+    return t.content.firstElementChild;
+  })();
+
   class BranchPanel {
     constructor() {
       this.bound = false;
@@ -107,6 +116,17 @@
           if (btn.disabled) return;
           e.stopPropagation();
           this.pull(btn);
+          return;
+        }
+        const ide = e.target.closest('.row-ide');
+        if (ide) {
+          e.stopPropagation();
+          const row = ide.closest('.branch-row');
+          const name = row && row.dataset.repo;
+          // '.' is the scan's "this directory itself is the repository".
+          const repoPath = name === '.' ? this.dir : (this.dir && name ? `${this.dir}/${name}` : null);
+          this.hide(); // the popover out-stacks the drawer; back re-opens it
+          if (repoPath && window.gitIdePanel) window.gitIdePanel.openRepo(repoPath, name);
           return;
         }
         const item = e.target.closest('.branch-pick-item');
@@ -293,6 +313,17 @@
         pull.dataset.repo = repo.name;
         pull.appendChild(pullIconNode.cloneNode(true));
         meta.appendChild(pull);
+
+        // Deep-dive into this one repository (Git IDE drawer, git-ide.js).
+        // Hover-revealed like the pull button; always visible on touch.
+        const ide = document.createElement('button');
+        ide.className = 'row-ide';
+        ide.type = 'button';
+        ide.title = 'Open Git IDE';
+        ide.setAttribute('aria-label', `Open Git IDE for ${repo.name}`);
+        ide.dataset.repo = repo.name;
+        ide.appendChild(ideIconNode.cloneNode(true));
+        meta.appendChild(ide);
 
         const branch = document.createElement('span');
         branch.className = 'branch-ref switchable' + (repo.detached ? ' detached' : '');
