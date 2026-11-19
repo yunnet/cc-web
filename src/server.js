@@ -192,6 +192,9 @@ class ClaudeCodeWebServer {
     // Cross-session message threads (src/peer-messages.js): made on first use,
     // for the unowned tenant too (built in the constructor, before this).
     if (!t.peerThreads) t.peerThreads = new PeerThreads(path.join(this.sessionStore.storageDir, ownerId || ''));
+    // Git IDE undo ledger (src/git-ide.js): same per-owner single-file shape,
+    // 30-minute TTL, consumed on use.
+    if (!t.gitIdeUndo) t.gitIdeUndo = gitIde.makeUndoStore(path.join(this.sessionStore.storageDir, ownerId || ''));
     return t;
   }
 
@@ -1520,6 +1523,21 @@ class ClaudeCodeWebServer {
     this.app.post('/api/git/ide/unstage', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'unstage')));
     this.app.post('/api/git/ide/discard', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'discard')));
     this.app.post('/api/git/ide/commit', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'commit')));
+
+    // History operations (phase D). The destructive two (branch delete,
+    // reset --hard) record an undo point in the caller's ledger first;
+    // POST /undo spends it. Same resolver, same queue, same guards.
+    this.app.post('/api/git/ide/checkout', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'checkout')));
+    this.app.post('/api/git/ide/branch', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'branch')));
+    this.app.post('/api/git/ide/tag', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'tag')));
+    this.app.post('/api/git/ide/delete-branch', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'delete-branch')));
+    this.app.post('/api/git/ide/cherry-pick', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'cherry-pick')));
+    this.app.post('/api/git/ide/revert', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'revert')));
+    this.app.post('/api/git/ide/reset', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'reset')));
+    this.app.post('/api/git/ide/merge', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'merge')));
+    this.app.post('/api/git/ide/rebase', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'rebase')));
+    this.app.post('/api/git/ide/abort', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'abort')));
+    this.app.post('/api/git/ide/undo', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'undo')));
 
     // Runtime-editable plan directories (additive to auto-discovery). Normal
     // header auth. GET returns the configured dirs plus active session roots (the
@@ -3296,19 +3314,34 @@ class ClaudeCodeWebServer {
 
   // Writes share the read resolver's gates (validatePath + must-be-a-repo)
   // and add the body validation inside the module. Same queue, so a write
-  // never runs beside a pull or another write.
+  // never runs beside a pull or another write. The per-user undo ledger rides
+  // along for the two operations that record one.
   async gitIdeWrite(req, res, op) {
     const repoPath = this.resolveGitIdeRepo({ query: { path: (req.body || {}).path } }, res);
     if (!repoPath) return;
     const body = req.body || {};
+    const undoStore = this.tenant(req.user ? req.user.id : null).gitIdeUndo;
     let result;
     try {
       result = await this.queueGitJob(() => {
-        if (op === 'stage') return gitIde.stageFiles(repoPath, body.files);
-        if (op === 'unstage') return gitIde.unstageFiles(repoPath, body.files);
-        if (op === 'discard') return gitIde.discardFiles(repoPath, body.files);
-        if (op === 'commit') return gitIde.commit(repoPath, body.message, !!body.amend);
-        return { error: 'unknown operation' };
+        switch (op) {
+          case 'stage': return gitIde.stageFiles(repoPath, body.files);
+          case 'unstage': return gitIde.unstageFiles(repoPath, body.files);
+          case 'discard': return gitIde.discardFiles(repoPath, body.files);
+          case 'commit': return gitIde.commit(repoPath, body.message, !!body.amend);
+          case 'checkout': return gitIde.checkoutRef(repoPath, body.ref);
+          case 'branch': return gitIde.createBranch(repoPath, body.name, body);
+          case 'tag': return gitIde.createTag(repoPath, body.name, body.sha);
+          case 'delete-branch': return gitIde.deleteBranch(repoPath, body.name, undoStore);
+          case 'cherry-pick': return gitIde.cherryPick(repoPath, body.sha);
+          case 'revert': return gitIde.revertCommit(repoPath, body.sha);
+          case 'reset': return gitIde.resetTo(repoPath, body.sha, body.mode, undoStore);
+          case 'merge': return gitIde.mergeBranch(repoPath, body.name, body.mode);
+          case 'rebase': return gitIde.rebaseOnto(repoPath, body.onto);
+          case 'abort': return gitIde.abortOp(repoPath);
+          case 'undo': return gitIde.undo(repoPath, body.id, undoStore);
+          default: return { error: 'unknown operation' };
+        }
       });
     } catch (error) {
       return res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
@@ -3316,6 +3349,8 @@ class ClaudeCodeWebServer {
     if (!result || result.error !== undefined) {
       return res.status(400).json({ error: (result && result.error) || 'failed' });
     }
+    // After a write that could have moved anything, the client refreshes; the
+    // undo id travels so its toast can spend it.
     res.json(result);
   }
   // GET /api/git/branches?path=<dir>[&status=1]

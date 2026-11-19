@@ -264,7 +264,9 @@ async function diff(repoPath, target, file) {
 
 module.exports = { summary, refs, log, commitDetail, diff, isSha, isRefToken, isRelPath,
   LOG_PAGE, LOG_PAGE_MAX, LOG_SKIP_MAX, DIFF_MAX_BYTES,
-  statusDetail, stageFiles, unstageFiles, discardFiles, commit };
+  statusDetail, stageFiles, unstageFiles, discardFiles, commit,
+  makeUndoStore, checkoutRef, createBranch, createTag, deleteBranch,
+  cherryPick, revertCommit, resetTo, mergeBranch, rebaseOnto, abortOp, undo };
 
 // ── writes (phase C): stage / unstage / discard / commit ───────────────────
 //
@@ -390,4 +392,205 @@ async function commit(repoPath, message, amend) {
   }
   const head = await runGit(repoPath, ['rev-parse', '--short', 'HEAD'], IDE_TIMEOUT_MS);
   return { ok: true, head: head.ok ? head.stdout.trim() : null };
+}
+
+// ── history operations (phase D): checkout / branch / tag / cherry-pick /
+//    revert / reset / merge / rebase / abort — with undo for the destructive ─
+
+const { isValidBranchName } = require('./git-branches');
+
+// Per-user undo ledger: a single JSON file per tenant dir, atomic whole-write,
+// entries expire after 30 minutes and the list caps at 50 (the same shape
+// peer-threads.json settled on). A consumed entry is gone — undo is one-shot.
+const UNDO_TTL_MS = 30 * 60 * 1000;
+const UNDO_MAX = 50;
+
+function makeUndoStore(dir) {
+  const fsx = fs;
+  const file = path.join(dir, 'git-ide-undo.json');
+  function load() {
+    try {
+      const now = Date.now();
+      const entries = JSON.parse(fsx.readFileSync(file, 'utf8') || '[]')
+        .filter((e) => e && e.id && now - e.at < UNDO_TTL_MS);
+      return Array.isArray(entries) ? entries.slice(-UNDO_MAX) : [];
+    } catch (_) { return []; }
+  }
+  function save(entries) {
+    try {
+      fsx.mkdirSync(dir, { recursive: true });
+      fsx.writeFileSync(file, JSON.stringify(entries), 'utf8');
+    } catch (_) { /* best effort — a failed ledger never blocks the op */ }
+  }
+  return {
+    record(entry) {
+      const entries = load();
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      entries.push({ id, at: Date.now(), ...entry });
+      save(entries.slice(-UNDO_MAX));
+      return id;
+    },
+    consume(id) {
+      const entries = load();
+      const at = entries.findIndex((e) => e.id === id);
+      if (at < 0) return null;
+      const [entry] = entries.splice(at, 1);
+      save(entries);
+      return entry;
+    },
+    list() { return load(); }
+  };
+}
+
+// The op implementations. Every one runs behind the write guard (no writes
+// during an in-progress operation — abortOp is the explicit way out) and
+// returns git's own wording on failure.
+
+async function checkoutRef(repoPath, ref) {
+  if (!isRefToken(ref) && !isSha(ref)) return { error: 'invalid ref' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['checkout', ref], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+async function createBranch(repoPath, name, opts) {
+  if (!await isValidBranchName(name)) return { error: 'invalid branch name' };
+  const from = opts && opts.from;
+  if (from !== undefined && from !== null && !isRefToken(from) && !isSha(from)) return { error: 'invalid starting point' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const args = ['branch', name];
+  if (from) args.push(from);
+  let r = await runGit(repoPath, args, IDE_TIMEOUT_MS);
+  if (!r.ok) return { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  if (opts && opts.checkout) {
+    r = await runGit(repoPath, ['checkout', name], IDE_TIMEOUT_MS);
+    if (!r.ok) return { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  }
+  return { ok: true };
+}
+
+async function createTag(repoPath, name, sha) {
+  if (!isRefToken(name)) return { error: 'invalid tag name' };
+  // A tag rides on a sha or any ref name git understands ('topic', 'HEAD~2').
+  if (sha !== undefined && !isRefToken(sha) && !isSha(sha)) return { error: 'invalid sha' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const args = ['tag', name];
+  if (sha) args.push(sha);
+  const r = await runGit(repoPath, args, IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+// Deleting a branch is a real delete with a net: the ref's sha is recorded
+// FIRST (the object stays reachable through the ledger even after the ref is
+// gone), so undo is a one-line recreate within the TTL window.
+async function deleteBranch(repoPath, name, undoStore) {
+  if (!await isValidBranchName(name)) return { error: 'invalid branch name' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const head = readHead(repoPath);
+  if (head && !head.detached && head.branch === name) return { error: 'cannot delete the current branch' };
+  const sha = await runGit(repoPath, ['rev-parse', `refs/heads/${name}`], IDE_TIMEOUT_MS);
+  if (!sha.ok) return { error: `no such branch: ${name}` };
+  // Unmerged commits get a second confirmation client-side; here they are a
+  // -D, with the undo ledger still holding the sha.
+  const merged = await runGit(repoPath, ['branch', '--merged', 'HEAD'], IDE_TIMEOUT_MS);
+  const isMerged = merged.ok && merged.stdout.split('\n').some((l) => l.replace(/^[*+ ]+/, '').trim() === name);
+  const r = await runGit(repoPath, ['branch', isMerged ? '-d' : '-D', name], IDE_TIMEOUT_MS);
+  if (!r.ok) return { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  let undoId = null;
+  if (undoStore) undoId = undoStore.record({ kind: 'branch-delete', repo: repoPath, ref: name, sha: sha.stdout.trim() });
+  return { ok: true, undoId, wasMerged: isMerged };
+}
+
+async function cherryPick(repoPath, sha) {
+  if (!isSha(sha)) return { error: 'invalid sha' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['cherry-pick', sha], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+async function revertCommit(repoPath, sha) {
+  if (!isSha(sha)) return { error: 'invalid sha' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['revert', '--no-edit', sha], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+// reset discard (--hard) is the one reset worth a net: the branch's previous
+// tip is recorded, undo moves the branch back (when it still points at the
+// reset result — otherwise the user has moved on and undo refuses).
+async function resetTo(repoPath, sha, mode, undoStore) {
+  if (!isSha(sha)) return { error: 'invalid sha' };
+  if (mode !== 'keep' && mode !== 'discard') return { error: 'invalid reset mode' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const head = readHead(repoPath);
+  const before = await runGit(repoPath, ['rev-parse', 'HEAD'], IDE_TIMEOUT_MS);
+  const r = await runGit(repoPath, ['reset', mode === 'discard' ? '--hard' : '--mixed', sha], IDE_TIMEOUT_MS);
+  if (!r.ok) return { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  let undoId = null;
+  if (mode === 'discard' && undoStore && head && head.branch) {
+    undoId = undoStore.record({ kind: 'reset-hard', repo: repoPath, ref: head.branch, sha: before.stdout.trim() });
+  }
+  return { ok: true, undoId };
+}
+
+async function mergeBranch(repoPath, name, mode) {
+  if (!await isValidBranchName(name)) return { error: 'invalid branch name' };
+  const modes = { default: [], 'no-ff': ['--no-ff'], squash: ['--squash'], 'no-ff-no-commit': ['--no-ff', '--no-commit'] };
+  const extra = modes[mode];
+  if (!extra) return { error: 'invalid merge mode' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['merge', ...extra, name], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+async function rebaseOnto(repoPath, onto) {
+  if (!isRefToken(onto) && !isSha(onto)) return { error: 'invalid ref' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['rebase', onto], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+// The way OUT of a half-finished operation, matched to what owns the repo.
+async function abortOp(repoPath) {
+  const s = await summary(repoPath);
+  const kind = s.inProgress;
+  if (!kind) return { error: 'nothing to abort' };
+  const cmd = { merge: ['merge', '--abort'], rebase: ['rebase', '--abort'], 'cherry-pick': ['cherry-pick', '--abort'], revert: ['revert', '--abort'] }[kind];
+  if (!cmd) return { error: `cannot abort a ${kind}` };
+  const r = await runGit(repoPath, cmd, IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true, aborted: kind } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+}
+
+// Undo, one shot: the ledger entry names what to restore.
+async function undo(repoPath, id, undoStore) {
+  const entry = undoStore && undoStore.consume(id);
+  if (!entry || entry.repo !== repoPath) return { error: 'undo expired or unknown' };
+  if (entry.kind === 'branch-delete') {
+    const r = await runGit(repoPath, ['branch', entry.ref, entry.sha], IDE_TIMEOUT_MS);
+    return r.ok ? { ok: true, restored: `branch ${entry.ref}` } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  }
+  if (entry.kind === 'reset-hard') {
+    const now = await runGit(repoPath, ['rev-parse', `refs/heads/${entry.ref}`], IDE_TIMEOUT_MS);
+    const head = readHead(repoPath);
+    if (!now.ok || !head || head.branch !== entry.ref) {
+      return { error: 'the branch has moved on since the reset; undo refused' };
+    }
+    const r = await runGit(repoPath, ['reset', '--hard', entry.sha], IDE_TIMEOUT_MS);
+    return r.ok ? { ok: true, restored: `${entry.ref} → ${entry.sha.slice(0, 7)}` } : { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
+  }
+  return { error: 'unknown undo entry' };
+}
+
+function lastMeaningful(out) {
+  const lines = String(out || '').split(/\r?\n/).map((l) => l.split('\r').pop().trim()).filter(Boolean);
+  return lines[lines.length - 1] || '';
 }

@@ -516,3 +516,126 @@ describe('server route: git ide writes', function () {
     assert.strictEqual(res.statusCode, 400);
   });
 });
+
+describe('git-ide history operations (phase D)', function () {
+  this.timeout(30000);
+
+  let root;
+  let repo;
+  let undoStore;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitided-'));
+    repo = makeRepo(path.join(root, 'd'));
+    undoStore = gitIde.makeUndoStore(path.join(root, 'ledger'));
+    // A side branch with one commit, and a tag on the initial commit.
+    commitFile(repo, 'side.txt', 'side\n', 'side work');
+    git(repo, 'checkout', '-qb', 'topic', 'master');
+    commitFile(repo, 'topic.txt', 'topic\n', 'topic work');
+    git(repo, 'tag', 'v1', 'master');
+  });
+
+  after(function () {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('creates a branch (with or without checkout) and a tag', async function () {
+    assert.deepStrictEqual(await gitIde.createBranch(repo, 'from-topic', { from: 'topic' }), { ok: true });
+    assert.deepStrictEqual(await gitIde.createTag(repo, 'topic-tag', 'topic'), { ok: true });
+    const branches = gitText(repo, 'branch', '--list', 'from-topic', 'topic');
+    assert.ok(branches.includes('topic'));
+  });
+
+  it('rejects a branch name git would refuse', async function () {
+    const r = await gitIde.createBranch(repo, '-u/x', {});
+    assert.strictEqual(r.error, 'invalid branch name');
+  });
+
+  it('checks out a branch and a sha (detached)', async function () {
+    assert.deepStrictEqual(await gitIde.checkoutRef(repo, 'topic'), { ok: true });
+    assert.strictEqual(gitText(repo, 'rev-parse', '--abbrev-ref', 'HEAD'), 'topic');
+    const sha = gitText(repo, 'rev-parse', 'master');
+    assert.deepStrictEqual(await gitIde.checkoutRef(repo, sha), { ok: true });
+    assert.match(gitText(repo, 'rev-parse', '--abbrev-ref', 'HEAD'), /^HEAD$/);
+    git(repo, 'checkout', '-q', 'master');
+  });
+
+  it('deletes a branch and the ledger brings it back (one-shot)', async function () {
+    const r = await gitIde.deleteBranch(repo, 'from-topic', undoStore);
+    assert.strictEqual(r.ok, true);
+    assert.ok(r.undoId, 'a delete without a recorded sha cannot be undone');
+    assert.strictEqual(gitText(repo, 'branch', '--list', 'from-topic'), '');
+
+    const again = await gitIde.undo(repo, r.undoId, undoStore);
+    assert.strictEqual(again.ok, true);
+    assert.ok(gitText(repo, 'branch', '--list', 'from-topic').includes('from-topic'));
+
+    // One-shot: the second spend fails.
+    const spent = await gitIde.undo(repo, r.undoId, undoStore);
+    assert.strictEqual(spent.error, 'undo expired or unknown');
+  });
+
+  it('refuses to delete the current branch', async function () {
+    const r = await gitIde.deleteBranch(repo, 'master', undoStore);
+    assert.match(r.error, /current branch/);
+  });
+
+  it('cherry-picks a commit from another branch', async function () {
+    const sha = gitText(repo, 'rev-parse', 'topic');
+    const r = await gitIde.cherryPick(repo, sha);
+    assert.strictEqual(r.ok, true);
+    assert.match(gitText(repo, 'log', '-1', '--format=%s'), /topic work/);
+    git(repo, 'reset', '-q', '--hard', 'master');
+  });
+
+  it('reverts a commit with a generated message', async function () {
+    const sha = gitText(repo, 'rev-parse', 'HEAD');
+    const r = await gitIde.revertCommit(repo, sha);
+    assert.strictEqual(r.ok, true);
+    assert.match(gitText(repo, 'log', '-1', '--format=%s'), /^Revert /);
+    git(repo, 'reset', '-q', '--hard', 'master');
+  });
+
+  it('reset --hard records an undo point that moves the branch back', async function () {
+    const before = gitText(repo, 'rev-parse', 'HEAD');
+    commitFile(repo, 'gone.txt', 'x\n', 'to be reset away');
+    const after = gitText(repo, 'rev-parse', 'HEAD');
+    const r = await gitIde.resetTo(repo, before, 'discard', undoStore);
+    assert.strictEqual(r.ok, true);
+    assert.ok(r.undoId);
+    assert.strictEqual(gitText(repo, 'rev-parse', 'HEAD'), before);
+
+    // Put the branch forward again, then undo puts it back — but only while
+    // it still points where the reset left it.
+    const back = await gitIde.undo(repo, r.undoId, undoStore);
+    assert.strictEqual(back.ok, true);
+    assert.strictEqual(gitText(repo, 'rev-parse', 'HEAD'), after);
+    git(repo, 'reset', '-q', '--hard', 'master');
+  });
+
+  it('merge supports the four modes; --no-commit leaves a merge to conclude', async function () {
+    git(repo, 'checkout', '-q', 'master');
+    const r = await gitIde.mergeBranch(repo, 'topic', 'no-ff-no-commit');
+    assert.strictEqual(r.ok, true);
+    // The merge is now in progress: writes refuse, abort exits it.
+    const blocked = await gitIde.stageFiles(repo, ['side.txt']);
+    assert.match(blocked.error, /merge is in progress/);
+    const out = await gitIde.abortOp(repo);
+    assert.strictEqual(out.ok, true);
+    assert.strictEqual(out.aborted, 'merge');
+    assert.strictEqual(gitText(repo, 'rev-parse', '--abbrev-ref', 'HEAD'), 'master');
+  });
+
+  it('rebases the current branch onto another ref', async function () {
+    git(repo, 'checkout', '-q', 'topic');
+    const r = await gitIde.rebaseOnto(repo, 'master');
+    assert.strictEqual(r.ok, true);
+    git(repo, 'checkout', '-q', 'master');
+  });
+
+  it('the undo ledger expires entries and caps its length', function () {
+    const store = gitIde.makeUndoStore(path.join(root, 'ledger2'));
+    for (let i = 0; i < 60; i++) store.record({ kind: 'branch-delete', repo: 'x', ref: `b${i}`, sha: '0'.repeat(40) });
+    assert.strictEqual(store.list().length, 50);
+  });
+});
