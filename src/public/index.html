@@ -572,8 +572,15 @@
             <div class="git-ide-body" id="gitIdeBody">
                 <nav class="git-ide-tree" id="gitIdeTree" aria-label="Branch tree"></nav>
                 <section class="git-ide-history">
-                    <div class="git-ide-filter" id="gitIdeFilter"></div>
-                    <div class="git-ide-list" id="gitIdeList" role="list"></div>
+                    <div class="git-ide-filter" id="gitIdeFilter">
+                        <select id="gitIdeScope" class="git-ide-scope" aria-label="History scope">
+                            <option value="current">当前分支</option>
+                            <option value="all">全部分支</option>
+                        </select>
+                        <input id="gitIdeText" class="git-ide-q" type="search" placeholder="搜索提交信息…" autocomplete="off">
+                        <input id="gitIdeAuthor" class="git-ide-q git-ide-q-author" type="search" placeholder="作者…" autocomplete="off">
+                    </div>
+                    <div class="git-ide-list" id="gitIdeList" role="list" tabindex="0"></div>
                 </section>
                 <section class="git-ide-detail" id="gitIdeDetail"></section>
             </div>
