@@ -90,6 +90,10 @@
       this.selectedSha = null;
       this.refs = null;          // last /refs answer, the branch tree's data
       this.treeCollapsed = readState().treeCollapsed || [];
+      // Per-repo first-paint cache: filled by hover prewarm or a previous
+      // visit, consumed by openRepo. Keyed by absolute path.
+      this.cache = {};
+      this.prewarming = null;
     }
 
     el(id) { return document.getElementById(id); }
@@ -524,20 +528,23 @@
       if (!this.repoPath) return;
       if (reset) { this.logOffset = 0; this.commits = []; }
       const list = this.el('gitIdeList');
-      if (reset) {
+      const q = this.logQuery(this.logOffset);
+      // A refresh of the SAME query (⟳, reopen from cache) swaps rows in
+      // place — the skeleton is for a genuinely new view, never a flash
+      // between two renders of the same one.
+      const sameQuery = q.toString() === this.lastQuery;
+      this.lastQuery = q.toString();
+      if (reset && !sameQuery) {
         list.textContent = '';
         list.appendChild(this.skeletons(10));
       }
       this.beginLoad();
-      const q = new URLSearchParams({
-        path: this.repoPath, scope: this.scope, offset: String(this.logOffset)
-      });
-      if (this.text) q.set('text', this.text);
-      if (this.author) q.set('author', this.author);
       const { status, data } = await this.get(`/api/git/ide/log?${q}`);
       this.endLoad();
       if (status !== 200) {
-        if (reset) {
+        // A failed REFRESH keeps the rows already on screen; only a new view
+        // that never loaded shows the error state.
+        if (reset && !sameQuery) {
           list.textContent = '';
           const err = document.createElement('div');
           err.className = 'git-ide-empty';
@@ -682,7 +689,62 @@
       // drawer shares the screen with the terminal.
       this.el('gitIdeMask').hidden = !window.matchMedia('(max-width: 768px)').matches;
       if (this.width) this.applyWidth(this.width);
+      // First paint from cache when we have one (a hover prewarm or the
+      // previous visit): the panel opens populated, then the reload below
+      // refreshes the same panes in place. Never a blank-then-pop.
+      const cached = this.cache[repoPath];
+      if (cached) {
+        this.summary = cached.summary || null;
+        this.refs = cached.refs || null;
+        this.commits = (cached.log && cached.log.commits) || [];
+        this.lanes = window.GitIdeGraph.computeLanes(this.commits);
+        this.hasMore = !!(cached.log && cached.log.hasMore);
+        this.logOffset = (cached.log && cached.log.nextOffset) || 0;
+        this.selectedSha = null;
+        // Claim this query as current: the reload below then refreshes in
+        // place instead of flashing a skeleton over the cached paint.
+        this.lastQuery = this.logQuery().toString();
+        this.applySummary(cached.summary);
+        this.renderTree();
+        const list = this.el('gitIdeList');
+        list.textContent = '';
+        if (this.commits.length) this.appendRows(0);
+        list.appendChild(this.sentinel);
+      }
       this.reload();
+    }
+
+    // The history query for the current filters at a given offset — one
+    // builder so the cache-paint path and loadLog always agree on the string.
+    logQuery(offset = 0) {
+      const q = new URLSearchParams({
+        path: this.repoPath, scope: this.scope, offset: String(offset)
+      });
+      if (this.text) q.set('text', this.text);
+      if (this.author) q.set('author', this.author);
+      return q;
+    }
+
+    // ── prewarm + cache (task 6) ──────────────────────────────────────────
+    //
+    // The prewarm trigger is intent, not a timer: hovering a row's deep-dive
+    // button means the open is one click away, so the summary and the first
+    // history page are fetched once per repo per 60s and cached. Nothing
+    // polls, nothing warms repos nobody looked at.
+
+    prewarm(repoPath) {
+      if (!repoPath || this.cache[repoPath]) return;
+      if (this.prewarming && this.prewarming.has(repoPath)) return;
+      (this.prewarming = this.prewarming || new Set()).add(repoPath);
+      const at = Date.now();
+      Promise.all([
+        this.get(`/api/git/ide/summary?path=${encodeURIComponent(repoPath)}`),
+        this.get(`/api/git/ide/log?path=${encodeURIComponent(repoPath)}&offset=0`),
+      ]).then(([s, l]) => {
+        if (s.status === 200 || l.status === 200) {
+          this.cache[repoPath] = { at, summary: s.status === 200 ? s.data : null, log: l.status === 200 ? l.data : null };
+        }
+      }).catch(() => {}).finally(() => this.prewarming.delete(repoPath));
     }
 
     close() {
@@ -705,17 +767,26 @@
       const { status, data } = await this.get(
         `/api/git/ide/summary?path=${encodeURIComponent(this.repoPath)}`);
       this.endLoad();
-      const pill = this.el('gitIdeBranchPill');
-      const counts = this.el('gitIdeCounts');
       if (status !== 200) {
-        pill.hidden = false;
-        pill.textContent = (data && data.error) || 'Cannot read this repository';
-        pill.classList.add('git-ide-pill-error');
-        counts.hidden = true;
         this.summary = null;
+        this.applySummary(null, (data && data.error) || 'Cannot read this repository');
         return;
       }
       this.summary = data;
+      if (this.cache[this.repoPath]) this.cache[this.repoPath].summary = data;
+      this.applySummary(data);
+    }
+
+    applySummary(data, error) {
+      const pill = this.el('gitIdeBranchPill');
+      const counts = this.el('gitIdeCounts');
+      if (!data) {
+        pill.hidden = false;
+        pill.textContent = error || 'Cannot read this repository';
+        pill.classList.add('git-ide-pill-error');
+        counts.hidden = true;
+        return;
+      }
       pill.classList.remove('git-ide-pill-error');
       pill.hidden = false;
       pill.textContent = data.detached ? `detached @ ${data.branch}` : data.branch;

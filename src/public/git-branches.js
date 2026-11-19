@@ -109,6 +109,19 @@
       // One delegated listener for every row, the way the file explorer does it:
       // eleven rows would otherwise mean eleven closures, re-created on every
       // render. The target travels in dataset, never innerHTML.
+      // Hovering the deep-dive button is the intent signal for a prewarm
+      // (git-ide.js): the summary + first history page fetch now, so the
+      // click opens populated. Once per repo, no timer.
+      this.el('branchList').addEventListener('mouseover', (e) => {
+        if (!e.target.closest) return;
+        const ide = e.target.closest('.row-ide');
+        if (!ide) return;
+        const row = ide.closest('.branch-row');
+        const name = row && row.dataset.repo;
+        const repoPath = name === '.' ? this.dir : (this.dir && name ? `${this.dir}/${name}` : null);
+        if (repoPath && window.gitIdePanel) window.gitIdePanel.prewarm(repoPath);
+      });
+
       this.el('branchList').addEventListener('click', (e) => {
         if (!e.target.closest) return;
         const btn = e.target.closest('.row-pull');
