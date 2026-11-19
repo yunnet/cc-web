@@ -6394,3 +6394,95 @@ button.usage-acct { cursor: pointer; }
     cursor: pointer;
 }
 .git-ide-menu button:hover { background: var(--bg-tertiary); color: var(--accent); }
+
+/* Git IDE: change list + commit box (phase C). The detail column's two tabs. */
+.git-ide-detail { display: flex; flex-direction: column; }
+.git-ide-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    margin: -10px -12px 10px;
+    padding: 0 12px;
+}
+.git-ide-tabs button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: calc(11.5px * var(--ui-scale, 1));
+    padding: 8px 10px;
+    cursor: pointer;
+}
+.git-ide-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.git-ide-pane { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.git-ide-pane[hidden] { display: none; }
+.git-ide-cgroup { margin-bottom: 8px; }
+.git-ide-cgroup-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    color: var(--text-secondary);
+    font-size: calc(10.5px * var(--ui-scale, 1));
+}
+.git-ide-cgroup-label.conflict { color: #e5534b; }
+[data-theme="light"] .git-ide-cgroup-label.conflict { color: #cf222e; }
+.git-ide-cgroup-all {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: calc(10.5px * var(--ui-scale, 1));
+    cursor: pointer;
+    padding: 0;
+}
+.git-ide-crow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 0;
+}
+.git-ide-crow .git-ide-file-name { flex: 1 1 0; }
+.git-ide-cact {
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: calc(10px * var(--ui-scale, 1));
+    padding: 1px 6px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+.git-ide-cact:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.git-ide-cact.danger:hover { color: #e5534b; }
+[data-theme="light"] .git-ide-cact.danger:hover { color: #cf222e; }
+.git-ide-commit-box {
+    margin-top: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.git-ide-commit-box textarea {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: calc(11.5px * var(--ui-scale, 1));
+    padding: 6px 8px;
+    resize: vertical;
+    min-height: 44px;
+    font-family: inherit;
+}
+.git-ide-commit-row { display: flex; align-items: center; gap: 8px; }
+.git-ide-amend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: calc(10.5px * var(--ui-scale, 1));
+    cursor: pointer;
+}
+.git-ide-commit-row .btn { margin-left: auto; }

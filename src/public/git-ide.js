@@ -136,6 +136,15 @@
       this.observeLayout();
       this.bindHistory();
       this.bindContextMenu();
+      this.el('gitIdeTabChanges').addEventListener('click', () => this.showDetailTab('changes'));
+      this.el('gitIdeTabDetail').addEventListener('click', () => this.showDetailTab('detail'));
+      this.el('gitIdeCommitBtn').addEventListener('click', () => this.doCommit());
+      this.el('gitIdeCommitMsg').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          this.doCommit();
+        }
+      });
     }
 
     // ── right-click references + send-to-conversation (phase B) ───────────
@@ -487,21 +496,24 @@
       this.el('gitIdeList').focus({ preventScroll: true });
     }
 
-    select(sha) {
+    select(sha, opts) {
       this.selectedSha = sha;
       const list = this.el('gitIdeList');
       for (const row of list.querySelectorAll('.git-ide-row')) {
         row.classList.toggle('selected', row.dataset.sha === sha);
       }
       // Selection IS navigation: the detail pane follows the arrows too,
-      // never only the mouse (plan §3.4.9).
+      // never only the mouse (plan §3.4.9) — but the SILENT auto-select of
+      // the newest commit on open must not yank the tab out from under a
+      // user looking at their changes.
+      if (!opts || opts.switchTab !== false) this.showDetailTab('detail');
       this.loadDetail(sha);
     }
 
     // ── commit detail + inline diff (task 5) ──────────────────────────────
 
     async loadDetail(sha) {
-      const pane = this.el('gitIdeDetail');
+      const pane = this.el('gitIdeCommitDetail');
       if (!pane || !sha) return;
       pane.textContent = '';
       pane.appendChild(this.skeletons(6));
@@ -522,7 +534,7 @@
     }
 
     renderDetail(data, sha) {
-      const pane = this.el('gitIdeDetail');
+      const pane = this.el('gitIdeCommitDetail');
       const frag = document.createDocumentFragment();
       const commit = data.commit || {};
 
@@ -587,7 +599,7 @@
         return;
       }
       // Close any other open diff first (accordion).
-      const pane = this.el('gitIdeDetail');
+      const pane = this.el('gitIdeCommitDetail');
       for (const open of pane.querySelectorAll('.git-ide-diff')) open.remove();
 
       const holder = document.createElement('div');
@@ -745,8 +757,9 @@
       list.appendChild(this.sentinel);
       this.sentinel.textContent = this.hasMore ? '↓ 滚动加载更多' : '';
       // First open: the newest commit is already the answer to "what just
-      // happened" — select it so the detail column never opens empty.
-      if (reset && !this.selectedSha && this.commits.length) this.select(this.commits[0].sha);
+      // happened" — select it (silently: no tab switch) so the detail tab is
+      // never empty when the user lands on it.
+      if (reset && !this.selectedSha && this.commits.length) this.select(this.commits[0].sha, { switchTab: false });
     }
 
     // Rows for commits[start..], each a fixed 24px so the lane cells stack
@@ -863,6 +876,10 @@
       // drawer shares the screen with the terminal.
       this.el('gitIdeMask').hidden = !window.matchMedia('(max-width: 768px)').matches;
       if (this.width) this.applyWidth(this.width);
+      // Which tab opens first is decided once, by the tree's state: dirty →
+      // 变更 (there is something to do), clean → 详情. Later refreshes never
+      // yank the tab back out from under the user.
+      this.justOpened = true;
       // First paint from cache when we have one (a hover prewarm or the
       // previous visit): the panel opens populated, then the reload below
       // refreshes the same panes in place. Never a blank-then-pop.
@@ -934,6 +951,178 @@
       this.loadSummary();
       this.loadRefs();
       this.loadLog(true);
+      this.loadStatus();
+    }
+
+    // ── change list + commit box (phase C) ────────────────────────────────
+
+    async loadStatus() {
+      const box = this.el('gitIdeChangeList');
+      if (!box) return;
+      box.textContent = '';
+      const sk = document.createElement('div');
+      sk.className = 'git-ide-skel';
+      box.appendChild(sk);
+      this.beginLoad();
+      const { status, data } = await this.get(
+        `/api/git/ide/status?path=${encodeURIComponent(this.repoPath)}`);
+      this.endLoad();
+      if (!box.isConnected) return;
+      box.textContent = '';
+      if (status !== 200) {
+        const err = document.createElement('div');
+        err.className = 'git-ide-empty';
+        err.textContent = (data && data.error) || 'Cannot read the working tree';
+        box.appendChild(err);
+        return;
+      }
+      this.renderChanges(data);
+    }
+
+    renderChanges(st) {
+      const box = this.el('gitIdeChangeList');
+      const frag = document.createDocumentFragment();
+      const groups = [
+        { key: 'conflicts', label: '冲突', rows: st.conflicts, ops: false },
+        { key: 'staged', label: '已暂存', rows: st.staged, ops: true, all: 'unstage', allLabel: '全部取消' },
+        { key: 'changed', label: '更改', rows: st.changed, ops: true, all: 'stage', allLabel: '全部暂存' },
+        { key: 'untracked', label: '未跟踪', rows: st.untracked.map((p) => ({ path: p })), ops: true, all: 'stage', allLabel: '全部暂存' },
+      ];
+      let any = false;
+      for (const g of groups) {
+        if (!g.rows.length) continue;
+        any = true;
+        const wrap = document.createElement('div');
+        wrap.className = 'git-ide-cgroup';
+        const head = document.createElement('div');
+        head.className = 'git-ide-cgroup-head';
+        const label = document.createElement('span');
+        label.className = 'git-ide-cgroup-label' + (g.key === 'conflicts' ? ' conflict' : '');
+        label.textContent = `${g.label} ${g.rows.length}`;
+        head.appendChild(label);
+        if (g.all) {
+          const allBtn = document.createElement('button');
+          allBtn.type = 'button';
+          allBtn.className = 'git-ide-cgroup-all';
+          allBtn.textContent = g.allLabel;
+          allBtn.addEventListener('click', () => this.writeFiles(g.all, g.rows.map((r) => r.path)));
+          head.appendChild(allBtn);
+        }
+        wrap.appendChild(head);
+        for (const row of g.rows) {
+          const item = document.createElement('div');
+          item.className = 'git-ide-crow';
+          const name = document.createElement('span');
+          name.className = 'git-ide-file-name';
+          name.textContent = row.renameFrom ? `${row.renameFrom} → ${row.path}` : row.path;
+          name.title = name.textContent;
+          item.appendChild(name);
+          if (g.ops) {
+            const acts = g.key === 'staged'
+              ? [['unstage', '取消', '取消暂存'], ['discard', '丢弃', '丢弃更改']]
+              : [['stage', '暂存', '暂存'], ['discard', '丢弃', '丢弃']];
+            for (const [op, glyph, aria] of acts) {
+              const b = document.createElement('button');
+              b.type = 'button';
+              b.className = `git-ide-cact ${op}` + (op === 'discard' ? ' danger' : '');
+              b.textContent = glyph;
+              b.setAttribute('aria-label', `${aria} ${row.path}`);
+              b.addEventListener('click', () => {
+                if (op === 'discard') {
+                  this.confirmDiscard([row.path]).then((yes) => { if (yes) this.writeFiles('discard', [row.path]); });
+                } else {
+                  this.writeFiles(op, [row.path]);
+                }
+              });
+              item.appendChild(b);
+            }
+          }
+          wrap.appendChild(item);
+        }
+        frag.appendChild(wrap);
+      }
+      if (!any) {
+        const clean = document.createElement('div');
+        clean.className = 'git-ide-empty';
+        clean.textContent = '工作区干净';
+        frag.appendChild(clean);
+      }
+      box.appendChild(frag);
+    }
+
+    confirmDiscard(files) {
+      const app = window.app;
+      const one = files.length === 1 ? `「${files[0]}」` : `${files.length} 个文件`;
+      if (app && app.confirmDialog) {
+        return app.confirmDialog({
+          title: '丢弃更改',
+          body: `${one} 的未提交更改将被丢弃，此操作无法撤销。`,
+          confirmText: '丢弃',
+          cancelText: '取消',
+          danger: true
+        });
+      }
+      return Promise.resolve(window.confirm(`丢弃 ${one} 的更改？无法撤销。`));
+    }
+
+    // One POST for stage/unstage/discard, then the panes that could have
+    // changed all refresh (status, summary pill, history's newest commit).
+    async writeFiles(op, files) {
+      this.beginLoad();
+      const { status, data } = await fetch(`/api/git/ide/${op}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.auth() },
+        body: JSON.stringify({ path: this.repoPath, files })
+      }).then((r) => r.json().then((d) => ({ status: r.status, data: d }))).catch(() => ({ status: 0, data: {} }));
+      this.endLoad();
+      if (status !== 200) {
+        if (window.app && window.app.showToast) {
+          window.app.showToast((data && data.error) || '操作失败', true);
+        }
+        return;
+      }
+      this.loadStatus();
+      this.loadSummary();
+      this.loadLog(true);
+    }
+
+    async doCommit() {
+      const msgEl = this.el('gitIdeCommitMsg');
+      const message = msgEl.value.trim();
+      if (!message) {
+        window.app.showToast('写点提交信息再提交', true);
+        msgEl.focus();
+        return;
+      }
+      const btn = this.el('gitIdeCommitBtn');
+      btn.disabled = true;
+      const amend = this.el('gitIdeAmend').checked;
+      this.beginLoad();
+      const { status, data } = await fetch('/api/git/ide/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.auth() },
+        body: JSON.stringify({ path: this.repoPath, message, amend })
+      }).then((r) => r.json().then((d) => ({ status: r.status, data: d }))).catch(() => ({ status: 0, data: {} }));
+      this.endLoad();
+      btn.disabled = false;
+      if (status !== 200) {
+        window.app.showToast((data && data.error) || '提交失败', true);
+        return;
+      }
+      msgEl.value = '';
+      this.el('gitIdeAmend').checked = false;
+      window.app.showToast(`已提交 ${data.head || ''}`);
+      this.loadStatus();
+      this.loadSummary();
+      this.loadLog(true);
+    }
+
+    showDetailTab(which) {
+      const isChanges = which === 'changes';
+      this.el('gitIdeTabChanges').classList.toggle('active', isChanges);
+      this.el('gitIdeTabDetail').classList.toggle('active', !isChanges);
+      this.el('gitIdeChanges').hidden = !isChanges;
+      this.el('gitIdeCommitDetail').hidden = isChanges;
     }
 
     async loadSummary() {
@@ -965,6 +1154,10 @@
       pill.hidden = false;
       pill.textContent = data.detached ? `detached @ ${data.branch}` : data.branch;
       pill.title = data.branch || '';
+      if (this.justOpened) {
+        this.justOpened = false;
+        this.showDetailTab(data.dirty ? 'changes' : 'detail');
+      }
       const bits = [];
       if (data.ahead) bits.push(`↑${data.ahead}`);
       if (data.behind) bits.push(`↓${data.behind}`);

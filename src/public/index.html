@@ -582,7 +582,23 @@
                     </div>
                     <div class="git-ide-list" id="gitIdeList" role="list" tabindex="0"></div>
                 </section>
-                <section class="git-ide-detail" id="gitIdeDetail"></section>
+                <section class="git-ide-detail" id="gitIdeDetail">
+                    <div class="git-ide-tabs" role="tablist">
+                        <button type="button" id="gitIdeTabChanges" class="active" role="tab">变更</button>
+                        <button type="button" id="gitIdeTabDetail" role="tab">详情</button>
+                    </div>
+                    <div class="git-ide-pane" id="gitIdeChanges">
+                        <div id="gitIdeChangeList"></div>
+                        <div class="git-ide-commit-box">
+                            <textarea id="gitIdeCommitMsg" rows="2" placeholder="提交信息…（Ctrl+Enter 提交）"></textarea>
+                            <div class="git-ide-commit-row">
+                                <label class="git-ide-amend"><input type="checkbox" id="gitIdeAmend">修补上次提交</label>
+                                <button type="button" class="btn btn-small btn-primary" id="gitIdeCommitBtn">提交</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="git-ide-pane" id="gitIdeCommitDetail" hidden></div>
+                </section>
             </div>
         </aside>
         <div class="git-ide-mask" id="gitIdeMask" hidden></div>
