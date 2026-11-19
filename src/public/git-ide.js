@@ -315,7 +315,204 @@
       for (const row of list.querySelectorAll('.git-ide-row')) {
         row.classList.toggle('selected', row.dataset.sha === sha);
       }
-      // The detail pane (task 5) renders from this.selectedSha.
+      // Selection IS navigation: the detail pane follows the arrows too,
+      // never only the mouse (plan §3.4.9).
+      this.loadDetail(sha);
+    }
+
+    // ── commit detail + inline diff (task 5) ──────────────────────────────
+
+    async loadDetail(sha) {
+      const pane = this.el('gitIdeDetail');
+      if (!pane || !sha) return;
+      pane.textContent = '';
+      pane.appendChild(this.skeletons(6));
+      this.beginLoad();
+      const { status, data } = await this.get(
+        `/api/git/ide/commit?path=${encodeURIComponent(this.repoPath)}&sha=${encodeURIComponent(sha)}`);
+      this.endLoad();
+      if (this.selectedSha !== sha) return;  // a newer selection won the race
+      pane.textContent = '';
+      if (status !== 200) {
+        const err = document.createElement('div');
+        err.className = 'git-ide-empty';
+        err.textContent = (data && data.error) || 'Cannot read this commit';
+        pane.appendChild(err);
+        return;
+      }
+      this.renderDetail(data, sha);
+    }
+
+    renderDetail(data, sha) {
+      const pane = this.el('gitIdeDetail');
+      const frag = document.createDocumentFragment();
+      const commit = data.commit || {};
+
+      const head = document.createElement('div');
+      head.className = 'git-ide-d-head';
+      const shaEl = document.createElement('button');
+      shaEl.type = 'button';
+      shaEl.className = 'git-ide-d-sha';
+      shaEl.textContent = sha.slice(0, 7);
+      // A click copies the short sha — the panel's own clipboard path.
+      shaEl.addEventListener('click', () => this.copyText(sha.slice(0, 7), '修订号已复制'));
+      head.appendChild(shaEl);
+      const who = document.createElement('span');
+      who.className = 'git-ide-d-who';
+      who.textContent = `${commit.author || ''} · ${commit.date ? new Date(commit.date).toLocaleString() : ''}`;
+      head.appendChild(who);
+      frag.appendChild(head);
+
+      const msg = document.createElement('div');
+      msg.className = 'git-ide-d-msg';
+      msg.textContent = (commit.message || '').trim() || '(no message)';
+      frag.appendChild(msg);
+
+      const filesTitle = document.createElement('div');
+      filesTitle.className = 'git-ide-d-files-title';
+      const n = (data.files || []).length;
+      filesTitle.textContent = n ? `变更 ${n} 个文件` : '没有文件变更';
+      frag.appendChild(filesTitle);
+
+      for (const f of data.files || []) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'git-ide-file';
+        row.dataset.path = f.path;
+        const st = document.createElement('span');
+        st.className = 'git-ide-file-st ' + (f.status || 'M').toLowerCase();
+        st.textContent = f.status || 'M';
+        row.appendChild(st);
+        const name = document.createElement('span');
+        name.className = 'git-ide-file-name';
+        name.textContent = f.renameFrom ? `${f.renameFrom} → ${f.path}` : f.path;
+        name.title = name.textContent;
+        row.appendChild(name);
+        const counts = document.createElement('span');
+        counts.className = 'git-ide-file-counts';
+        counts.textContent = `+${f.add} −${f.del}`;
+        counts.classList.add(f.add !== '0' ? 'has-add' : '');
+        if (f.del !== '0') counts.classList.add('has-del');
+        row.appendChild(counts);
+        // Click a file → its diff expands under it, one at a time (an
+        // accordion: an endless stack of open diffs is not a detail pane).
+        row.addEventListener('click', () => this.toggleFileDiff(row, f.path, sha));
+        frag.appendChild(row);
+      }
+      pane.appendChild(frag);
+    }
+
+    async toggleFileDiff(row, file, sha) {
+      const existing = row.nextElementSibling;
+      if (existing && existing.classList.contains('git-ide-diff')) {
+        existing.remove();   // second click collapses
+        return;
+      }
+      // Close any other open diff first (accordion).
+      const pane = this.el('gitIdeDetail');
+      for (const open of pane.querySelectorAll('.git-ide-diff')) open.remove();
+
+      const holder = document.createElement('div');
+      holder.className = 'git-ide-diff loading';
+      row.after(holder);
+      this.beginLoad();
+      const { status, data } = await this.get(
+        `/api/git/ide/diff?path=${encodeURIComponent(this.repoPath)}&commit=${encodeURIComponent(sha)}&file=${encodeURIComponent(file)}`);
+      this.endLoad();
+      if (!holder.isConnected) return;  // collapsed while in flight
+      holder.classList.remove('loading');
+      if (status !== 200) {
+        holder.textContent = (data && data.error) || 'Cannot read this diff';
+        return;
+      }
+      this.renderDiff(holder, data.diff || '', !!data.truncated);
+    }
+
+    // A unified diff, parsed into typed rows. File-header lines (diff --git,
+    // index, ---/+++) are dropped — the clicked file row already names the
+    // file; the hunk headers carry the alignment that matters.
+    renderDiff(holder, text, truncated) {
+      const bar = document.createElement('div');
+      bar.className = 'git-ide-diff-bar';
+      const wrapBtn = document.createElement('button');
+      wrapBtn.type = 'button';
+      wrapBtn.className = 'git-ide-diff-btn';
+      this.diffWrap = !!(readState().diffWrap);
+      wrapBtn.textContent = this.diffWrap ? '自动换行：开' : '自动换行：关';
+      wrapBtn.addEventListener('click', () => {
+        this.diffWrap = !this.diffWrap;
+        writeState({ diffWrap: this.diffWrap });
+        holder.classList.toggle('wrapped', this.diffWrap);
+        wrapBtn.textContent = this.diffWrap ? '自动换行：开' : '自动换行：关';
+      });
+      bar.appendChild(wrapBtn);
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'git-ide-diff-btn';
+      copyBtn.textContent = '复制';
+      copyBtn.addEventListener('click', () => this.copyText(text, 'diff 已复制'));
+      bar.appendChild(copyBtn);
+      if (truncated) {
+        const note = document.createElement('span');
+        note.className = 'git-ide-diff-note';
+        note.textContent = '已截断（文件过大）';
+        bar.appendChild(note);
+      }
+      holder.appendChild(bar);
+
+      const body = document.createElement('div');
+      body.className = 'git-ide-diff-body';
+      if (this.diffWrap) holder.classList.add('wrapped');
+
+      let oldNo = 0, newNo = 0;
+      const frag = document.createDocumentFragment();
+      for (const raw of String(text).split('\n')) {
+        const line = document.createElement('div');
+        line.className = 'git-ide-dl';
+        const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunk) {
+          oldNo = Number(hunk[1]);
+          newNo = Number(hunk[2]);
+          line.classList.add('hunk');
+          const t = document.createElement('span');
+          t.className = 'git-ide-dl-num';
+          t.textContent = '…';
+          line.appendChild(t.cloneNode(true));
+          t.textContent = raw;
+          line.appendChild(t);
+          frag.appendChild(line);
+          continue;
+        }
+        if (raw.startsWith('---') || raw.startsWith('+++') || raw.startsWith('diff ') || raw.startsWith('index ') || raw.startsWith('new file') || raw.startsWith('deleted file') || raw.startsWith('similarity')) {
+          continue;  // header noise — the file row already names the file
+        }
+        const type = raw.startsWith('-') ? 'del' : raw.startsWith('+') ? 'add' : raw.startsWith('\\') ? 'meta' : 'ctx';
+        line.classList.add(type);
+        const oldEl = document.createElement('span');
+        oldEl.className = 'git-ide-dl-num';
+        oldEl.textContent = type === 'add' ? '' : String(oldNo++);
+        const newEl = document.createElement('span');
+        newEl.className = 'git-ide-dl-num';
+        newEl.textContent = type === 'del' ? '' : String(newNo++);
+        const txt = document.createElement('span');
+        txt.className = 'git-ide-dl-txt';
+        txt.textContent = raw;
+        line.append(oldEl, newEl, txt);
+        frag.appendChild(line);
+      }
+      body.appendChild(frag);
+      holder.appendChild(body);
+    }
+
+    copyText(text, okMessage) {
+      const done = () => {
+        if (window.app && window.app.showToast) window.app.showToast(okMessage);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, () => window.prompt('Copy this:', text));
+      } else {
+        window.prompt('Copy this:', text);
+      }
     }
 
     loadMore() {
@@ -366,6 +563,9 @@
       }
       list.appendChild(this.sentinel);
       this.sentinel.textContent = this.hasMore ? '↓ 滚动加载更多' : '';
+      // First open: the newest commit is already the answer to "what just
+      // happened" — select it so the detail column never opens empty.
+      if (reset && !this.selectedSha && this.commits.length) this.select(this.commits[0].sha);
     }
 
     // Rows for commits[start..], each a fixed 24px so the lane cells stack
