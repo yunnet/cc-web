@@ -6531,3 +6531,12 @@ button.usage-acct { cursor: pointer; }
     padding: 0 2px;
     flex: 0 0 auto;
 }
+
+.git-ide-push-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}

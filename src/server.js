@@ -62,6 +62,9 @@ class ClaudeCodeWebServer {
     // Scrollback depth is a user setting (Settings panel → /api/settings/scrollback).
     // Applied to the store immediately so the very first autosave already honours it.
     this.sessionStore.maxOutputChunks = this.loadScrollbackChunks();
+    // Git IDE push gate (phase E): default-off, instance-wide, admin/token
+    // only. Read here so the very first push attempt is already gated.
+    this.gitIdePushEnabled = this.readGitIdePushFlag();
     // Sidebar spaces (named working-directory groups). Same data dir as the
     // sessions; loaded in loadPersistedSessions, where the one-time migration
     // needs both sides in hand.
@@ -1538,6 +1541,13 @@ class ClaudeCodeWebServer {
     this.app.post('/api/git/ide/rebase', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'rebase')));
     this.app.post('/api/git/ide/abort', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'abort')));
     this.app.post('/api/git/ide/undo', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'undo')));
+
+    // Push (phase E): the only network write, running on the SERVER's git
+    // credentials. Default-off, persisted per instance, admin/token only —
+    // both to flip the switch and to push.
+    this.app.get('/api/git/ide/push-enabled', (req, res) => this.gitIdePushState(req, res));
+    this.app.post('/api/git/ide/push-enabled', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdePushToggle(req, res)));
+    this.app.post('/api/git/ide/push', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdePush(req, res)));
 
     // Runtime-editable plan directories (additive to auto-discovery). Normal
     // header auth. GET returns the configured dirs plus active session roots (the
@@ -3310,6 +3320,62 @@ class ClaudeCodeWebServer {
   async gitIdeDiff(req, res) {
     const q = ClaudeCodeWebServer.queryObject(req.query, ['commit', 'file']);
     return this.gitIdeRead(req, res, q.invalid, (p) => gitIde.diff(p, q.commit, q.file));
+  }
+
+  // ── push gate (phase E) ──────────────────────────────────────────────────
+  // The flag lives in <dataDir>/git-ide-push.json, read at startup and on
+  // every flip; default off; flipping and pushing are admin/token-only. A
+  // regular user can still SEE the state (the panel greys the entry on it).
+  readGitIdePushFlag() {
+    try {
+      return !!JSON.parse(fs.readFileSync(path.join(this.sessionStore.storageDir, 'git-ide-push.json'), 'utf8')).enabled;
+    } catch (_) { return false; }
+  }
+
+  gitIdePushState(req, res) {
+    res.json({
+      enabled: this.gitIdePushEnabled,
+      canSet: !this.authEnabled() || !req.user || req.user.role === 'admin'
+    });
+  }
+
+  async gitIdePushToggle(req, res) {
+    if (this.authEnabled() && req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'admins only' });
+    }
+    const enabled = !!(req.body || {}).enabled;
+    const target = path.join(this.sessionStore.storageDir, 'git-ide-push.json');
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+      const tmp = `${target}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ enabled }, null, 2));
+      fs.renameSync(tmp, target);
+    } catch (error) {
+      return res.status(500).json({ error: 'could not persist the setting', message: error.message });
+    }
+    this.gitIdePushEnabled = enabled;
+    res.json({ enabled });
+  }
+
+  async gitIdePush(req, res) {
+    if (!this.gitIdePushEnabled) {
+      return res.status(403).json({ error: 'push is disabled for this server (Settings → Git IDE)' });
+    }
+    if (this.authEnabled() && req.user && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'admins only' });
+    }
+    const repoPath = this.resolveGitIdeRepo({ query: { path: (req.body || {}).path } }, res);
+    if (!repoPath) return;
+    let result;
+    try {
+      result = await this.queueGitJob(() => gitIde.pushUpstream(repoPath));
+    } catch (error) {
+      return res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
+    }
+    if (!result || result.error !== undefined) {
+      return res.status(400).json({ error: (result && result.error) || 'push failed' });
+    }
+    res.json(result);
   }
 
   // Writes share the read resolver's gates (validatePath + must-be-a-repo)

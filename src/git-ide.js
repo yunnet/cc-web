@@ -266,7 +266,7 @@ module.exports = { summary, refs, log, commitDetail, diff, isSha, isRefToken, is
   LOG_PAGE, LOG_PAGE_MAX, LOG_SKIP_MAX, DIFF_MAX_BYTES,
   statusDetail, stageFiles, unstageFiles, discardFiles, commit,
   makeUndoStore, checkoutRef, createBranch, createTag, deleteBranch,
-  cherryPick, revertCommit, resetTo, mergeBranch, rebaseOnto, abortOp, undo };
+  cherryPick, revertCommit, resetTo, mergeBranch, rebaseOnto, abortOp, undo, pushUpstream };
 
 // ── writes (phase C): stage / unstage / discard / commit ───────────────────
 //
@@ -593,4 +593,19 @@ async function undo(repoPath, id, undoStore) {
 function lastMeaningful(out) {
   const lines = String(out || '').split(/\r?\n/).map((l) => l.split('\r').pop().trim()).filter(Boolean);
   return lines[lines.length - 1] || '';
+}
+
+// ── push (phase E): server credentials, behind a default-off gate ─────────
+//
+// A push runs as the SERVER's git credentials (ssh agent, credential helper
+// of the account cc-web runs under) — which is exactly why the route is
+// gated by a persisted, default-off flag and the module itself does nothing
+// clever: upstream tracking decides where, git decides what.
+
+const PUSH_TIMEOUT_MS = 120000;
+
+async function pushUpstream(repoPath) {
+  const r = await runGit(repoPath, ['push'], PUSH_TIMEOUT_MS);
+  if (r.ok) return { ok: true };
+  return { error: redactCredentials(lastMeaningful(r.out)).slice(0, 300) };
 }

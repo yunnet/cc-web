@@ -639,3 +639,70 @@ describe('git-ide history operations (phase D)', function () {
     assert.strictEqual(store.list().length, 50);
   });
 });
+
+describe('server route: git ide push gate (phase E)', function () {
+  this.timeout(30000);
+
+  const { ClaudeCodeWebServer } = require('../src/server');
+
+  function mockRes() {
+    return {
+      statusCode: 200, body: null,
+      status(code) { this.statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; }
+    };
+  }
+  function mockReq(body) { return { body: body || {}, user: undefined }; }
+
+  let server;
+  let root;
+  let repo;
+  let bare;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitidepush-'));
+    repo = makeRepo(path.join(root, 'one'));
+    // A local bare remote: push over the file transport, no network.
+    bare = path.join(root, 'origin.git');
+    execFileSync('git', ['init', '-q', '--bare', bare], { stdio: 'pipe' });
+    git(repo, 'remote', 'add', 'origin', bare);
+    git(repo, 'push', '-q', '-u', 'origin', 'HEAD');
+    server = new ClaudeCodeWebServer({ noAuth: true, folderMode: false });
+  });
+
+  after(function () {
+    if (server && typeof server.dispose === 'function') server.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('the gate reads off by default and blocks the push', async function () {
+    const state = mockRes();
+    server.gitIdePushState(mockReq(), state);
+    assert.strictEqual(state.body.enabled, false);
+    assert.strictEqual(state.body.canSet, true);
+
+    const push = mockRes();
+    await server.gitIdePush(mockReq({ path: repo }), push);
+    assert.strictEqual(push.statusCode, 403);
+    assert.match(push.body.error, /disabled/);
+  });
+
+  it('toggling persists and the push lands on the bare remote', async function () {
+    const on = mockRes();
+    await server.gitIdePushToggle(mockReq({ enabled: true }), on);
+    assert.strictEqual(on.statusCode, 200);
+    assert.strictEqual(server.gitIdePushEnabled, true);
+
+    const before = gitText(bare, 'rev-parse', '--short', 'HEAD');
+    commitFile(repo, 'pushed.txt', 'x\n', 'push me');
+    const push = mockRes();
+    await server.gitIdePush(mockReq({ path: repo }), push);
+    assert.strictEqual(push.statusCode, 200, JSON.stringify(push.body));
+    const after = gitText(bare, 'rev-parse', '--short', 'HEAD');
+    assert.notStrictEqual(before, after, 'the bare remote moved');
+
+    const off = mockRes();
+    await server.gitIdePushToggle(mockReq({ enabled: false }), off);
+    assert.strictEqual(server.gitIdePushEnabled, false);
+  });
+});

@@ -145,6 +145,38 @@
           this.doCommit();
         }
       });
+      this.bindPushToggle();
+    }
+
+    // ── push gate (phase E): a Settings switch, default off, admin-only ────
+
+    async bindPushToggle() {
+      const box = this.el('gitIdePushToggle');
+      if (!box) return;
+      this.pushEnabled = false;
+      this.pushCanSet = false;
+      box.addEventListener('change', async () => {
+        const wanted = box.checked;
+        const { status, data } = await fetch('/api/git/ide/push-enabled', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...this.auth() },
+          body: JSON.stringify({ enabled: wanted })
+        }).then((r) => r.json().then((d) => ({ status: r.status, data: d }))).catch(() => ({ status: 0, data: {} }));
+        if (status !== 200) {
+          box.checked = !wanted;
+          window.app.showToast((data && data.error) || '无法保存该设置', true);
+          return;
+        }
+        this.pushEnabled = !!data.enabled;
+        window.app.showToast(data.enabled ? 'Git IDE 推送已开启' : 'Git IDE 推送已关闭');
+      });
+      const { data } = await this.get('/api/git/ide/push-enabled');
+      if (data) {
+        this.pushEnabled = !!data.enabled;
+        this.pushCanSet = !!data.canSet;
+        box.checked = this.pushEnabled;
+        box.disabled = !this.pushCanSet;
+      }
     }
 
     // ── right-click references + send-to-conversation (phase B) ───────────
@@ -234,6 +266,17 @@
             { label: `变基当前分支到 ${name}`, act: () => this.confirmRun(`把当前分支变基到 ${name}？`, { label: '变基' }, 'rebase', { onto: name }, `已变基到 ${name}`) },
             { label: `删除分支 ${name}`, act: () => this.deleteBranchFlow(name) }
           );
+        } else if (this.pushEnabled) {
+          // Push is gated twice: the server flag AND this menu entry only
+          // existing for the current branch with an upstream to push to.
+          const s = this.summary || {};
+          if (s.ahead) {
+            items.unshift(
+              { label: `推送 ${name}（领先 ${s.ahead} 个提交）`, act: () => this.confirmRun(
+                `推送 ${name} 到它的上游？将使用服务器的 git 凭据，提交不可轻易撤回。`,
+                { label: '推送', danger: true }, 'push', {}, '已推送') }
+            );
+          }
         }
         return items;
       }
