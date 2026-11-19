@@ -24,6 +24,7 @@ const claudeConfig = require('./utils/claude-config');
 const { inlineLocalAssets } = require('./utils/inline-assets');
 const instanceLock = require('./instance-lock');
 const gitBranches = require('./git-branches');
+const gitIde = require('./git-ide');
 const hibernation = require('./hibernation');
 const { SharedPlaywright } = require('./shared-mcp');
 const skills = require('./skills');
@@ -633,6 +634,18 @@ class ClaudeCodeWebServer {
     if (value === undefined) return { ok: true, value: undefined };
     if (typeof value === 'string') return { ok: true, value };
     return { ok: false };
+  }
+
+  // Collect the named query params into one object, rejecting a repeated ?x=
+  // (which arrives as an Array) with a message the route answers 400 with.
+  static queryObject(query, keys) {
+    const out = {};
+    for (const key of keys) {
+      const raw = ClaudeCodeWebServer.singleQueryValue(query[key]);
+      if (!raw.ok) return { invalid: `${key} must be a single value` };
+      if (raw.value !== undefined) out[key] = raw.value;
+    }
+    return out;
   }
 
   // --- Authentication --------------------------------------------------------
@@ -1488,6 +1501,16 @@ class ClaudeCodeWebServer {
     this.app.post('/api/git/switch', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'switch')));
     this.app.post('/api/git/create', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'create')));
     this.app.post('/api/git/rename', ClaudeCodeWebServer.asyncRoute((req, res) => this.branchOp(req, res, 'rename')));
+
+    // Git IDE panel (single-repo depth, read-only in this phase): summary,
+    // refs, paged log, commit detail, one file's diff. Same path policy and
+    // the same git job queue as the branch panel; `path` names the repository
+    // itself. Not on a timer — opened/refreshed by user action only.
+    this.app.get('/api/git/ide/summary', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeSummary(req, res)));
+    this.app.get('/api/git/ide/refs', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeRefs(req, res)));
+    this.app.get('/api/git/ide/log', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeLog(req, res)));
+    this.app.get('/api/git/ide/commit', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeCommit(req, res)));
+    this.app.get('/api/git/ide/diff', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeDiff(req, res)));
 
     // Runtime-editable plan directories (additive to auto-discovery). Normal
     // header auth. GET returns the configured dirs plus active session roots (the
@@ -3197,6 +3220,70 @@ class ClaudeCodeWebServer {
     }
   }
 
+  // ── Git IDE reads: single-repo depth for the IDE panel ───────────────────
+  //
+  // Shared plumbing for the five /api/git/ide/* routes. `path` names the
+  // repository itself (an absolute path the branches panel already scanned),
+  // so resolveRepoTarget needs no repo-name segment; its validatePath +
+  // must-be-a-repo gates answer access-control and "not a repo" before any git
+  // fork happens. The read itself runs in the git job queue like every other
+  // fork, and param/git errors come back as 400 with the module's wording — a
+  // bad ref or a missing commit is a filter typo on the caller's side, not a
+  // server fault, and the panel shows the message inline.
+  resolveGitIdeRepo(req, res) {
+    const raw = ClaudeCodeWebServer.singleQueryValue(req.query.path);
+    if (!raw.ok) {
+      res.status(400).json({ error: 'path must be a single value' });
+      return null;
+    }
+    if (!raw.value) {
+      res.status(400).json({ error: 'path is required' });
+      return null;
+    }
+    const target = this.resolveRepoTarget(raw.value, undefined, req.user);
+    if (target.repoPath) return target.repoPath;
+    res.status(target.status).json(target.body);
+    return null;
+  }
+
+  async gitIdeRead(req, res, invalid, fn) {
+    const repoPath = this.resolveGitIdeRepo(req, res);
+    if (!repoPath) return;
+    if (invalid) return res.status(400).json({ error: invalid });
+    let result;
+    try {
+      result = await this.queueGitJob(() => fn(repoPath));
+    } catch (error) {
+      return res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
+    }
+    if (!result || result.error !== undefined) {
+      return res.status(400).json({ error: (result && result.error) || 'failed' });
+    }
+    res.json(result);
+  }
+
+  async gitIdeSummary(req, res) {
+    return this.gitIdeRead(req, res, null, (p) => gitIde.summary(p));
+  }
+
+  async gitIdeRefs(req, res) {
+    return this.gitIdeRead(req, res, null, (p) => gitIde.refs(p));
+  }
+
+  async gitIdeLog(req, res) {
+    const q = ClaudeCodeWebServer.queryObject(req.query, ['scope', 'text', 'author', 'file', 'offset', 'limit']);
+    return this.gitIdeRead(req, res, q.invalid, (p) => gitIde.log(p, q));
+  }
+
+  async gitIdeCommit(req, res) {
+    const q = ClaudeCodeWebServer.queryObject(req.query, ['sha']);
+    return this.gitIdeRead(req, res, q.invalid, (p) => gitIde.commitDetail(p, q.sha));
+  }
+
+  async gitIdeDiff(req, res) {
+    const q = ClaudeCodeWebServer.queryObject(req.query, ['commit', 'file']);
+    return this.gitIdeRead(req, res, q.invalid, (p) => gitIde.diff(p, q.commit, q.file));
+  }
   // GET /api/git/branches?path=<dir>[&status=1]
   // The default response is a pure file read (~13ms for 11 repos) so the panel
   // paints immediately. status=1 shells out to git once per repo and is only

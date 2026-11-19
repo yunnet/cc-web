@@ -558,4 +558,4 @@ async function attachStatus(repos) {
 }
 
 module.exports = { scanBranches, attachStatus, readHead, readStatus, pullRepo, overwrittenFiles, redactCredentials,
-  fetchRepo, fetchRepos, isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS };
+  fetchRepo, fetchRepos, isValidBranchName, listRefs, switchBranch, createBranch, renameBranch, processTree, killTree, setKilledTreeLogger, MAX_REPOS, MAX_ENTRIES, PULL_TIMEOUT_MS, runGit };

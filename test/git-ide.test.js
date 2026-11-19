@@ -1,0 +1,365 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const gitIde = require('../src/git-ide');
+
+// Real git trees, not mocks, for the same reason as git-branches.test.js: the
+// module's whole job is asking git and parsing the answer, and the cases that
+// break it (decoration strings, rename lines, tracking ahead/behind) only
+// exist once git has written them.
+function git(cwd, ...args) {
+  return execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+}
+
+function gitText(cwd, ...args) {
+  return String(git(cwd, ...args)).trim();
+}
+
+function commitFile(repo, name, content, message) {
+  fs.writeFileSync(path.join(repo, name), content);
+  git(repo, 'add', name);
+  git(repo, 'commit', '-qm', message);
+}
+
+function makeRepo(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  execFileSync('git', ['init', '-q', dir], { stdio: 'pipe' });
+  git(dir, 'config', 'user.email', 'test@example.com');
+  git(dir, 'config', 'user.name', 'Test');
+  commitFile(dir, 'a.txt', 'one\n', 'initial');
+  return dir;
+}
+
+describe('git-ide', function () {
+  this.timeout(20000);
+
+  let root;
+  let repo;
+  let defaultBranch;
+  let firstSha;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitide-'));
+    repo = makeRepo(path.join(root, 'repo'));
+    defaultBranch = gitText(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+    firstSha = gitText(repo, 'rev-parse', 'HEAD');
+
+    commitFile(repo, 'b.txt', 'two\n', 'second: beta feature');
+    git(repo, 'tag', 'v1');
+    commitFile(repo, 'c.txt', 'three\n', 'third commit');
+
+    // A side branch whose commit is NOT an ancestor of the default branch:
+    // scope=current must exclude it, scope=all must include it.
+    git(repo, 'checkout', '-qb', 'side', firstSha);
+    commitFile(repo, 'side.txt', 'side\n', 'side branch work');
+
+    // Remote-tracking refs and upstream config without any network: status
+    // then reports the default branch as ahead of origin. All three settings
+    // matter — without remote.origin.fetch, git cannot map the merge ref to
+    // refs/remotes/* and the upstream silently resolves to nothing (verified:
+    // %(upstream:short) comes back empty and status -b prints no counts).
+    git(repo, 'checkout', '-q', defaultBranch);
+    git(repo, 'update-ref', `refs/remotes/origin/${defaultBranch}`, firstSha);
+    git(repo, 'config', 'remote.origin.url', path.join(root, 'nowhere'));
+    git(repo, 'config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*');
+    git(repo, 'config', `branch.${defaultBranch}.remote`, 'origin');
+    git(repo, 'config', `branch.${defaultBranch}.merge`, `refs/heads/${defaultBranch}`);
+  });
+
+  after(function () {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  describe('summary', function () {
+    it('reports branch, dirty count and ahead/behind against upstream', async function () {
+      fs.writeFileSync(path.join(repo, 'dirty.txt'), 'x\n');
+      try {
+        const s = await gitIde.summary(repo);
+        assert.strictEqual(s.branch, defaultBranch);
+        assert.strictEqual(s.dirty, 1);
+        assert.strictEqual(s.ahead, 2); // two commits past the origin ref
+        assert.strictEqual(s.behind, 0);
+        assert.strictEqual(s.detached, false);
+        assert.ok(/^[0-9a-f]{40}$/.test(s.head));
+        assert.strictEqual(s.inProgress, null);
+      } finally {
+        fs.rmSync(path.join(repo, 'dirty.txt'));
+      }
+    });
+
+    it('counts stashes', async function () {
+      const before = await gitIde.summary(repo);
+      // A modification to a TRACKED file: `git stash` without -u ignores
+      // untracked files, so a brand-new file would stash nothing and the pop
+      // below would have no entry to restore.
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'stashed\n');
+      git(repo, 'stash', '-q');
+      try {
+        const s = await gitIde.summary(repo);
+        assert.strictEqual(s.stashes, before.stashes + 1);
+      } finally {
+        git(repo, 'stash', 'pop', '-q');
+      }
+    });
+
+    it('names the half-finished operation that owns the repo', async function () {
+      const mergeHead = path.join(repo, '.git', 'MERGE_HEAD');
+      fs.writeFileSync(mergeHead, firstSha + '\n');
+      try {
+        const s = await gitIde.summary(repo);
+        assert.strictEqual(s.inProgress, 'merge');
+      } finally {
+        fs.rmSync(mergeHead);
+      }
+    });
+
+    it('reports a detached HEAD without throwing', async function () {
+      const other = makeRepo(path.join(root, 'detached'));
+      git(other, 'checkout', '-q', '--detach');
+      const s = await gitIde.summary(other);
+      assert.strictEqual(s.detached, true);
+      assert.match(s.branch, /^[0-9a-f]{7,40}$/);
+    });
+  });
+
+  describe('refs', function () {
+    it('groups local/remote/tags and marks the current branch', async function () {
+      const r = await gitIde.refs(repo);
+      const names = r.local.map((b) => b.name);
+      assert.ok(names.includes(defaultBranch));
+      assert.ok(names.includes('side'));
+      const cur = r.local.find((b) => b.name === defaultBranch);
+      assert.strictEqual(cur.current, true);
+      assert.strictEqual(cur.upstream, `origin/${defaultBranch}`);
+      assert.strictEqual(cur.ahead, 2);
+      assert.strictEqual(r.remote.map((b) => b.name).includes(`origin/${defaultBranch}`), true);
+      assert.ok(r.tags.includes('v1'));
+    });
+
+    it('says invalid for a directory that is not a repository', async function () {
+      const plain = path.join(root, 'plain');
+      fs.mkdirSync(plain);
+      const r = await gitIde.refs(plain);
+      assert.ok(r.error);
+    });
+  });
+
+  describe('log', function () {
+    it('pages forward with offset and reports hasMore', async function () {
+      const page1 = await gitIde.log(repo, { limit: 2 });
+      assert.strictEqual(page1.commits.length, 2);
+      assert.strictEqual(page1.commits[0].subject, 'third commit');
+      assert.strictEqual(page1.hasMore, true);
+      assert.strictEqual(page1.nextOffset, 2);
+      const page2 = await gitIde.log(repo, { offset: 2 });
+      assert.strictEqual(page2.commits[0].subject, 'initial');
+      assert.strictEqual(page2.hasMore, false);
+      assert.ok(!page1.commits.some((c) => c.subject === 'side branch work'), 'scope=current excludes the side branch');
+    });
+
+    it('scope=all includes commits only reachable from other refs', async function () {
+      const all = await gitIde.log(repo, { scope: 'all' });
+      assert.ok(all.commits.some((c) => c.subject === 'side branch work'));
+    });
+
+    it('accepts a named ref as the scope', async function () {
+      const side = await gitIde.log(repo, { scope: 'side' });
+      assert.ok(side.commits.length >= 1);
+      assert.strictEqual(side.commits[0].subject, 'side branch work');
+    });
+
+    it('rejects a scope that could be read as an option', async function () {
+      const r = await gitIde.log(repo, { scope: '--upload-pack' });
+      assert.strictEqual(r.error, 'invalid ref');
+    });
+
+    it('filters by message text and by author', async function () {
+      const byText = await gitIde.log(repo, { text: 'beta' });
+      assert.strictEqual(byText.commits.length, 1);
+      assert.strictEqual(byText.commits[0].subject, 'second: beta feature');
+      const byAuthor = await gitIde.log(repo, { author: 'Nobody' });
+      assert.strictEqual(byAuthor.commits.length, 0);
+    });
+
+    it('filters by file path', async function () {
+      const byFile = await gitIde.log(repo, { file: 'c.txt' });
+      assert.strictEqual(byFile.commits.length, 1);
+      assert.strictEqual(byFile.commits[0].subject, 'third commit');
+    });
+
+    it('rejects a file filter that escapes the repo', async function () {
+      for (const bad of ['../outside.txt', '/etc/passwd', '.']) {
+        const r = await gitIde.log(repo, { file: bad });
+        assert.strictEqual(r.error, 'invalid file filter', bad);
+      }
+    });
+
+    it('carries parents and ref decorations for the graph', async function () {
+      const log = await gitIde.log(repo, { limit: 3 });
+      const initial = log.commits.find((c) => c.subject === 'initial');
+      assert.deepStrictEqual(initial.parents, []);
+      const third = log.commits.find((c) => c.subject === 'third commit');
+      assert.strictEqual(third.parents.length, 1);
+      const tagged = log.commits.find((c) => c.subject === 'second: beta feature');
+      assert.ok(tagged.refs.some((r) => r.includes('tag: v1')), `refs carry the tag: ${JSON.stringify(tagged.refs)}`);
+    });
+  });
+
+  describe('commitDetail', function () {
+    it('returns full message, author and per-file counts', async function () {
+      const sha = gitText(repo, 'rev-parse', 'HEAD');
+      const d = await gitIde.commitDetail(repo, sha);
+      assert.strictEqual(d.commit.sha, sha);
+      assert.strictEqual(d.commit.author, 'Test');
+      assert.match(d.commit.message, /third commit/);
+      const file = d.files.find((f) => f.path === 'c.txt');
+      assert.strictEqual(file.status, 'A');
+      assert.strictEqual(file.add, '1');
+      assert.strictEqual(file.del, '0');
+    });
+
+    it('shows a rename with its old path', async function () {
+      git(repo, 'mv', 'a.txt', 'renamed.txt');
+      git(repo, 'commit', '-qm', 'rename a');
+      try {
+        const sha = gitText(repo, 'rev-parse', 'HEAD');
+        const d = await gitIde.commitDetail(repo, sha);
+        const f = d.files[0];
+        assert.strictEqual(f.status, 'R');
+        assert.strictEqual(f.renameFrom, 'a.txt');
+        assert.strictEqual(f.path, 'renamed.txt');
+      } finally {
+        git(repo, 'reset', '-q', '--hard', 'HEAD~1');
+      }
+    });
+
+    it('rejects a sha-looking option injection', async function () {
+      const r = await gitIde.commitDetail(repo, '--amend');
+      assert.strictEqual(r.error, 'invalid sha');
+    });
+  });
+
+  describe('diff', function () {
+    it('shows the working tree, the index, and any commit', async function () {
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'one\nchanged\n');
+      try {
+        const wt = await gitIde.diff(repo, 'worktree', 'a.txt');
+        assert.match(wt.diff, /\+changed/);
+        assert.strictEqual(wt.truncated, false);
+
+        git(repo, 'add', 'a.txt');
+        const st = await gitIde.diff(repo, 'staged', 'a.txt');
+        assert.match(st.diff, /^\+\+\+ /m);
+
+        const sha = gitText(repo, 'rev-parse', 'HEAD');
+        const cm = await gitIde.diff(repo, sha, 'c.txt');
+        assert.match(cm.diff, /\+three/);
+      } finally {
+        git(repo, 'reset', '-q', '--hard', 'HEAD');
+      }
+    });
+
+    it('shows a root commit whole (no parent to diff against)', async function () {
+      const rootRepo = makeRepo(path.join(root, 'rootonly'));
+      const sha = gitText(rootRepo, 'rev-parse', 'HEAD');
+      const d = await gitIde.diff(rootRepo, sha, 'a.txt');
+      assert.match(d.diff, /\+one/);
+    });
+
+    it('rejects paths that are not one repo-relative file', async function () {
+      assert.strictEqual((await gitIde.diff(repo, 'worktree', '../x')).error, 'invalid file');
+      assert.strictEqual((await gitIde.diff(repo, 'worktree', '/etc/passwd')).error, 'invalid file');
+      assert.strictEqual((await gitIde.diff(repo, 'HEAD~1;rm', 'a.txt')).error, 'invalid commit');
+    });
+  });
+});
+
+describe('server route: git ide', function () {
+  this.timeout(20000);
+
+  const { ClaudeCodeWebServer } = require('../src/server');
+
+  function mockRes() {
+    return {
+      statusCode: 200,
+      body: null,
+      status(code) { this.statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; }
+    };
+  }
+
+  let server;
+  let root;
+  let repo;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitideroute-'));
+    repo = makeRepo(path.join(root, 'one'));
+    commitFile(repo, 'second.txt', 'x\n', 'second'); // paging needs two commits
+    fs.mkdirSync(path.join(root, 'plain'));
+    server = new ClaudeCodeWebServer({ noAuth: true, folderMode: false });
+  });
+
+  after(function () {
+    if (server && typeof server.dispose === 'function') server.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('summary answers 200 with the branch', async function () {
+    const res = mockRes();
+    await server.gitIdeSummary({ query: { path: repo } }, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.body.branch);
+    assert.strictEqual(res.body.inProgress, null);
+  });
+
+  it('log answers 200 and pages', async function () {
+    const res = mockRes();
+    await server.gitIdeLog({ query: { path: repo, limit: '1' } }, res);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.commits.length, 1);
+    assert.strictEqual(res.body.hasMore, true);
+    assert.strictEqual(res.body.nextOffset, 1);
+  });
+
+  it('a non-repository path is refused before git runs', async function () {
+    const res = mockRes();
+    await server.gitIdeSummary({ query: { path: path.join(root, 'plain') } }, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.body.reason, 'not-a-repo');
+  });
+
+  it('a repeated query value is a 400, not a crash', async function () {
+    const res = mockRes();
+    await server.gitIdeSummary({ query: { path: [repo, repo] } }, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.body.error, 'path must be a single value');
+  });
+
+  it('a bad scope or file filter comes back as a plain 400', async function () {
+    const badScope = mockRes();
+    await server.gitIdeLog({ query: { path: repo, scope: '--exec' } }, badScope);
+    assert.strictEqual(badScope.statusCode, 400);
+    assert.strictEqual(badScope.body.error, 'invalid ref');
+
+    const badFile = mockRes();
+    await server.gitIdeDiff({ query: { path: repo, commit: 'worktree', file: '../x' } }, badFile);
+    assert.strictEqual(badFile.statusCode, 400);
+    assert.strictEqual(badFile.body.error, 'invalid file');
+  });
+
+  it('diff serves a real working-tree change', async function () {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'changed\n');
+    try {
+      const res = mockRes();
+      await server.gitIdeDiff({ query: { path: repo, commit: 'worktree', file: 'a.txt' } }, res);
+      assert.strictEqual(res.statusCode, 200);
+      assert.match(res.body.diff, /\+changed/);
+    } finally {
+      git(repo, 'reset', '-q', '--hard', 'HEAD');
+    }
+  });
+});
