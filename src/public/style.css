@@ -313,7 +313,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     border: 1px solid var(--border);
     background: var(--bg-tertiary);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: calc(13px * var(--ui-scale, 1));
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -362,7 +362,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 }
 
 .sidebar-title {
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     font-weight: 600;
     color: var(--text-secondary);
 }
@@ -409,7 +409,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     border-radius: 6px;
     cursor: pointer;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: calc(13px * var(--ui-scale, 1));
     user-select: none;
 }
 
@@ -446,7 +446,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 .space-dir {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -543,7 +543,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 .sidebar-search input {
     width: 100%;
     box-sizing: border-box;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-scale, 1));
     padding: 5px 8px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -573,7 +573,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     padding: 7px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--ui-scale, 1));
     color: var(--text-primary);
 }
 
@@ -591,7 +591,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 
 .search-hit-space {
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     color: var(--text-secondary);
 }
 
@@ -609,7 +609,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     cursor: pointer;
     text-align: center;
     border-radius: 4px;
@@ -627,7 +627,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 
 .space-tasks:empty::before {
     content: '(empty)';
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     color: var(--text-secondary);
     opacity: .6;
 }
@@ -658,7 +658,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     border-radius: 6px;
     color: var(--text-secondary);
     font: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-scale, 1));
     text-align: left;
     cursor: pointer;
     opacity: .7;
@@ -689,7 +689,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 
 .remote-hint {
     flex-shrink: 0;
-    font-size: 10.5px;
+    font-size: calc(10.5px * var(--ui-scale, 1));
     opacity: .8;
 }
 
@@ -710,7 +710,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     padding: 24px;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--ui-scale, 1));
 }
 
 /* display:flex above outranks the UA's [hidden] rule: without this the hint
@@ -718,7 +718,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 .sidebar-empty[hidden] { display: none; }
 
 .sidebar-empty-hint {
-    font-size: 11px;
+    font-size: calc(11px * var(--ui-scale, 1));
     opacity: .75;
     line-height: 1.7;
 }
@@ -750,7 +750,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
 
 .tab-time {
     flex-shrink: 0;
-    font-size: 10.5px;
+    font-size: calc(10.5px * var(--ui-scale, 1));
     color: var(--text-secondary);
     opacity: .75;
     white-space: nowrap;
@@ -811,7 +811,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-scale, 1));
 }
 
 
@@ -866,7 +866,7 @@ body.sidebar-hidden .sidebar-resize-handle { display: none; }
     border: 1px solid var(--border);
     border-radius: 6px 6px 0 0;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-scale, 1));
     cursor: pointer;
     /* No transition: `all 0.3s` faded every part of the switch — the accent
        fill, the border, the text colour, even the weight going to 600 — so the
@@ -4643,7 +4643,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: calc(12px * var(--ui-scale, 1));
     font-weight: 600;
     line-height: 1;
 }
@@ -4681,7 +4681,7 @@ body.overlay-open .settings-modal       { z-index: 5004; }
     flex-shrink: 0;
     padding: 1px 5px;
     border-radius: 3px;
-    font-size: 10px;
+    font-size: calc(10px * var(--ui-scale, 1));
     font-weight: 600;
     line-height: 14px;
     background-color: var(--warning);

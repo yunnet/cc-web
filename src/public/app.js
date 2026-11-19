@@ -2988,6 +2988,11 @@ class ClaudeCodeWebInterface {
     applySettings(settings) {
         this.applyTheme(settings.theme);
         this.terminal.options.fontSize = settings.fontSize;
+        // The spaces sidebar's text answers to the same Font Size slider as the
+        // terminal (user 2026-11-19): its font-size rules read this factor,
+        // anchored to the UI's 14px base so 14 renders exactly the sizes the
+        // stylesheet ships and every other value scales proportionally.
+        document.documentElement.style.setProperty('--ui-scale', String(settings.fontSize / 14));
         const scrollDur = this.isMobile ? 0 : settings.smoothScrollDuration;
         this.terminal.options.smoothScrollDuration = scrollDur;
         if (this.splitContainer && this.splitContainer.splits) {
