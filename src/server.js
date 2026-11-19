@@ -1512,6 +1512,15 @@ class ClaudeCodeWebServer {
     this.app.get('/api/git/ide/commit', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeCommit(req, res)));
     this.app.get('/api/git/ide/diff', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeDiff(req, res)));
 
+    // Git IDE writes (phase C): stage / unstage / discard / commit + the
+    // grouped change list. All through the git job queue; the module refuses
+    // anything while a merge/rebase owns the repo. No push here.
+    this.app.get('/api/git/ide/status', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeRead(req, res, null, (p) => gitIde.statusDetail(p))));
+    this.app.post('/api/git/ide/stage', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'stage')));
+    this.app.post('/api/git/ide/unstage', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'unstage')));
+    this.app.post('/api/git/ide/discard', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'discard')));
+    this.app.post('/api/git/ide/commit', ClaudeCodeWebServer.asyncRoute((req, res) => this.gitIdeWrite(req, res, 'commit')));
+
     // Runtime-editable plan directories (additive to auto-discovery). Normal
     // header auth. GET returns the configured dirs plus active session roots (the
     // latter are already auto-covered, shown for context). POST replaces the list
@@ -3283,6 +3292,31 @@ class ClaudeCodeWebServer {
   async gitIdeDiff(req, res) {
     const q = ClaudeCodeWebServer.queryObject(req.query, ['commit', 'file']);
     return this.gitIdeRead(req, res, q.invalid, (p) => gitIde.diff(p, q.commit, q.file));
+  }
+
+  // Writes share the read resolver's gates (validatePath + must-be-a-repo)
+  // and add the body validation inside the module. Same queue, so a write
+  // never runs beside a pull or another write.
+  async gitIdeWrite(req, res, op) {
+    const repoPath = this.resolveGitIdeRepo({ query: { path: (req.body || {}).path } }, res);
+    if (!repoPath) return;
+    const body = req.body || {};
+    let result;
+    try {
+      result = await this.queueGitJob(() => {
+        if (op === 'stage') return gitIde.stageFiles(repoPath, body.files);
+        if (op === 'unstage') return gitIde.unstageFiles(repoPath, body.files);
+        if (op === 'discard') return gitIde.discardFiles(repoPath, body.files);
+        if (op === 'commit') return gitIde.commit(repoPath, body.message, !!body.amend);
+        return { error: 'unknown operation' };
+      });
+    } catch (error) {
+      return res.status(500).json({ error: 'failed', message: gitBranches.redactCredentials(error.message) });
+    }
+    if (!result || result.error !== undefined) {
+      return res.status(400).json({ error: (result && result.error) || 'failed' });
+    }
+    res.json(result);
   }
   // GET /api/git/branches?path=<dir>[&status=1]
   // The default response is a pure file read (~13ms for 11 repos) so the panel

@@ -363,3 +363,156 @@ describe('server route: git ide', function () {
     }
   });
 });
+
+describe('git-ide writes (phase C)', function () {
+  this.timeout(20000);
+
+  let root;
+  let repo;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitidew-'));
+    repo = makeRepo(path.join(root, 'w'));
+  });
+
+  after(function () {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('statusDetail groups conflicts/staged/changed/untracked', async function () {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'modified\n');   // tracked → changed
+    fs.writeFileSync(path.join(repo, 'new.txt'), 'x\n');        // staged
+    fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n');      // untracked
+    git(repo, 'add', 'new.txt');
+    try {
+      const s = await gitIde.statusDetail(repo);
+      assert.ok(s.changed.some((f) => f.path === 'a.txt'));
+      assert.ok(s.staged.some((f) => f.path === 'new.txt'));
+      assert.ok(s.untracked.includes('loose.txt'));
+    } finally {
+      git(repo, 'reset', '-q');
+      git(repo, 'checkout', '-q', '--', 'a.txt');
+      git(repo, 'clean', '-qfd');
+    }
+  });
+
+  it('stages, commits, and reports the new head', async function () {
+    fs.writeFileSync(path.join(repo, 'c1.txt'), 'v\n');
+    const st = await gitIde.stageFiles(repo, ['c1.txt']);
+    assert.deepStrictEqual(st, { ok: true });
+    const cm = await gitIde.commit(repo, 'phase c commit');
+    assert.strictEqual(cm.ok, true);
+    assert.match(cm.head, /^[0-9a-f]{7,}$/);
+    assert.strictEqual(gitText(repo, 'log', '-1', '--format=%s'), 'phase c commit');
+  });
+
+  it('unstage removes from the index without touching the file', async function () {
+    fs.writeFileSync(path.join(repo, 'u.txt'), 'keep\n');
+    git(repo, 'add', 'u.txt');
+    const r = await gitIde.unstageFiles(repo, ['u.txt']);
+    assert.deepStrictEqual(r, { ok: true });
+    assert.strictEqual(gitText(repo, 'status', '--porcelain', '--', 'u.txt'), '?? u.txt');
+    assert.ok(fs.existsSync(path.join(repo, 'u.txt')), 'the file itself survives');
+    git(repo, 'clean', '-qf');
+  });
+
+  it('unstage works before the first commit too (no HEAD yet)', async function () {
+    const fresh = path.join(root, 'fresh');
+    fs.mkdirSync(fresh);
+    execFileSync('git', ['init', '-q', fresh], { stdio: 'pipe' });
+    git(fresh, 'config', 'user.email', 't@e.c');
+    git(fresh, 'config', 'user.name', 'T');
+    fs.writeFileSync(path.join(fresh, 'a.txt'), 'x\n');
+    git(fresh, 'add', 'a.txt');
+    const r = await gitIde.unstageFiles(fresh, ['a.txt']);
+    assert.deepStrictEqual(r, { ok: true });
+    assert.strictEqual(gitText(fresh, 'status', '--porcelain'), '?? a.txt');
+  });
+
+  it('discard restores tracked modifications and removes untracked files', async function () {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'smashed\n');
+    fs.writeFileSync(path.join(repo, 'junk.txt'), 'delete me\n');
+    const r = await gitIde.discardFiles(repo, ['a.txt', 'junk.txt']);
+    assert.deepStrictEqual(r, { ok: true });
+    assert.strictEqual(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'one\n');
+    assert.ok(!fs.existsSync(path.join(repo, 'junk.txt')), 'untracked file removed');
+  });
+
+  it('refuses every write while a merge is in progress', async function () {
+    // Manufacture a merge-in-progress state without running a real merge:
+    // MERGE_HEAD's presence is exactly what git itself checks.
+    fs.writeFileSync(path.join(repo, '.git', 'MERGE_HEAD'), '0'.repeat(40) + '\n');
+    try {
+      const r = await gitIde.stageFiles(repo, ['a.txt']);
+      assert.match(r.error, /merge is in progress/);
+      const c = await gitIde.commit(repo, 'should fail');
+      assert.match(c.error, /merge is in progress/);
+    } finally {
+      fs.rmSync(path.join(repo, '.git', 'MERGE_HEAD'));
+    }
+  });
+
+  it('rejects an invalid file list and a bad message', async function () {
+    assert.strictEqual((await gitIde.stageFiles(repo, ['../escape'])).error, 'invalid file list');
+    assert.strictEqual((await gitIde.stageFiles(repo, [])).error, 'invalid file list');
+    assert.strictEqual((await gitIde.commit(repo, '')).error, 'invalid commit message');
+    assert.strictEqual((await gitIde.commit(repo, 'x\0y')).error, 'invalid commit message');
+  });
+});
+
+describe('server route: git ide writes', function () {
+  this.timeout(20000);
+
+  const { ClaudeCodeWebServer } = require('../src/server');
+
+  function mockRes() {
+    return {
+      statusCode: 200, body: null,
+      status(code) { this.statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; }
+    };
+  }
+
+  let server;
+  let root;
+  let repo;
+
+  before(function () {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccw-gitidewr-'));
+    repo = makeRepo(path.join(root, 'one'));
+    server = new ClaudeCodeWebServer({ noAuth: true, folderMode: false });
+  });
+
+  after(function () {
+    if (server && typeof server.dispose === 'function') server.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('stages and commits through the queue', async function () {
+    fs.writeFileSync(path.join(repo, 'r.txt'), 'route\n');
+    const st = mockRes();
+    await server.gitIdeWrite({ body: { path: repo, files: ['r.txt'] } }, st, 'stage');
+    assert.strictEqual(st.statusCode, 200);
+
+    const cm = mockRes();
+    await server.gitIdeWrite({ body: { path: repo, message: 'via route' } }, cm, 'commit');
+    assert.strictEqual(cm.statusCode, 200);
+    assert.strictEqual(cm.body.ok, true);
+    assert.strictEqual(gitText(repo, 'log', '-1', '--format=%s'), 'via route');
+  });
+
+  it('a non-repository path is a 400 before git runs', async function () {
+    const plain = path.join(root, 'plain');
+    fs.mkdirSync(plain);
+    const res = mockRes();
+    await server.gitIdeWrite({ body: { path: plain, files: ['x'] } }, res, 'stage');
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.body.reason, 'not-a-repo');
+  });
+
+  it('an unknown operation is a 400', async function () {
+    const res = mockRes();
+    await server.gitIdeWrite({ body: { path: repo } }, res, 'explode');
+    assert.strictEqual(res.statusCode, 400);
+  });
+});

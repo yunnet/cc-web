@@ -262,4 +262,132 @@ async function diff(repoPath, target, file) {
   };
 }
 
-module.exports = { summary, refs, log, commitDetail, diff, isSha, isRefToken, isRelPath, LOG_PAGE, LOG_PAGE_MAX, LOG_SKIP_MAX, DIFF_MAX_BYTES };
+module.exports = { summary, refs, log, commitDetail, diff, isSha, isRefToken, isRelPath,
+  LOG_PAGE, LOG_PAGE_MAX, LOG_SKIP_MAX, DIFF_MAX_BYTES,
+  statusDetail, stageFiles, unstageFiles, discardFiles, commit };
+
+// ── writes (phase C): stage / unstage / discard / commit ───────────────────
+//
+// Every write is local (no push in this phase), goes through the server's
+// git job queue (one fork at a time), and is REFUSED while a merge/rebase/
+// cherry-pick/revert/bisect owns the repo — git's answer to "commit during a
+// rebase" is a wrecked rebase, so the panel never gets the chance to ask.
+
+const WRITE_MAX_FILES = 50;
+
+function validFileList(files) {
+  if (!Array.isArray(files) || !files.length || files.length > WRITE_MAX_FILES) return null;
+  const seen = new Set();
+  for (const f of files) {
+    if (!isRelPath(f) || seen.has(f)) return null;
+    seen.add(f);
+  }
+  return [...seen];
+}
+
+// Group a porcelain line's XY into the change list's buckets.
+function parseStatus(out) {
+  const conflicts = [], staged = [], changed = [], untracked = [];
+  for (const line of out.split('\n').filter(Boolean)) {
+    const x = line[0], y = line[1];
+    const path = line.slice(3);
+    if (y === '?' && x === '?') { untracked.push(path); continue; }
+    // Renames print "old -> new"; the list shows the new name (what a diff
+    // opens) with the old one attached.
+    const arrow = path.indexOf(' -> ');
+    const name = arrow >= 0 ? path.slice(arrow + 4) : path;
+    const from = arrow >= 0 ? path.slice(0, arrow) : null;
+    if (x === 'U' || y === 'U' || (x === 'A' && y === 'A') || (x === 'D' && y === 'D')) {
+      conflicts.push({ path: name });
+    } else {
+      if (x !== ' ' && x !== '?') staged.push({ path: name, renameFrom: from, status: x });
+      if (y !== ' ') changed.push({ path: name, status: y });
+    }
+  }
+  return { conflicts, staged, changed, untracked };
+}
+
+async function statusDetail(repoPath) {
+  const r = await runGit(repoPath, ['status', '--porcelain=v1'], IDE_TIMEOUT_MS);
+  if (!r.ok) return { error: redactCredentials(r.out || 'git status failed').split('\n')[0] };
+  return parseStatus(r.stdout);
+}
+
+// Writes share one guard: refuse while a half-finished operation owns the
+// repo, and validate the file list once, up front.
+async function writeGuard(repoPath) {
+  const s = await summary(repoPath);
+  if (s.error) return { error: s.error };
+  if (s.inProgress) return { error: `a ${s.inProgress} is in progress` };
+  return null;
+}
+
+async function stageFiles(repoPath, files) {
+  const list = validFileList(files);
+  if (!list) return { error: 'invalid file list' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const r = await runGit(repoPath, ['add', '--', ...list], IDE_TIMEOUT_MS);
+  return r.ok ? { ok: true } : { error: redactCredentials(r.out || 'git add failed').split('\n')[0] };
+}
+
+async function unstageFiles(repoPath, files) {
+  const list = validFileList(files);
+  if (!list) return { error: 'invalid file list' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  // `git reset -- <paths>` unstages; before the first commit exists there is
+  // no HEAD to reset from, and git rm --cached is the only way back.
+  const r = await runGit(repoPath, ['reset', '-q', '--', ...list], IDE_TIMEOUT_MS);
+  if (r.ok) return { ok: true };
+  if (/ambiguous argument 'HEAD'|unknown revision/i.test(r.out)) {
+    const r2 = await runGit(repoPath, ['rm', '-q', '--cached', '--', ...list], IDE_TIMEOUT_MS);
+    if (r2.ok) return { ok: true };
+    return { error: redactCredentials(r2.out || 'git rm failed').split('\n')[0] };
+  }
+  return { error: redactCredentials(r.out || 'git reset failed').split('\n')[0] };
+}
+
+// Discard works-tree changes, per file, by what the file actually is:
+// tracked modifications are checked out from the index; untracked files are
+// removed with clean scoped to exactly that path. Never a bare `checkout -- .`.
+async function discardFiles(repoPath, files) {
+  const list = validFileList(files);
+  if (!list) return { error: 'invalid file list' };
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const st = await runGit(repoPath, ['status', '--porcelain=v1', '--', ...list], IDE_TIMEOUT_MS);
+  if (!st.ok) return { error: redactCredentials(st.out || 'git status failed').split('\n')[0] };
+  const tracked = [], untracked = [];
+  for (const line of st.stdout.split('\n').filter(Boolean)) {
+    const path = line.slice(3).split(' -> ').pop();
+    if (line.startsWith('??')) untracked.push(path);
+    else tracked.push(path);
+  }
+  if (tracked.length) {
+    const r = await runGit(repoPath, ['checkout', '-q', '--', ...tracked], IDE_TIMEOUT_MS);
+    if (!r.ok) return { error: redactCredentials(r.out || 'git checkout failed').split('\n')[0] };
+  }
+  for (const f of untracked) {
+    const r = await runGit(repoPath, ['clean', '-q', '-f', '--', f], IDE_TIMEOUT_MS);
+    if (!r.ok) return { error: redactCredentials(r.out || 'git clean failed').split('\n')[0] };
+  }
+  return { ok: true };
+}
+
+async function commit(repoPath, message, amend) {
+  if (typeof message !== 'string' || !message.trim() || message.length > 8000 || message.includes('\0')) {
+    return { error: 'invalid commit message' };
+  }
+  const guard = await writeGuard(repoPath);
+  if (guard) return guard;
+  const args = ['commit', '-m', message];
+  if (amend) args.push('--amend', '--no-edit');
+  const r = await runGit(repoPath, args, IDE_TIMEOUT_MS);
+  if (!r.ok) {
+    // git's own wording for "nothing staged" is what the panel should show.
+    return { error: redactCredentials(r.out || 'git commit failed').split('\n')[0] };
+  }
+  const head = await runGit(repoPath, ['rev-parse', '--short', 'HEAD'], IDE_TIMEOUT_MS);
+  return { ok: true, head: head.ok ? head.stdout.trim() : null };
+}
