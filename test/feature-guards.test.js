@@ -351,6 +351,46 @@ describe('SPACE-05 one header toggle opens and closes the sidebar', function () 
   });
 });
 
+describe('SPACE-21 the sidebar resizes from its right edge', function () {
+  const css = read('style.css');
+  const html = read('index.html');
+  const js = read('spaces.js');
+
+  it('the sidebar consumes the --sidebar-w var, so the drag can move it', function () {
+    // It was a plain `width: 264px` — with that, the handle writes a var
+    // nobody reads and the sidebar never moves.
+    assert.ok(/\.spaces-sidebar\s*\{[^}]*width:\s*var\(--sidebar-w,\s*264px\)/.test(css));
+    assert.ok(/setProperty\('--sidebar-w'/.test(js));
+  });
+
+  it('the handle is invisible on the folded rail and the narrow drawer', function () {
+    assert.ok(/body\.sidebar-hidden \.sidebar-resize-handle\s*\{\s*display:\s*none/.test(css));
+    const drawer = css.slice(css.indexOf('@media (max-width: 768px)'));
+    assert.ok(/\.sidebar-resize-handle\s*\{\s*display:\s*none/.test(drawer));
+  });
+
+  it('the handle is built in JS like the explorer\'s, not baked into the page', function () {
+    assert.ok(!/sidebarResizeHandle/.test(html), 'no stray markup');
+    assert.ok(/className = 'sidebar-resize-handle'/.test(js));
+    assert.ok(/handle\.title = 'Drag to resize'/.test(js));
+  });
+
+  it('clamps to [180, min(720, 40vw)] (user 2026-11-19: 70% cut to 40%)', function () {
+    const at = (w) => vm.runInNewContext(
+      `({ ${lift(read('spaces.js'), 'clampWidth', { method: true })} })`,
+      { window: { innerWidth: w } });
+    assert.strictEqual(at(1280).clampWidth(40), 180);   // floor
+    assert.strictEqual(at(1280).clampWidth(500), 500);  // free inside the range
+    assert.strictEqual(at(1280).clampWidth(1000), 512); // 40vw of 1280
+    assert.strictEqual(at(4000).clampWidth(999), 720);  // hard cap
+  });
+
+  it('a dragged width is remembered with the rest of the sidebar state', function () {
+    assert.ok(/width:\s*this\.width/.test(lift(js, 'saveState', { method: true })));
+    assert.ok(/Number\.isFinite\(raw\.width\)/.test(js));
+  });
+});
+
 describe('SPACE-19 tasks not open on this device stay visible in their space', function () {
   const js = read('spaces.js');
   const css = read('style.css');

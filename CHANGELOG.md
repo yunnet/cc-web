@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **Drag the spaces sidebar wider or narrower.** The sidebar's right edge is
+  a grab handle: drag it to resize (180px to min(720px, 40vw) — the cap came
+  down from 70% at review), double-click to put the 264px default back. The
+  width is remembered per device and re-clamped when the window narrows; the
+  folded rail and the phone drawer keep their own fixed widths, and the
+  terminal refits on its own through its ResizeObserver (user 2026-11-19).
 - **Order the spaces.** Each space row has a ⋯ (and a right-click menu) with
   Move to top / up / down / bottom. The sidebar moves at once and the order is
   kept on the server, so every device and the collapsed rail show the same

@@ -63,6 +63,7 @@
 | S49 | CTX-04、CTX-05、CTX-06 | 点圆环；再用一个几百个请求、有压缩的对话的数据渲染；切「增量」；390 宽 | 点圆环打开 `#usageModal` 且当前标签不变；KPI 6 格（有子 Agent 时）；趋势柱数=请求数、`.u-compact` 数=压缩次数；新数据打开时 `.usage-trend` 滚到最右，切换总量/增量时 scrollLeft 不变；增量模式普通柱可见、压缩那根被截断；390 宽 `.modal-content` 左右各留 ≥16px、页面无横向溢出 |
 | S50 | CTX-08、CTX-09、CTX-10 | 菜单点「用量」；搜索、按花费排序；点已打开与未打开的对话各一次（未打开的把 `app.openConversationInTab` 换成记录调用的桩，别真的恢复别人的对话）；切 30 天；390 宽 | 打开即「总览」页；7 天时每日柱 7 根、30 天时 30 根，热力格 56 个；搜索即时筛选，排序后搜索词仍在、筛选仍生效；「已打开」的行点击后切到那个标签，未打开的行以 {id, title} 和对话目录调用 `openConversationInTab` 且面板关闭；390 宽左右各 ≥16px、无横向溢出、日期标签不变形 |
 | S47 | TERM-48 | 有多轮问答的会话，量轨道 | `.turn-mark` 数 ≥ 实际提问数（缓冲内）；行号 `rail.marks` 单调递增；悬停 `.turn-rail-tip` 含提问文本；点击后 `viewportY = min(target, buf.length - rows)` ±4；视口压到终端区 ≤900px 后 `.rail-hidden` |
+| S51 | SPACE-21 | 桌面宽（≥769px）指针从 #sidebarResizeHandle 按下拖到 x=500 / x=40 / x=1000；再刷新；再双击手柄；再折叠/展开；390 宽 | 拖到 500：`.spaces-sidebar` rect 宽 500±2；拖到 40：宽卡 180±2；拖到 1000：宽卡 min(720, 40vw)±2，且悬停手柄 `background` 变强调色、行高/头高不变；拖动中终端 cols 变化（ResizeObserver 自动 refit）；刷新后宽保持；双击回 264±2 并持久化；折叠时宽 56±2 且手柄 `display:none`、展开回自定义宽；390 宽手柄 `display:none`、抽屉宽仍 min(300px,85vw) |
 
 ## 基线结果
 

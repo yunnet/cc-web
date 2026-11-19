@@ -35,6 +35,9 @@ class SpacesSidebar {
         const state = this.loadState();
         this.pinned = new Set(Array.isArray(state.pinned) ? state.pinned : []);
         this.sortMode = state.sortMode === 'recent' ? 'recent' : 'manual';
+        // The dragged sidebar width in px, per-device like pinned/sortMode;
+        // null = never dragged, the CSS default (264px) applies.
+        this.width = Number.isFinite(state.width) ? state.width : null;
         // Per-space row watermark (DSH's 渐显): how many task rows a group
         // shows. In-memory only — folding a space resets it, a reload forgets.
         this._watermarks = new Map();
@@ -81,9 +84,10 @@ class SpacesSidebar {
                 collapsed: Array.isArray(raw.collapsed) ? raw.collapsed : [],
                 pinned: Array.isArray(raw.pinned) ? raw.pinned : [],
                 sortMode: raw.sortMode === 'recent' ? 'recent' : 'manual',
+                width: Number.isFinite(raw.width) ? raw.width : null,
             };
         } catch (_) {
-            return { collapsed: [], pinned: [], sortMode: 'manual' }; // TAB-25: no storage, no crash
+            return { collapsed: [], pinned: [], sortMode: 'manual', width: null }; // TAB-25: no storage, no crash
         }
     }
 
@@ -93,6 +97,7 @@ class SpacesSidebar {
                 collapsed: [...this.collapsed],
                 pinned: [...this.pinned],
                 sortMode: this.sortMode,
+                width: this.width,
             }));
         } catch (_) { /* ignore */ }
     }
@@ -356,8 +361,13 @@ class SpacesSidebar {
         const toggle = document.getElementById('sidebarToggleBtn');
         toggle?.addEventListener('click', () => this.toggleDrawer());
         this.updateToggleState();
-        // Crossing 768px swaps which state the button reports (fold vs drawer).
-        window.addEventListener('resize', () => this.updateToggleState());
+        this.setupResize();
+        // Crossing 768px swaps which state the button reports (fold vs drawer);
+        // a narrowed window also re-clamps a remembered width.
+        window.addEventListener('resize', () => {
+            this.updateToggleState();
+            if (this.width !== null) this.applyWidth(this.width);
+        });
 
         // Phones: the header's task name is the way into the task list.
         document.getElementById('headerBreadcrumb')?.addEventListener('click', () => {
@@ -857,6 +867,81 @@ class SpacesSidebar {
         const backdrop = document.getElementById('sidebarBackdrop');
         if (backdrop) backdrop.hidden = true;
         this.updateToggleState();
+    }
+
+    // ---- drag to resize (right-edge handle) -------------------------------
+    //
+    // The width lives in --sidebar-w on the element; the CSS default (264px)
+    // is the var's fallback. The folded rail and the ≤768px drawer keep their
+    // own fixed widths (higher specificity / later in the sheet), so a custom
+    // width never leaks into them. The terminal refits on its own: the
+    // terminal wrapper and the split container each carry a ResizeObserver
+    // (app.js / splits.js), so this only moves one CSS var per frame.
+
+    static DEFAULT_WIDTH = 264;
+
+    clampWidth(w) {
+        const min = 180;
+        // 40% of the viewport, capped at 720px (user 2026-11-19: 70% felt
+        // too greedy — a wider sidebar eats the terminal for little gain).
+        const max = Math.max(min, Math.min(720, window.innerWidth * 0.4));
+        return Math.min(max, Math.max(min, w));
+    }
+
+    applyWidth(w) {
+        const sidebar = document.getElementById('spacesSidebar');
+        if (!sidebar) return;
+        this.width = this.clampWidth(w);
+        sidebar.style.setProperty('--sidebar-w', this.width + 'px');
+    }
+
+    setupResize() {
+        const sidebar = document.getElementById('spacesSidebar');
+        if (!sidebar) return;
+
+        // Restore the remembered width, clamped to this window (a width set
+        // on a bigger screen must not eat the terminal here).
+        if (this.width !== null) this.applyWidth(this.width);
+
+        // The handle is created here like the explorer's drawer handle (its
+        // edge strip), not baked into the page markup.
+        const handle = document.createElement('div');
+        handle.className = 'sidebar-resize-handle';
+        handle.id = 'sidebarResizeHandle';
+        handle.title = 'Drag to resize';
+        sidebar.appendChild(handle);
+
+        // Pointer events, not mouse events: this is a mobile-first PWA (same
+        // as the explorer's handle). The sidebar hugs the left edge of the
+        // body row, so the width is just the pointer's x.
+        let dragging = false;
+        handle.addEventListener('pointerdown', (e) => {
+            dragging = true;
+            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            e.preventDefault(); // stop touch-drag from scrolling the page instead
+            this.applyWidth(e.clientX);
+        });
+        const endDrag = () => {
+            if (!dragging) return;
+            dragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            this.saveState();
+        };
+        document.addEventListener('pointerup', endDrag);
+        document.addEventListener('pointercancel', endDrag);
+
+        // Double-click puts the default width back.
+        handle.addEventListener('dblclick', () => {
+            this.applyWidth(SpacesSidebar.DEFAULT_WIDTH);
+            this.saveState();
+        });
     }
 
     tree() {
