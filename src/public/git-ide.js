@@ -559,7 +559,22 @@
         gh.type = 'button';
         gh.className = 'git-ide-group-head';
         gh.dataset.group = g.key;
-        gh.innerHTML = `<span class="git-ide-chevron">&#rsaquo;</span><span class="git-ide-group-label">${g.label}</span><span class="git-ide-group-count">${g.rows.length}</span>`;
+        // Built, not innerHTML'd: the last version wrote "&#rsaquo;" — an
+        // entity that does not exist (numeric prefix on a named entity), so
+        // the browser printed it literally. The real character needs no
+        // parsing, and textContent is the panel's rule anyway.
+        const chev = document.createElement('span');
+        chev.className = 'git-ide-chevron';
+        chev.textContent = '›';
+        gh.appendChild(chev);
+        const lbl = document.createElement('span');
+        lbl.className = 'git-ide-group-label';
+        lbl.textContent = g.label;
+        gh.appendChild(lbl);
+        const cnt = document.createElement('span');
+        cnt.className = 'git-ide-group-count';
+        cnt.textContent = String(g.rows.length);
+        gh.appendChild(cnt);
         group.appendChild(gh);
         const list = document.createElement('div');
         list.className = 'git-ide-group-rows';
@@ -1386,7 +1401,9 @@
     // ── width: remembered, clamped to the window, 3px handle ──────────────
 
     applyWidth(px) {
-      const max = Math.min(1100, Math.floor(window.innerWidth * 0.72));
+      // 75% of the window is the ceiling the user settled on (2026-11-20) —
+      // no fixed px cap, so a wide screen really gets its 75%.
+      const max = Math.floor(window.innerWidth * 0.75);
       const w = Math.max(MIN_WIDTH, Math.min(max, Math.round(px)));
       this.width = w;
       this.el('gitIdePanel').style.setProperty('--git-ide-w', w + 'px');
