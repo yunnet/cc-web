@@ -5869,7 +5869,7 @@ button.usage-acct { cursor: pointer; }
     right: 0;
     bottom: 0;
     width: var(--git-ide-w);
-    max-width: 72vw;
+    max-width: 75vw;
     display: flex;
     flex-direction: column;
     background-color: var(--bg-secondary);
